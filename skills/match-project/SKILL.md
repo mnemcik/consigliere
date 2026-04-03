@@ -7,73 +7,52 @@ description: >-
   Runs as a forked subagent to keep the lookup isolated from the main conversation context.
 context: fork
 user-invocable: true
-allowed-tools: Read, Glob, Grep
+allowed-tools: Bash, Read
 argument-hint: "<description of what the user wants to work on>"
 ---
 
 # /match-project — Project Matcher
 
-Match a user's prompt to an existing project in a Consigliere workspace. This skill runs as an isolated subagent so its file reads do not bloat the main conversation context.
+This skill invokes the `cg` CLI tool for deterministic project matching, with LLM fallback for fuzzy cases.
 
-## Step 1: Guard — Verify Consigliere workspace
+## Step 1: Run deterministic match
 
-Read `.cg.json` from the workspace root (current working directory).
+```bash
+cg match $ARGUMENTS
+```
 
-- If the file does not exist, respond exactly: `NO_MATCH: Not a Consigliere workspace. Run /cg-init to set one up.` and stop.
-- If the file exists but `type` is not `"consigliere"`, respond exactly: `NO_MATCH: .cg.json exists but type is not "consigliere".` and stop.
+If `cg` is not found in PATH, try:
+```bash
+find ~/.claude/plugins -name "cg" -type f 2>/dev/null | head -1
+```
 
-## Step 2: Read the project index
+## Step 2: Interpret the result
 
-From `.cg.json`, get the value of `indexes.projects` (default: `projects/TODO.md`). Read that file.
+The `cg match` command outputs one of three formats:
 
-The project index is a markdown table with columns like: `#`, `Project`, `Status`, `Areas`, `Folder`. Parse all rows from the table.
-
-If the index file does not exist or is empty, respond: `NO_MATCH: Project index not found or empty.` and stop.
-
-## Step 3: Match the prompt
-
-The user's prompt is provided in `$ARGUMENTS`. Match it against the project table using these signals (in priority order):
-
-1. **Exact or near-exact project name match** — the prompt contains the project name or a close variant
-2. **Area slug match** — the prompt mentions an area slug that appears in the project's Areas column
-3. **Keyword overlap** — significant keywords from the prompt appear in the project name or description
-4. **Folder name match** — the prompt contains the project's folder slug
-
-### Scoring
-
-- If exactly one project matches clearly, proceed to Step 4.
-- If multiple projects match, read the first 10 lines of each candidate's `README.md` (the Problem and Goals sections) to disambiguate. Pick the best match.
-- If still ambiguous after reading READMEs, return the top 2-3 candidates (see Step 4 format for multiple matches).
-
-## Step 4: Return the result
-
-### Single match
-
-Respond with exactly this format (no extra text):
-
+### Single match (use directly)
 ```
 MATCH: {project-name}
 SLUG: {folder-slug}
 PATH: projects/{folder-slug}/
 STATUS: {project-status}
 ```
+Return this output as-is.
 
-### Multiple candidates (ambiguous)
+### Ambiguous (LLM disambiguation)
+```
+AMBIGUOUS: N candidates
+CANDIDATE: name | SLUG: slug | PATH: path | STATUS: status
+```
+Read the first 10 lines of each candidate's `README.md` and pick the best match based on the user's prompt (`$ARGUMENTS`). Return the result in the single-match format.
 
+### No match (LLM fallback)
 ```
-AMBIGUOUS: {number} candidates
-CANDIDATE: {name-1} | SLUG: {slug-1} | PATH: projects/{slug-1}/ | STATUS: {status-1}
-CANDIDATE: {name-2} | SLUG: {slug-2} | PATH: projects/{slug-2}/ | STATUS: {status-2}
+NO_MATCH: ...
 ```
-
-### No match
-
-```
-NO_MATCH: No project matches the prompt "{first 50 chars of $ARGUMENTS}..."
-```
+Read `.cg.json` to find the project index path, then read the index file. Use your judgment to find a match based on semantic understanding of the prompt. If still no match, return `NO_MATCH` with a reason.
 
 ## Important
 
-- Do NOT read full project files beyond the first 10 lines of README.md for disambiguation.
-- Do NOT output any explanation, commentary, or markdown formatting — only the structured output above.
-- Keep the lookup fast and minimal. The whole point of this skill is to avoid loading unnecessary context.
+- Do NOT output any explanation or commentary — only the structured match output.
+- Keep the lookup fast and minimal.
