@@ -1,13 +1,13 @@
-# Second Brain (2b)
+# Consigliere (cg)
 
 A personal workspace management framework for [Claude Code](https://claude.ai/code).
 
-Second Brain gives you a structured, AI-friendly knowledge base for tracking **projects**, **ideas**, **notes**, **areas of responsibility**, and **insights** — all in a single git repository that any AI tool can read.
+Consigliere gives you a structured, AI-friendly knowledge base for tracking **projects**, **ideas**, **notes**, **areas of responsibility**, and **insights** — all in a single git repository that any AI tool can read.
 
 ## Installation
 
 ```bash
-claude plugin add github:mnemcik/second-brain
+claude plugin add github:mnemcik/consigliere
 ```
 
 ## Quick Start
@@ -15,14 +15,14 @@ claude plugin add github:mnemcik/second-brain
 Open Claude Code in an empty directory (or an existing repo) and run:
 
 ```
-/2b-init
+/cg-init
 ```
 
 This creates the full workspace structure:
 
 ```
 your-workspace/
-├── .2b.json                # Workspace identity & config
+├── .cg.json                # Workspace identity & config
 ├── CLAUDE.md               # AI governance rules (framework + your customizations)
 ├── PROFILE.md              # Your role and context
 ├── areas/                  # Domains of knowledge (reference hubs)
@@ -57,13 +57,13 @@ Then:
 
 ## Skills
 
-### `/2b-init`
+### `/cg-init`
 
-Bootstraps a new Second Brain workspace. Creates directories, templates, index files, and governance files. Safe to run in existing directories — it skips files that already exist.
+Bootstraps a new Consigliere workspace. Creates directories, templates, index files, and governance files. Safe to run in existing directories — it skips files that already exist.
 
 ```
-/2b-init           # Set up a new workspace
-/2b-init --force   # Re-initialize (preserves CLAUDE.md and PROFILE.md)
+/cg-init           # Set up a new workspace
+/cg-init --force   # Re-initialize (preserves CLAUDE.md and PROFILE.md)
 ```
 
 ### `/match-project`
@@ -101,14 +101,14 @@ Draft observations about how you work with AI. Created automatically at session 
 
 ## CLAUDE.md Sections
 
-The generated CLAUDE.md uses HTML comment markers to separate **framework sections** (managed by Second Brain) from **user sections** (yours to customize):
+The generated CLAUDE.md uses HTML comment markers to separate **framework sections** (managed by Consigliere) from **user sections** (yours to customize):
 
-- **Framework sections** (`<!-- 2b:section:start=X -->`) — workspace rules, project structure, session-end behavior. Updated by `/2b-update` (coming in v1.1).
-- **User sections** (`<!-- user:section:start=X -->`) — your purpose, area categories, git workflow, custom conventions. Never touched by Second Brain.
+- **Framework sections** (`<!-- cg:section:start=X -->`) — workspace rules, project structure, session-end behavior. Updated by `/cg-update` (coming in v1.1).
+- **User sections** (`<!-- user:section:start=X -->`) — your purpose, area categories, git workflow, custom conventions. Never touched by Consigliere.
 
 ## Versioning
 
-`.2b.json` records the Second Brain version used to initialize the workspace. Future releases will include a `/2b-update` skill to update framework sections in your CLAUDE.md without touching your customizations.
+`.cg.json` records the Consigliere version used to initialize the workspace. Future releases will include a `/cg-update` skill to update framework sections in your CLAUDE.md without touching your customizations.
 
 ## License
 

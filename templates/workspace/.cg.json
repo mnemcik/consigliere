@@ -1,5 +1,5 @@
 {
-  "type": "2b",
+  "type": "consigliere",
   "version": "1.0.0",
   "indexes": {
     "projects": "projects/TODO.md",

@@ -1,9 +1,9 @@
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-This is a **Second Brain workspace**. Sections marked with `2b:section` comments are maintained by the [Second Brain](https://github.com/mnemcik/second-brain) framework and can be updated automatically. Sections marked with `user:section` are yours to customize freely.
+This is a **Consigliere workspace**. Sections marked with `cg:section` comments are maintained by the [Consigliere](https://github.com/mnemcik/consigliere) framework and can be updated automatically. Sections marked with `user:section` are yours to customize freely.
 
-<!-- 2b:version=1.0.0 -->
+<!-- cg:version=1.0.0 -->
 
 <!-- user:section:start=purpose -->
 ## Purpose
@@ -17,7 +17,7 @@ This is a **Second Brain workspace**. Sections marked with `2b:section` comments
 See [PROFILE.md](PROFILE.md) for role, responsibilities, and context that should inform how ideas and work are interpreted.
 <!-- user:section:end=owner -->
 
-<!-- 2b:section:start=memory-policy -->
+<!-- cg:section:start=memory-policy -->
 ## Memory Policy
 
 **Do NOT use Claude Code's auto-memory system** (`~/.claude/projects/.../memory/`). It is not transparent (hidden in dotfiles) and not portable across AI tools.
@@ -28,15 +28,15 @@ Instead, persist all learnings, preferences, references, and feedback **in this 
 - Conventions and rules → this file (`CLAUDE.md`)
 
 If something is worth remembering, it should be committed to the repo where any tool can read it.
-<!-- 2b:section:end=memory-policy -->
+<!-- cg:section:end=memory-policy -->
 
-<!-- 2b:section:start=idea-capture -->
+<!-- cg:section:start=idea-capture -->
 ## Idea Capture
 
 When the user submits a new idea (e.g., "idea: ..."), interpret what it refers to, classify it with appropriate tags, and store it immediately using the workflow below. Use the owner's profile and domain context to fill in the What/Why/Notes sections. Only ask for clarification if the idea is genuinely ambiguous.
-<!-- 2b:section:end=idea-capture -->
+<!-- cg:section:end=idea-capture -->
 
-<!-- 2b:section:start=structure -->
+<!-- cg:section:start=structure -->
 ## Structure
 
 - `PROFILE.md` — Owner's role, responsibilities, and context for interpreting work
@@ -46,13 +46,13 @@ When the user submits a new idea (e.g., "idea: ..."), interpret what it refers t
 - `templates/` — Templates for ideas, projects, notes, insights, and areas (`idea.md`, `project/`, `note.md`, `insight.md`, `area.md`)
 - `notes/` — Session notes, findings, and reference material. Index: `notes/INDEX.md`
 - `insights/` — Draft observations about user work style and preferences. Index: `insights/DRAFTS.md`. **Drafts are NOT active rules — do not apply them until promoted.**
-<!-- 2b:section:end=structure -->
+<!-- cg:section:end=structure -->
 
-<!-- 2b:section:start=areas -->
+<!-- cg:section:start=areas -->
 ## Areas
 
 Areas are domains of knowledge and responsibility. They serve as **reference hubs** — the single source of truth for a domain's systems, contacts, constraints, and current state. Projects, ideas, and notes link to areas instead of duplicating context.
-<!-- 2b:section:end=areas -->
+<!-- cg:section:end=areas -->
 
 <!-- user:section:start=area-categories -->
 ### Area Categories
@@ -66,7 +66,7 @@ Define your area categories here. Areas typically fall into two types:
 - `example-slug` — Example Practice Name
 <!-- user:section:end=area-categories -->
 
-<!-- 2b:section:start=area-rules -->
+<!-- cg:section:start=area-rules -->
 ### Area Rules
 
 1. **Every project, idea, and note MUST have an `Areas:` field** linking to one or more areas. Use the area slug(s).
@@ -78,9 +78,9 @@ Define your area categories here. Areas typically fall into two types:
 ### Linking to Areas from Projects
 
 When working on a project, **read its associated area file(s) first** to understand the current context, constraints, and contacts. This avoids asking questions that are already answered and prevents duplicating information across project files.
-<!-- 2b:section:end=area-rules -->
+<!-- cg:section:end=area-rules -->
 
-<!-- 2b:section:start=project-structure -->
+<!-- cg:section:start=project-structure -->
 ## Project Structure
 
 Each project lives in its own folder under `projects/`. The folder name is the project slug (e.g., `projects/my-project/`).
@@ -132,9 +132,9 @@ Claude MUST keep project files current during every session that touches a proje
 - **references.md**: Add any new external links encountered.
 
 **This is not optional.** Stale project files are worse than no files — they mislead future sessions.
-<!-- 2b:section:end=project-structure -->
+<!-- cg:section:end=project-structure -->
 
-<!-- 2b:section:start=information-propagation -->
+<!-- cg:section:start=information-propagation -->
 ## Information Propagation Rule
 
 After any session where new information is discussed or identified, Claude MUST check whether existing items need updating. This applies to areas, projects, ideas, and notes.
@@ -168,18 +168,18 @@ After any session where new information is discussed or identified, Claude MUST 
 | Meeting notes | All areas mentioned, project `log.md` for session record |
 
 **This is not optional.** Stale information in areas and projects leads to duplicated or contradictory context across sessions.
-<!-- 2b:section:end=information-propagation -->
+<!-- cg:section:end=information-propagation -->
 
-<!-- 2b:section:start=idea-workflow -->
+<!-- cg:section:start=idea-workflow -->
 ## Workflow: Idea → Project
 
 1. Capture an idea in `ideas/` using `templates/idea.md`. Add it to `ideas/BACKLOG.md` with status `raw`.
 2. When exploring, update status to `exploring` and flesh out the idea file.
 3. When the idea is mature enough, mark it `ready` and create a project folder in `projects/` using `templates/project/`. Link the idea file as the origin in README.md.
 4. Ideas that won't be pursued get marked `parked` (maybe later) or `rejected` (won't do).
-<!-- 2b:section:end=idea-workflow -->
+<!-- cg:section:end=idea-workflow -->
 
-<!-- 2b:section:start=session-end -->
+<!-- cg:section:start=session-end -->
 ## Session-End Rule: Capture Notes and Insights
 
 Before ending any session, Claude MUST review the session and capture two distinct types of output. Skip entirely if the session was purely mechanical (e.g., a single file rename) with nothing worth noting.
@@ -206,7 +206,7 @@ Observations about how the user prefers to work with Claude — prompting patter
 5. Add a row to the table in `insights/DRAFTS.md` with the insight name, status `draft`, date, and file link
 
 **CRITICAL: Insights are always created as drafts. Claude MUST NOT apply, follow, or reference draft insights in its behavior. They only become active rules when the user reviews them and promotes them to CLAUDE.md.**
-<!-- 2b:section:end=session-end -->
+<!-- cg:section:end=session-end -->
 
 <!-- user:section:start=git-workflow -->
 ## Git Workflow
@@ -216,7 +216,7 @@ Observations about how the user prefers to work with Claude — prompting patter
 **This repo:** commit directly to `main`. This is a personal knowledge base — no branches needed.
 <!-- user:section:end=git-workflow -->
 
-<!-- 2b:section:start=conventions -->
+<!-- cg:section:start=conventions -->
 ## Conventions
 
 - Idea statuses: `raw` → `exploring` → `ready` → `parked` | `rejected`
@@ -225,7 +225,7 @@ Observations about how the user prefers to work with Claude — prompting patter
 - Tags on ideas are free-form. Use them to group and filter.
 - Areas on all items are mandatory. Use area slugs from `areas/INDEX.md`.
 - Not everything becomes a ticket — projects may produce tools, docs, automation, or just notes.
-<!-- 2b:section:end=conventions -->
+<!-- cg:section:end=conventions -->
 
 <!-- user:section:start=custom-conventions -->
 ## Custom Conventions

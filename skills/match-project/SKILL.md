@@ -1,7 +1,7 @@
 ---
 name: match-project
 description: >-
-  Match a user prompt to a project in a Second Brain workspace. Reads .2b.json and the
+  Match a user prompt to a project in a Consigliere workspace. Reads .cg.json and the
   project index to find the best matching project. Returns the project slug and folder path.
   Use this skill at the start of a session when the user's prompt likely relates to an existing project.
   Runs as a forked subagent to keep the lookup isolated from the main conversation context.
@@ -13,18 +13,18 @@ argument-hint: "<description of what the user wants to work on>"
 
 # /match-project — Project Matcher
 
-Match a user's prompt to an existing project in a Second Brain workspace. This skill runs as an isolated subagent so its file reads do not bloat the main conversation context.
+Match a user's prompt to an existing project in a Consigliere workspace. This skill runs as an isolated subagent so its file reads do not bloat the main conversation context.
 
-## Step 1: Guard — Verify Second Brain workspace
+## Step 1: Guard — Verify Consigliere workspace
 
-Read `.2b.json` from the workspace root (current working directory).
+Read `.cg.json` from the workspace root (current working directory).
 
-- If the file does not exist, respond exactly: `NO_MATCH: Not a Second Brain workspace. Run /2b-init to set one up.` and stop.
-- If the file exists but `type` is not `"2b"`, respond exactly: `NO_MATCH: .2b.json exists but type is not "2b".` and stop.
+- If the file does not exist, respond exactly: `NO_MATCH: Not a Consigliere workspace. Run /cg-init to set one up.` and stop.
+- If the file exists but `type` is not `"consigliere"`, respond exactly: `NO_MATCH: .cg.json exists but type is not "consigliere".` and stop.
 
 ## Step 2: Read the project index
 
-From `.2b.json`, get the value of `indexes.projects` (default: `projects/TODO.md`). Read that file.
+From `.cg.json`, get the value of `indexes.projects` (default: `projects/TODO.md`). Read that file.
 
 The project index is a markdown table with columns like: `#`, `Project`, `Status`, `Areas`, `Folder`. Parse all rows from the table.
 
