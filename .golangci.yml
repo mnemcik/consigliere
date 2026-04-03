@@ -13,8 +13,6 @@ linters:
     - exhaustive
     - goconst
     - gocritic
-    - gofmt
-    - goimports
     - gosec
     - misspell
     - noctx
@@ -23,26 +21,31 @@ linters:
     - unconvert
     - unparam
     - whitespace
+  settings:
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+    revive:
+      rules:
+        - name: unexported-return
+          disabled: true
+    gosec:
+      excludes:
+        - G306
+  exclusions:
+    paths:
+      - cmd/embed_templates
 
-linters-settings:
-  goconst:
-    min-len: 3
-    min-occurrences: 3
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-  revive:
-    rules:
-      - name: unexported-return
-        disabled: true
-  gosec:
-    excludes:
-      - G306
+formatters:
+  enable:
+    - gofmt
+    - goimports
 
 issues:
   max-issues-per-linter: 50
   max-same-issues: 3
-  exclude-dirs:
-    - cmd/embed_templates
