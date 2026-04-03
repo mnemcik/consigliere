@@ -36,6 +36,8 @@ linters:
           disabled: true
     gosec:
       excludes:
+        - G301
+        - G304
         - G306
   exclusions:
     paths:

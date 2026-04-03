@@ -91,11 +91,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Create index files
 	indexFiles := map[string]string{
-		filepath.Join("projects", "TODO.md"):    indexProjectsTODO,
-		filepath.Join("areas", "INDEX.md"):      indexAreas,
-		filepath.Join("ideas", "BACKLOG.md"):    indexIdeas,
-		filepath.Join("notes", "INDEX.md"):      indexNotes,
-		filepath.Join("insights", "DRAFTS.md"):  indexInsights,
+		filepath.Join("projects", "TODO.md"):   indexProjectsTODO,
+		filepath.Join("areas", "INDEX.md"):     indexAreas,
+		filepath.Join("ideas", "BACKLOG.md"):   indexIdeas,
+		filepath.Join("notes", "INDEX.md"):     indexNotes,
+		filepath.Join("insights", "DRAFTS.md"): indexInsights,
 	}
 	for dst, content := range indexFiles {
 		c, s := writeFileIfNotExists(dir, dst, content)
@@ -302,4 +302,3 @@ Promoted insights get their suggested rule added to CLAUDE.md.
 | Insight | Status | Date | File |
 |---|---|---|---|
 `
-
