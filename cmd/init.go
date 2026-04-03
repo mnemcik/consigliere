@@ -7,8 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
-
 	"github.com/mnemcik/consigliere/internal/workspace"
 	"github.com/spf13/cobra"
 )
@@ -304,5 +302,3 @@ Promoted insights get their suggested rule added to CLAUDE.md.
 |---|---|---|---|
 `
 
-// Suppress unused import warning for strings
-var _ = strings.TrimSpace

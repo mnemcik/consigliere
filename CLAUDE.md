@@ -1,42 +1,57 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code when working on the Consigliere (cg) plugin itself.
+This file provides guidance to Claude Code when working on the Consigliere (cg) project.
 
 ## What This Repo Is
 
-A Claude Code plugin that provides a personal workspace management framework. It is a content-only repository — markdown and JSON files, no build system or runtime.
+A Go CLI tool + Claude Code plugin for personal workspace management. The `cg` binary is a self-contained executable with all templates embedded via `go:embed`.
 
 ## Repository Structure
 
 ```
-.claude-plugin/plugin.json        # Plugin manifest
-skills/                           # Slash command definitions
-  match-project/SKILL.md          # /match-project — project matcher (forked subagent)
-  init/SKILL.md                   # /cg-init — workspace bootstrapper
-templates/                        # Bundled templates
-  workspace/                      # Full workspace scaffolding (CLAUDE.md, PROFILE.md, etc.)
-  project/                        # Project folder templates
-  idea.md, note.md, etc.          # Content item templates
+main.go                           # Entry point
+cmd/                              # CLI commands (cobra)
+  root.go                         # Root command
+  init.go                         # cg init
+  match.go                        # cg match
+  status.go                       # cg status
+  version.go                      # cg version
+  *_test.go                       # Tests
+  embed_templates/                # Templates embedded into binary (go:embed)
+internal/
+  workspace/                      # Workspace detection (.cg.json)
+templates/                        # Source templates (human-editable)
+skills/                           # Claude Code skill wrappers
+.claude-plugin/plugin.json        # Claude Code plugin manifest
+.github/workflows/                # CI + Release automation
+.golangci.yml                     # Linter config
+.goreleaser.yml                   # Release config
+Makefile                          # Build targets
+```
+
+## Development
+
+```bash
+make help       # Show all targets
+make build      # Build binary
+make test       # Run tests with race detector
+make lint       # Run golangci-lint
+make check      # Run everything
 ```
 
 ## Key Conventions
 
-- Plugin follows Claude Code plugin structure (`.claude-plugin/plugin.json` at root)
-- Skills use YAML frontmatter in SKILL.md files
-- Templates in `templates/workspace/CLAUDE.md` use sentinel comments (`<!-- cg:section:start=X -->`) to delimit framework vs user sections
-- Version in `.claude-plugin/plugin.json` must match version in `templates/workspace/.cg.json`
-- Content templates are generic — no user-specific content
-
-## Adding a New Skill
-
-1. Create `skills/{skill-name}/SKILL.md` with YAML frontmatter
-2. Include a guard clause that checks for `.cg.json` at workspace root
-3. Update `README.md` with the new skill's documentation
-4. Bump version in `.claude-plugin/plugin.json` and `templates/workspace/.cg.json`
+- Templates live in `templates/` (source of truth) and `cmd/embed_templates/` (embedded copy). Keep them in sync.
+- Version is injected at build time via `-ldflags` — see Makefile.
+- `.cg.json` type field must be `"consigliere"` for workspace detection.
+- Sentinel comments in `templates/workspace/CLAUDE.md` use `cg:section` / `user:section` prefixes.
+- Follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
 
 ## Release Process
 
-1. Bump version in `.claude-plugin/plugin.json` and `templates/workspace/.cg.json`
-2. Commit with message: `release: vX.Y.Z — {summary}`
-3. Tag: `git tag vX.Y.Z`
-4. Push: `git push origin main --tags`
+1. Update `CHANGELOG.md`
+2. Bump version in `templates/workspace/.cg.json` (the version `cg init` stamps into new workspaces)
+3. Commit: `git commit -m "release: vX.Y.Z"`
+4. Tag: `git tag vX.Y.Z`
+5. Push: `git push origin main --tags`
+6. GitHub Actions runs GoReleaser, creating the release with cross-platform binaries automatically.
