@@ -6,10 +6,16 @@ import (
 	"testing"
 )
 
+func writeTestFile(t *testing.T, dir, name, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+		t.Fatalf("cannot write %s: %v", name, err)
+	}
+}
+
 func TestDetectValidWorkspace(t *testing.T) {
 	dir := t.TempDir()
-	content := `{"type": "consigliere", "version": "1.0.0", "indexes": {"projects": "projects/TODO.md"}}`
-	os.WriteFile(filepath.Join(dir, ConfigFile), []byte(content), 0644)
+	writeTestFile(t, dir, ConfigFile, `{"type": "consigliere", "version": "1.0.0", "indexes": {"projects": "projects/TODO.md"}}`)
 
 	cfg, err := Detect(dir)
 	if err != nil {
@@ -40,8 +46,7 @@ func TestDetectNoConfig(t *testing.T) {
 
 func TestDetectWrongType(t *testing.T) {
 	dir := t.TempDir()
-	content := `{"type": "other-tool", "version": "1.0.0"}`
-	os.WriteFile(filepath.Join(dir, ConfigFile), []byte(content), 0644)
+	writeTestFile(t, dir, ConfigFile, `{"type": "other-tool", "version": "1.0.0"}`)
 
 	cfg, err := Detect(dir)
 	if err != nil {
@@ -54,7 +59,7 @@ func TestDetectWrongType(t *testing.T) {
 
 func TestDetectInvalidJSON(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, ConfigFile), []byte("not json"), 0644)
+	writeTestFile(t, dir, ConfigFile, "not json")
 
 	_, err := Detect(dir)
 	if err == nil {

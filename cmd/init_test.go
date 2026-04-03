@@ -78,7 +78,7 @@ func TestInitSkipsExistingFiles(t *testing.T) {
 
 	// Create a custom PROFILE.md before init
 	customContent := "# My Custom Profile\n"
-	if err := os.WriteFile(filepath.Join(dir, "PROFILE.md"), []byte(customContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "PROFILE.md"), []byte(customContent), 0o644); err != nil {
 		t.Fatalf("cannot write PROFILE.md: %v", err)
 	}
 

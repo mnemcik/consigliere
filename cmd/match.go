@@ -149,12 +149,12 @@ func runMatch(cmd *cobra.Command, args []string) error {
 	}
 
 	// Ambiguous: show top candidates
-	max := 3
-	if len(candidates) < max {
-		max = len(candidates)
+	limit := 3
+	if len(candidates) < limit {
+		limit = len(candidates)
 	}
-	fmt.Printf("AMBIGUOUS: %d candidates\n", max)
-	for i := 0; i < max; i++ {
+	fmt.Printf("AMBIGUOUS: %d candidates\n", limit)
+	for i := 0; i < limit; i++ {
 		p := candidates[i].project
 		fmt.Printf("CANDIDATE: %s | SLUG: %s | PATH: projects/%s/ | STATUS: %s\n",
 			p.Name, p.Folder, p.Folder, p.Status)
@@ -169,7 +169,7 @@ func parseProjectIndex(path string) ([]project, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var projects []project
 	scanner := bufio.NewScanner(f)

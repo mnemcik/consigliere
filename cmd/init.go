@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"github.com/mnemcik/consigliere/internal/workspace"
+
 	"github.com/spf13/cobra"
+
+	"github.com/mnemcik/consigliere/internal/workspace"
 )
 
 //go:embed all:embed_templates
@@ -61,7 +63,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if dirExists(path) {
 			skipped = append(skipped, d+"/")
 		} else {
-			if err := os.MkdirAll(path, 0755); err != nil {
+			if err := os.MkdirAll(path, 0o755); err != nil {
 				return fmt.Errorf("creating %s: %w", d, err)
 			}
 			created = append(created, d+"/")
@@ -115,7 +117,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	data, _ := json.MarshalIndent(cgJSON, "", "  ")
 	data = append(data, '\n')
-	if err := os.WriteFile(filepath.Join(dir, workspace.ConfigFile), data, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, workspace.ConfigFile), data, 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", workspace.ConfigFile, err)
 	}
 	if cfg != nil {
@@ -196,13 +198,13 @@ func copyEmbeddedFile(dir, src, dst string, overwrite bool) (created, skipped []
 
 	// Ensure parent directory exists
 	if parent := filepath.Dir(destPath); parent != dir {
-		if err := os.MkdirAll(parent, 0755); err != nil {
+		if err := os.MkdirAll(parent, 0o755); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: cannot create directory %s: %v\n", parent, err)
 			return nil, nil
 		}
 	}
 
-	if err := os.WriteFile(destPath, data, 0644); err != nil {
+	if err := os.WriteFile(destPath, data, 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: cannot write %s: %v\n", dst, err)
 		return nil, nil
 	}
@@ -216,7 +218,7 @@ func writeFileIfNotExists(dir, dst, content string) (created, skipped []string) 
 		return nil, []string{dst}
 	}
 
-	if err := os.WriteFile(destPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(destPath, []byte(content), 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: cannot write %s: %v\n", dst, err)
 		return nil, nil
 	}
