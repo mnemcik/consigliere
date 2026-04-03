@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="f2bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f0f23"/>
+      <stop offset="100%" style="stop-color:#1a1a3e"/>
+    </linearGradient>
+    <linearGradient id="f2gold" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f0d060"/>
+      <stop offset="100%" style="stop-color:#c9a227"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <circle cx="200" cy="200" r="185" fill="url(#f2bg)"/>
+  <circle cx="200" cy="200" r="175" fill="none" stroke="url(#f2gold)" stroke-width="2"/>
+  <!-- Fedora hat silhouette -->
+  <g transform="translate(200,145)" fill="url(#f2gold)">
+    <!-- Hat crown -->
+    <ellipse cx="0" cy="-20" rx="55" ry="35"/>
+    <!-- Hat crease/dent -->
+    <path d="M-40,-30 Q-20,-55 0,-45 Q20,-55 40,-30" fill="url(#f2bg)" stroke="url(#f2gold)" stroke-width="1.5"/>
+    <!-- Brim -->
+    <ellipse cx="0" cy="5" rx="85" ry="18"/>
+    <!-- Band -->
+    <rect x="-55" y="-12" width="110" height="8" rx="2" fill="url(#f2bg)" stroke="url(#f2gold)" stroke-width="1"/>
+  </g>
+  <!-- Text -->
+  <text x="200" y="255" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif"
+        font-size="40" font-weight="bold" fill="url(#f2gold)" letter-spacing="2">Consigliere</text>
+  <!-- Tagline -->
+  <text x="200" y="285" text-anchor="middle" font-family="'Helvetica Neue', Arial, sans-serif"
+        font-size="13" fill="#7a7a9a" letter-spacing="3">YOUR TRUSTED ADVISOR</text>
+  <!-- Decorative dots -->
+  <circle cx="120" cy="268" r="2" fill="url(#f2gold)" opacity="0.5"/>
+  <circle cx="280" cy="268" r="2" fill="url(#f2gold)" opacity="0.5"/>
+</svg>

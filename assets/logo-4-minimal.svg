@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="m4grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#e2b714"/>
+      <stop offset="100%" style="stop-color:#d4a010"/>
+    </linearGradient>
+  </defs>
+  <!-- Clean dark background -->
+  <rect width="400" height="400" rx="40" fill="#111122"/>
+  <!-- Large C with nested G -->
+  <text x="175" y="255" font-family="Georgia, 'Times New Roman', serif"
+        font-size="200" font-weight="bold" fill="url(#m4grad)" opacity="0.15">C</text>
+  <!-- Bold CG -->
+  <text x="200" y="235" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif"
+        font-size="110" font-weight="bold" fill="url(#m4grad)">cg</text>
+  <!-- Underline accent -->
+  <rect x="115" y="250" width="170" height="3" rx="1.5" fill="url(#m4grad)"/>
+  <!-- Name -->
+  <text x="200" y="290" text-anchor="middle" font-family="'Helvetica Neue', Arial, sans-serif"
+        font-size="18" fill="#888899" letter-spacing="8">CONSIGLIERE</text>
+</svg>

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="s1bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <linearGradient id="s1gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#e2b714"/>
+      <stop offset="100%" style="stop-color:#c9a227"/>
+    </linearGradient>
+  </defs>
+  <!-- Dark circle background -->
+  <circle cx="200" cy="200" r="185" fill="url(#s1bg)"/>
+  <!-- Outer gold ring -->
+  <circle cx="200" cy="200" r="175" fill="none" stroke="url(#s1gold)" stroke-width="2.5"/>
+  <circle cx="200" cy="200" r="165" fill="none" stroke="url(#s1gold)" stroke-width="0.8" opacity="0.4"/>
+  <!-- Shield outline -->
+  <path d="M200 65 L315 130 L315 235 Q315 320 200 350 Q85 320 85 235 L85 130 Z"
+        fill="none" stroke="url(#s1gold)" stroke-width="2" opacity="0.5"/>
+  <!-- CG monogram -->
+  <text x="200" y="228" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif"
+        font-size="125" font-weight="bold" fill="url(#s1gold)" letter-spacing="-4">CG</text>
+  <!-- Divider -->
+  <line x1="125" y1="248" x2="275" y2="248" stroke="url(#s1gold)" stroke-width="1" opacity="0.4"/>
+  <!-- Subtitle -->
+  <text x="200" y="278" text-anchor="middle" font-family="'Helvetica Neue', Arial, sans-serif"
+        font-size="15" fill="#8a8a9a" letter-spacing="6">CONSIGLIERE</text>
+</svg>
