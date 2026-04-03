@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="assets/logo.svg" alt="Consigliere" width="200" />
-</p>
-
 <h1 align="center">Consigliere</h1>
 
 <p align="center">
