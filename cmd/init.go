@@ -4,7 +4,6 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"github.com/mnemcik/consigliere/internal/workspace"
@@ -197,7 +196,10 @@ func copyEmbeddedFile(dir, src, dst string, overwrite bool) (created, skipped []
 
 	// Ensure parent directory exists
 	if parent := filepath.Dir(destPath); parent != dir {
-		os.MkdirAll(parent, 0755)
+		if err := os.MkdirAll(parent, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: cannot create directory %s: %v\n", parent, err)
+			return nil, nil
+		}
 	}
 
 	if err := os.WriteFile(destPath, data, 0644); err != nil {
@@ -231,9 +233,6 @@ func dirExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
 }
-
-// Ensure embeddedFS satisfies the interface (compile-time check)
-var _ fs.FS = embeddedFS
 
 // Index file contents
 const indexProjectsTODO = `# Projects & Todo List

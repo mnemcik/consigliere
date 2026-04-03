@@ -20,7 +20,9 @@ func TestParseProjectIndex(t *testing.T) {
 `
 
 	indexPath := filepath.Join(dir, "TODO.md")
-	os.WriteFile(indexPath, []byte(content), 0644)
+	if err := os.WriteFile(indexPath, []byte(content), 0644); err != nil {
+		t.Fatalf("cannot write index: %v", err)
+	}
 
 	projects, err := parseProjectIndex(indexPath)
 	if err != nil {

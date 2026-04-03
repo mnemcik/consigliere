@@ -7,14 +7,20 @@ import (
 	"testing"
 )
 
+func chdir(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir to %s: %v", dir, err)
+	}
+}
+
 func TestInitCreatesWorkspace(t *testing.T) {
 	dir := t.TempDir()
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(dir)
+	defer chdir(t, origDir)
+	chdir(t, dir)
 
-	err := runInit(nil, nil)
-	if err != nil {
+	if err := runInit(nil, nil); err != nil {
 		t.Fatalf("init failed: %v", err)
 	}
 
@@ -67,15 +73,16 @@ func TestInitCreatesWorkspace(t *testing.T) {
 func TestInitSkipsExistingFiles(t *testing.T) {
 	dir := t.TempDir()
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(dir)
+	defer chdir(t, origDir)
+	chdir(t, dir)
 
 	// Create a custom PROFILE.md before init
 	customContent := "# My Custom Profile\n"
-	os.WriteFile(filepath.Join(dir, "PROFILE.md"), []byte(customContent), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "PROFILE.md"), []byte(customContent), 0644); err != nil {
+		t.Fatalf("cannot write PROFILE.md: %v", err)
+	}
 
-	err := runInit(nil, nil)
-	if err != nil {
+	if err := runInit(nil, nil); err != nil {
 		t.Fatalf("init failed: %v", err)
 	}
 
@@ -92,16 +99,17 @@ func TestInitSkipsExistingFiles(t *testing.T) {
 func TestInitGuardExistingWorkspace(t *testing.T) {
 	dir := t.TempDir()
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(dir)
+	defer chdir(t, origDir)
+	chdir(t, dir)
 
 	// First init
-	runInit(nil, nil)
+	if err := runInit(nil, nil); err != nil {
+		t.Fatalf("first init failed: %v", err)
+	}
 
 	// Second init without --force should not error (just print message)
 	forceInit = false
-	err := runInit(nil, nil)
-	if err != nil {
+	if err := runInit(nil, nil); err != nil {
 		t.Fatalf("second init should not fail: %v", err)
 	}
 }

@@ -1,7 +1,10 @@
+version: "2"
+
 run:
   timeout: 3m
 
 linters:
+  default: standard
   enable:
     - bodyclose
     - dupl
@@ -34,6 +37,9 @@ linters-settings:
     rules:
       - name: unexported-return
         disabled: true
+  gosec:
+    excludes:
+      - G306
 
 issues:
   max-issues-per-linter: 50
