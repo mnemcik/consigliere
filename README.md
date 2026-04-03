@@ -1,141 +1,177 @@
-# Consigliere (cg)
+# Consigliere
 
-A personal workspace management framework for [Claude Code](https://claude.ai/code).
+**Your trusted advisor for managing knowledge, projects, and ideas — powered by AI.**
 
-Consigliere gives you a structured, AI-friendly knowledge base for tracking **projects**, **ideas**, **notes**, **areas of responsibility**, and **insights** — all in a single git repository that any AI tool can read.
+> *In Italian, a **consigliere** (kon-seel-YEH-reh) is a trusted counselor — the person you turn to before making a decision. In the world of AI-assisted development, Consigliere plays that role: it organizes your thinking, tracks your projects, remembers what you've learned, and makes sure nothing falls through the cracks.*
+
+Consigliere (`cg`) is a CLI tool and [Claude Code](https://claude.ai/code) plugin that turns a plain git repository into a structured, AI-friendly workspace. It gives you a system for tracking **projects**, **ideas**, **notes**, **areas of responsibility**, and **insights** — all in markdown files that any AI tool can read and reason about.
+
+## Why Consigliere?
+
+Most developers accumulate knowledge across dozens of tools — Notion pages, Slack threads, scattered markdown files, browser bookmarks, mental notes. When you sit down with an AI coding assistant, all that context is invisible to it.
+
+Consigliere solves this by giving your AI assistant a **structured knowledge base** it can actually read:
+
+- **Start a session** and your AI already knows your active projects, open decisions, and areas of responsibility
+- **Capture ideas** on the fly — they flow through a lifecycle from raw thought to active project
+- **Never lose context** — session notes, technical findings, and gotchas are preserved and indexed
+- **Stay organized** without overhead — the framework does the filing, you do the thinking
 
 ## Installation
 
-### As a Claude Code plugin
+### CLI (recommended)
 
-```bash
-claude plugin add github:mnemcik/consigliere
-```
+Download the binary for your platform from [Releases](https://github.com/mnemcik/consigliere/releases) — it's a single executable, no runtime needed.
 
-### CLI tool
-
-Download the binary for your platform from [GitHub Releases](https://github.com/mnemcik/consigliere/releases), or build from source:
+Or build from source:
 
 ```bash
 go install github.com/mnemcik/consigliere@latest
 ```
 
-The binary is a single, self-contained executable with all templates embedded — no runtime or dependencies needed.
+### Claude Code plugin
+
+```bash
+claude plugin add github:mnemcik/consigliere
+```
+
+This gives you `/cg-init` and `/match-project` slash commands in addition to the CLI.
 
 ## Quick Start
 
 ```bash
 mkdir my-workspace && cd my-workspace
 cg init
+git init && git add -A && git commit -m "Initialize workspace"
 ```
 
-This creates the full workspace structure:
+That's it. You now have:
 
 ```
 my-workspace/
-├── .cg.json                # Workspace identity & config
+├── .cg.json                # Workspace identity
 ├── CLAUDE.md               # AI governance rules (framework + your customizations)
 ├── PROFILE.md              # Your role and context
 ├── areas/                  # Domains of knowledge (reference hubs)
-│   └── INDEX.md
 ├── projects/               # Active work (each project = a folder)
-│   └── TODO.md
-├── ideas/                  # Idea backlog (lightweight captures)
-│   └── BACKLOG.md
-├── notes/                  # Session findings and reference material
-│   └── INDEX.md
-├── insights/               # Draft observations about your work style
-│   └── DRAFTS.md
+├── ideas/                  # Idea backlog
+├── notes/                  # Findings and reference material
+├── insights/               # Observations about your work style
 └── templates/              # Templates for all item types
 ```
 
-Then:
-1. Edit `PROFILE.md` with your role and responsibilities
-2. Edit the `Purpose` and `Area Categories` sections in `CLAUDE.md`
-3. Define your first area in `areas/`
-4. Start capturing ideas and creating projects
+**Next steps:**
+
+1. Edit `PROFILE.md` — tell your AI assistant who you are and what you do
+2. Define your first **area** (a domain you're responsible for)
+3. Create your first **project** or capture an **idea**
+
+## How It Works
+
+### The workspace is your AI's memory
+
+When you open Claude Code (or any AI tool) in a Consigliere workspace, it reads `CLAUDE.md` and immediately understands:
+- The workspace structure and conventions
+- How to create projects, capture ideas, and take notes
+- When and how to propagate information across related items
+- What to do at the end of a session (capture findings, draft insights)
+
+### Everything flows through a lifecycle
+
+```
+Idea (raw → exploring → ready) → Project (defining → in-progress → done)
+                                        ↕
+                               Notes, Decisions, Logs
+                                        ↕
+                                  Areas (reference hubs)
+```
+
+**Ideas** are lightweight captures — a sentence or two. When they mature, they become **projects** with structured folders. **Areas** are the connective tissue — domains of knowledge that projects, ideas, and notes link to instead of duplicating context.
+
+### Your AI assistant keeps things current
+
+The CLAUDE.md governance rules instruct AI assistants to:
+- Update project files after every session
+- Propagate new information to related areas and projects
+- Capture technical findings as searchable notes
+- Draft observations about your work style (which you review before they become rules)
 
 ## CLI Commands
 
-### `cg init [--force]`
+| Command | Description |
+|---|---|
+| `cg init` | Bootstrap a new workspace |
+| `cg init --force` | Re-initialize (preserves your CLAUDE.md and PROFILE.md) |
+| `cg match <prompt>` | Find a project matching your description |
+| `cg status` | Workspace overview — counts of projects, areas, ideas, notes |
+| `cg version` | Print installed version |
 
-Bootstrap a new workspace. Creates directories, templates, index files, and governance files. Safe to run in existing directories — skips files that already exist.
-
-```bash
-cg init           # Set up a new workspace
-cg init --force   # Re-initialize (preserves CLAUDE.md and PROFILE.md)
-```
-
-### `cg match <prompt>`
-
-Match a prompt to an existing project. Returns structured output for programmatic use.
+### Examples
 
 ```bash
-cg match "OAuth identity provider strategy"
-# MATCH: OAuth & Identity Provider Strategy for VIPS
-# SLUG: oauth-idp-strategy
-# PATH: projects/oauth-idp-strategy/
-# STATUS: In Progress
+$ cg match "OAuth identity provider"
+MATCH: OAuth & Identity Provider Strategy
+SLUG: oauth-idp-strategy
+PATH: projects/oauth-idp-strategy/
+STATUS: In Progress
+
+$ cg status
+Consigliere workspace (v1.0.0)
+
+Projects: 11 total, 11 active
+Areas:    10
+Ideas:    4
+Notes:    12
 ```
-
-### `cg status`
-
-Show a quick workspace overview — project count, areas, ideas, notes.
-
-```bash
-cg status
-# Consigliere workspace (v1.0.0)
-#
-# Projects: 11 total, 11 active
-# Areas:    10
-# Ideas:    4
-# Notes:    12
-```
-
-### `cg version`
-
-Print the installed version.
-
-## Claude Code Skills
-
-The plugin also provides slash commands that wrap the CLI:
-
-- **`/cg-init`** — runs `cg init`
-- **`/match-project`** — runs `cg match` with LLM fallback for fuzzy matching
 
 ## Core Concepts
 
 ### Areas
-Domains of knowledge and responsibility — your systems, services, practices, and platforms. Reference hubs that projects, ideas, and notes link to.
+
+Areas are **reference hubs** — the single source of truth for a domain's systems, contacts, constraints, and current state. Think of them as the pillars of your knowledge: *"Identity & Auth"*, *"API Management"*, *"DevOps & Release"*. Every project, idea, and note links back to an area instead of duplicating context.
 
 ### Projects
-Each project is a folder: `README.md` (current state), `decisions.md` (append-only log), `todo.md` (actions), `log.md` (activity history).
+
+Each project is a folder with a standard structure:
+
+| File | Purpose |
+|---|---|
+| `README.md` | Current state, goals, scope — the source of truth |
+| `decisions.md` | Append-only log with status tracking (active/superseded/reversed) |
+| `todo.md` | What's next — the first place to look when picking up a project |
+| `log.md` | What happened — session summaries, newest first |
 
 ### Ideas
-Lightweight captures: `raw` → `exploring` → `ready` → project (or `parked`/`rejected`).
+
+Lightweight captures that flow through statuses: `raw` → `exploring` → `ready` → project (or `parked` / `rejected`). Low friction to capture, structured enough to act on.
 
 ### Notes
-Session findings by category: tool gotchas, workflow, architecture, process, research, troubleshooting.
+
+Session findings organized by category: tool gotchas, workflow patterns, architecture decisions, research, troubleshooting. Indexed and searchable.
 
 ### Insights
-Draft observations about how you work with AI. Never applied as rules until you promote them to CLAUDE.md.
 
-## CLAUDE.md Sections
+Draft observations about how you work with AI — prompting patterns, preferences, collaboration style. Created automatically at session end, but **never applied as rules** until you explicitly promote them. You stay in control.
 
-The generated CLAUDE.md uses HTML comment markers to separate **framework sections** (`<!-- cg:section:start=X -->`) from **user sections** (`<!-- user:section:start=X -->`). Framework sections can be updated by future versions; user sections are never touched.
+## CLAUDE.md: Framework + Your Rules
 
-## Building
+The generated `CLAUDE.md` cleanly separates what Consigliere manages from what you customize:
+
+- **Framework sections** (`<!-- cg:section:start=X -->`) — workspace rules, project structure, session-end behavior. Updated safely by future versions of Consigliere.
+- **User sections** (`<!-- user:section:start=X -->`) — your purpose, area categories, git workflow, custom conventions. Never touched by Consigliere.
+
+## Building from Source
 
 ```bash
-go build -ldflags "-X github.com/mnemcik/consigliere/cmd.Version=1.0.0" -o cg .
+git clone https://github.com/mnemcik/consigliere.git
+cd consigliere
+make build    # → ./cg binary
+make test     # Run tests
+make lint     # Run linters
+make check    # Everything: fmt, tidy, lint, test
 ```
 
-Cross-compile:
-```bash
-GOOS=darwin  GOARCH=arm64 go build -ldflags "-X github.com/mnemcik/consigliere/cmd.Version=1.0.0" -o cg-darwin-arm64 .
-GOOS=linux   GOARCH=amd64 go build -ldflags "-X github.com/mnemcik/consigliere/cmd.Version=1.0.0" -o cg-linux-amd64 .
-GOOS=windows GOARCH=amd64 go build -ldflags "-X github.com/mnemcik/consigliere/cmd.Version=1.0.0" -o cg-windows-amd64.exe .
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development details.
 
 ## License
 
