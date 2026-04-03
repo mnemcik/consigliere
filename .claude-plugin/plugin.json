@@ -1,0 +1,11 @@
+{
+  "name": "grimoire",
+  "version": "1.0.0",
+  "description": "Personal workspace management framework for Claude Code. Provides structure, templates, and conventions for organizing projects, ideas, notes, areas, and insights.",
+  "author": {
+    "name": "Matus Nemcik"
+  },
+  "repository": "https://github.com/mnemcik/grimoire",
+  "license": "MIT",
+  "keywords": ["workspace", "knowledge-base", "projects", "ideas", "notes", "productivity"]
+}
