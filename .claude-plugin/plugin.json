@@ -1,11 +1,11 @@
 {
-  "name": "grimoire",
+  "name": "second-brain",
   "version": "1.0.0",
   "description": "Personal workspace management framework for Claude Code. Provides structure, templates, and conventions for organizing projects, ideas, notes, areas, and insights.",
   "author": {
     "name": "Matus Nemcik"
   },
-  "repository": "https://github.com/mnemcik/grimoire",
+  "repository": "https://github.com/mnemcik/second-brain",
   "license": "MIT",
-  "keywords": ["workspace", "knowledge-base", "projects", "ideas", "notes", "productivity"]
+  "keywords": ["workspace", "knowledge-base", "projects", "ideas", "notes", "productivity", "second-brain"]
 }

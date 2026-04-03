@@ -1,25 +1,25 @@
 ---
-name: grimoire-init
+name: 2b-init
 description: >-
-  Bootstrap a new grimoire workspace in the current directory. Creates the folder structure,
-  templates, index files, .grimoire.json, CLAUDE.md, and PROFILE.md. Use when the user wants
-  to set up a new personal workspace or knowledge base, or says "init grimoire", "create workspace",
-  or "set up a grimoire workspace".
+  Bootstrap a new Second Brain workspace in the current directory. Creates the folder structure,
+  templates, index files, .2b.json, CLAUDE.md, and PROFILE.md. Use when the user wants
+  to set up a new personal workspace or knowledge base, or says "init 2b", "create workspace",
+  "set up a second brain", or "init second brain".
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep, Edit
 argument-hint: "[--force]"
 ---
 
-# /grimoire-init — Workspace Bootstrapper
+# /2b-init — Workspace Bootstrapper
 
-Set up a new grimoire-managed workspace in the current working directory.
+Set up a new Second Brain workspace in the current working directory.
 
 ## Step 1: Guard — Check for existing workspace
 
-Read `.grimoire.json` in the current directory.
+Read `.2b.json` in the current directory.
 
-- If it exists and `$ARGUMENTS` does NOT contain `--force`: report "This directory is already a grimoire workspace (version {version}). Use `/grimoire-init --force` to re-initialize." and stop.
-- If it exists and `$ARGUMENTS` contains `--force`: proceed, but **do not overwrite CLAUDE.md or PROFILE.md** if they exist (the user may have customized them). Only overwrite `.grimoire.json` and templates.
+- If it exists and `$ARGUMENTS` does NOT contain `--force`: report "This directory is already a Second Brain workspace (version {version}). Use `/2b-init --force` to re-initialize." and stop.
+- If it exists and `$ARGUMENTS` contains `--force`: proceed, but **do not overwrite CLAUDE.md or PROFILE.md** if they exist (the user may have customized them). Only overwrite `.2b.json` and templates.
 - If it does not exist: proceed normally.
 
 ## Step 2: Locate plugin templates
@@ -27,7 +27,7 @@ Read `.grimoire.json` in the current directory.
 The templates bundled with this plugin are located at `../../templates/` relative to this SKILL.md file. Use Glob to find the exact path:
 
 ```
-**/grimoire/templates/idea.md
+**/second-brain/templates/idea.md
 ```
 
 Once you find one template file, derive the base template directory from its path. All templates are under that directory:
@@ -43,7 +43,7 @@ Once you find one template file, derive the base template directory from its pat
 - `{base}/project/references.md`
 - `{base}/workspace/CLAUDE.md`
 - `{base}/workspace/PROFILE.md`
-- `{base}/workspace/.grimoire.json`
+- `{base}/workspace/.2b.json`
 - `{base}/workspace/.gitignore`
 
 ## Step 3: Create directory structure
@@ -163,9 +163,9 @@ Promoted insights get their suggested rule added to CLAUDE.md.
 
 ## Step 6: Create workspace metadata
 
-### .grimoire.json
+### .2b.json
 
-Read the `.grimoire.json` template from the plugin's `workspace/` directory and write it to the workspace root. This records the grimoire version used during initialization.
+Read the `.2b.json` template from the plugin's `workspace/` directory and write it to the workspace root. This records the Second Brain version used during initialization.
 
 ### CLAUDE.md
 
@@ -176,7 +176,7 @@ If CLAUDE.md does NOT exist in the workspace root:
 If CLAUDE.md already exists:
 - Do NOT overwrite it
 - Instead, note in the summary that the user should manually merge framework sections if desired
-- Write the template to `CLAUDE.grimoire-template.md` as a reference
+- Write the template to `CLAUDE.2b-template.md` as a reference
 
 ### PROFILE.md
 
@@ -201,7 +201,7 @@ If .gitignore already exists:
 Print a clear summary report:
 
 ```
-## Grimoire workspace initialized
+## Second Brain workspace initialized
 
 **Version:** 1.0.0
 
@@ -221,7 +221,7 @@ Print a clear summary report:
 
 If CLAUDE.md was skipped, add:
 ```
-> **Note:** CLAUDE.md already existed and was not overwritten. A reference copy of the grimoire
-> framework template has been saved to `CLAUDE.grimoire-template.md`. You may want to merge
+> **Note:** CLAUDE.md already existed and was not overwritten. A reference copy of the Second Brain
+> framework template has been saved to `CLAUDE.2b-template.md`. You may want to merge
 > framework sections into your existing CLAUDE.md.
 ```

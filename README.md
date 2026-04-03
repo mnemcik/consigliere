@@ -1,13 +1,13 @@
-# Grimoire
+# Second Brain (2b)
 
 A personal workspace management framework for [Claude Code](https://claude.ai/code).
 
-Grimoire gives you a structured, AI-friendly knowledge base for tracking **projects**, **ideas**, **notes**, **areas of responsibility**, and **insights** — all in a single git repository that any AI tool can read.
+Second Brain gives you a structured, AI-friendly knowledge base for tracking **projects**, **ideas**, **notes**, **areas of responsibility**, and **insights** — all in a single git repository that any AI tool can read.
 
 ## Installation
 
 ```bash
-claude plugin add github:mnemcik/grimoire
+claude plugin add github:mnemcik/second-brain
 ```
 
 ## Quick Start
@@ -15,14 +15,14 @@ claude plugin add github:mnemcik/grimoire
 Open Claude Code in an empty directory (or an existing repo) and run:
 
 ```
-/grimoire-init
+/2b-init
 ```
 
 This creates the full workspace structure:
 
 ```
 your-workspace/
-├── .grimoire.json          # Workspace identity & config
+├── .2b.json                # Workspace identity & config
 ├── CLAUDE.md               # AI governance rules (framework + your customizations)
 ├── PROFILE.md              # Your role and context
 ├── areas/                  # Domains of knowledge (reference hubs)
@@ -57,13 +57,13 @@ Then:
 
 ## Skills
 
-### `/grimoire-init`
+### `/2b-init`
 
-Bootstraps a new grimoire workspace. Creates directories, templates, index files, and governance files. Safe to run in existing directories — it skips files that already exist.
+Bootstraps a new Second Brain workspace. Creates directories, templates, index files, and governance files. Safe to run in existing directories — it skips files that already exist.
 
 ```
-/grimoire-init           # Set up a new workspace
-/grimoire-init --force   # Re-initialize (preserves CLAUDE.md and PROFILE.md)
+/2b-init           # Set up a new workspace
+/2b-init --force   # Re-initialize (preserves CLAUDE.md and PROFILE.md)
 ```
 
 ### `/match-project`
@@ -101,14 +101,14 @@ Draft observations about how you work with AI. Created automatically at session 
 
 ## CLAUDE.md Sections
 
-The generated CLAUDE.md uses HTML comment markers to separate **framework sections** (managed by grimoire) from **user sections** (yours to customize):
+The generated CLAUDE.md uses HTML comment markers to separate **framework sections** (managed by Second Brain) from **user sections** (yours to customize):
 
-- **Framework sections** (`<!-- grimoire:section:start=X -->`) — workspace rules, project structure, session-end behavior. Updated by `/grimoire-update` (coming in v1.1).
-- **User sections** (`<!-- user:section:start=X -->`) — your purpose, area categories, git workflow, custom conventions. Never touched by grimoire.
+- **Framework sections** (`<!-- 2b:section:start=X -->`) — workspace rules, project structure, session-end behavior. Updated by `/2b-update` (coming in v1.1).
+- **User sections** (`<!-- user:section:start=X -->`) — your purpose, area categories, git workflow, custom conventions. Never touched by Second Brain.
 
 ## Versioning
 
-`.grimoire.json` records the grimoire version used to initialize the workspace. Future releases will include a `/grimoire-update` skill to update framework sections in your CLAUDE.md without touching your customizations.
+`.2b.json` records the Second Brain version used to initialize the workspace. Future releases will include a `/2b-update` skill to update framework sections in your CLAUDE.md without touching your customizations.
 
 ## License
 
