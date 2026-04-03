@@ -151,6 +151,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 	created = append(created, c...)
 	skipped = append(skipped, s...)
 
+	// Claude Code slash commands (.claude/commands/)
+	commands := map[string]string{
+		"embed_templates/commands/match-project.md": filepath.Join(".claude", "commands", "match-project.md"),
+		"embed_templates/commands/cg-init.md":       filepath.Join(".claude", "commands", "cg-init.md"),
+	}
+	for src, dst := range commands {
+		c, s := copyEmbeddedFile(dir, src, dst, forceInit)
+		created = append(created, c...)
+		skipped = append(skipped, s...)
+	}
+
 	// Summary
 	fmt.Println()
 	fmt.Println("## Consigliere workspace initialized")
