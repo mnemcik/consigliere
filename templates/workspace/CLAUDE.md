@@ -30,6 +30,39 @@ Instead, persist all learnings, preferences, references, and feedback **in this 
 If something is worth remembering, it should be committed to the repo where any tool can read it.
 <!-- cg:section:end=memory-policy -->
 
+<!-- cg:section:start=session-start -->
+## Session-Start Rule: Identify Project and Area
+
+**This is a mandatory gate. No work may begin until this rule is satisfied.**
+
+Every session that involves meaningful work (code changes, research, analysis, document creation) MUST be associated with a **project** and at least one **area**. The only exceptions are when the user explicitly says otherwise (e.g., "just a quick question", "no project needed", "skip the project").
+
+### Procedure
+
+1. **Identify the area.** From the user's request, determine which area(s) from `areas/INDEX.md` the work relates to. If the request mentions a repository, tool, service, or domain, match it to an area.
+2. **Read the area file.** Before doing anything else, read the matched area file(s) to load context, constraints, and repo conventions.
+3. **Identify the project.** Check `projects/TODO.md` for an existing project that covers this work. If no project exists, create one using the standard project creation workflow (see "Creating a New Project" below).
+4. **Read the project files.** Read the project's `README.md` and `todo.md` to understand current state and pending work.
+5. **Proceed with work.** Only after steps 1–4 are complete.
+
+### When identification fails
+
+If the area or project cannot be determined from the user's request:
+- **Do NOT guess or proceed without them.**
+- **Stop and ask the user** which area and/or project this work belongs to, or whether they want a new project created.
+- Suggest the closest matching area(s) and project(s) if possible, to make it easy for the user to confirm.
+
+### What counts as "explicitly skipped"
+
+The user must clearly indicate that project tracking is not needed. Examples:
+- "no project for this"
+- "just a quick question"
+- "skip the project stuff"
+- Idea capture (`idea: ...`) — these follow the Idea Capture workflow instead
+
+Ambiguous requests (e.g., "fix this bug", "update the docs") are NOT exempt — they need a project.
+<!-- cg:section:end=session-start -->
+
 <!-- cg:section:start=idea-capture -->
 ## Idea Capture
 
@@ -77,7 +110,11 @@ Define your area categories here. Areas typically fall into two types:
 
 ### Linking to Areas from Projects
 
-When working on a project, **read its associated area file(s) first** to understand the current context, constraints, and contacts. This avoids asking questions that are already answered and prevents duplicating information across project files.
+Every project MUST link to at least one area. When starting work on a project, **read its associated area file(s) first** to understand the current context, constraints, and contacts. This is enforced by the Session-Start Rule above.
+
+### External Repo → Area Lookup
+
+When the user asks to work on a repository outside this knowledge base (e.g., a tool or service), **check `areas/INDEX.md` for a matching area before starting work.** If an area exists, read it — it contains repo conventions (branch naming, PR title format, CI rules), architecture constraints, and context that must be followed. If no area exists, create one before proceeding. This applies whether the user names the repo explicitly or describes the tool/service by function.
 <!-- cg:section:end=area-rules -->
 
 <!-- cg:section:start=project-structure -->
@@ -221,10 +258,12 @@ Observations about how the user prefers to work with Claude — prompting patter
 
 - Idea statuses: `raw` → `exploring` → `ready` → `parked` | `rejected`
 - Project statuses: `defining` → `in-progress` → `done` | `on-hold`
+- Project priorities: `high` | `medium` | `low` — stored in each project's README.md Meta section and in `projects/TODO.md` (sorted by priority)
 - Area categories: `Service/System` | `Practice/Platform`
 - Tags on ideas are free-form. Use them to group and filter.
 - Areas on all items are mandatory. Use area slugs from `areas/INDEX.md`.
 - Not everything becomes a ticket — projects may produce tools, docs, automation, or just notes.
+- **Pull request URLs:** Always provide full URLs (e.g., `https://github.com/org/repo/pull/123`) when referencing pull requests, not shorthand like `org/repo#123`. The user needs clickable links to navigate directly.
 <!-- cg:section:end=conventions -->
 
 <!-- user:section:start=custom-conventions -->
