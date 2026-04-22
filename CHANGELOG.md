@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - `.github/dependabot.yml` — weekly updates for `gomod` and `github-actions`
 - `.github/ISSUE_TEMPLATE/config.yml` — disables blank issues, surfaces the security contact
 - README maturity + project docs sections
+- `install.sh` — one-liner installer for Linux/macOS: platform detection, checksum verification, state file at `${XDG_CONFIG_HOME:-$HOME/.config}/consigliere/installed.json`, supports `--tag`, `--dir`, `--force`, `CG_INSTALL_TAG`, `CG_INSTALL_DIR`
 
 ### Changed
 
