@@ -30,11 +30,19 @@ Consigliere solves this by giving your AI assistant a **structured knowledge bas
 
 ## 📦 Installation
 
-### CLI (recommended)
+### One-liner (Linux / macOS)
 
-Download the binary for your platform from [Releases](https://github.com/mnemcik/consigliere/releases) — it's a **single executable, no runtime needed**.
+```bash
+curl -fsSL https://raw.githubusercontent.com/mnemcik/consigliere/main/install.sh | bash
+```
 
-Or build from source:
+Downloads the latest release, verifies its SHA-256 against `checksums.txt`, and installs `cg` to `~/.local/bin`. Pin a specific version with `| bash -s -- --tag v1.2.3`, install elsewhere with `CG_INSTALL_DIR=/usr/local/bin`, or see `install.sh --help` for all flags.
+
+### Manual download
+
+Grab the archive for your platform from [Releases](https://github.com/mnemcik/consigliere/releases) and extract the `cg` binary anywhere on your `$PATH`. It's a **single executable, no runtime needed** — Windows builds ship as `.zip`, everything else as `.tar.gz`.
+
+### Build from source
 
 ```bash
 go install github.com/mnemcik/consigliere@latest
