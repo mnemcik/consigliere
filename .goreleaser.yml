@@ -33,6 +33,28 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+homebrew_casks:
+  - name: cg
+    repository:
+      owner: mnemcik
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/mnemcik/consigliere"
+    description: "Your trusted advisor for managing knowledge, projects, and ideas — powered by AI."
+    license: "MIT"
+    binaries: [cg]
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/cg"]
+          end
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "chore(cg): bump to {{ .Tag }}"
+
 changelog:
   sort: asc
   filters:
