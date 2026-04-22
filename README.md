@@ -40,13 +40,9 @@ Or build from source:
 go install github.com/mnemcik/consigliere@latest
 ```
 
-### As a Claude Code plugin
+### Claude Code slash commands
 
-```bash
-claude plugin add github:mnemcik/consigliere
-```
-
-This gives you `/cg-init` and `/match-project` slash commands in addition to the CLI.
+`cg init` installs `/cg-init` and `/match-project` into the workspace's `.claude/commands/` directory. No separate plugin install step.
 
 ## 🚀 Quick Start
 
@@ -187,6 +183,17 @@ make check    # ✅ Everything
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development details.
+
+## 📊 Status
+
+**Beta — v1.0.0 shipped, small user base.** The CLI surface (`init`, `match`, `status`, `version`) is stable and covered by tests. Framework conventions (sentinel-delimited sections, `.cg.json`, template set) are in active evolution and may change between minor releases; migrations will be documented in `CHANGELOG.md`.
+
+## 📖 Project docs
+
+- [Contributing](CONTRIBUTING.md) — setup, common tasks, release process, commit conventions
+- [Security policy](SECURITY.md) — how to report vulnerabilities privately
+- [Code of conduct](CODE_OF_CONDUCT.md) — Contributor Covenant 2.1
+- [Changelog](CHANGELOG.md) — Keep a Changelog format, semver
 
 ## 📄 License
 
