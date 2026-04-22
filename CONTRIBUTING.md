@@ -6,7 +6,7 @@ Thank you for considering contributing to Consigliere.
 
 ### Prerequisites
 
-- Go 1.21+ (`go version`)
+- Go 1.25+ (`go version`) — matches `go.mod`
 - golangci-lint (`brew install golangci-lint` or see [install docs](https://golangci-lint.run/welcome/install/))
 
 ### Setup
@@ -56,6 +56,14 @@ After editing a template in `templates/`, copy it to `cmd/embed_templates/`:
 ```bash
 cp templates/idea.md cmd/embed_templates/idea.md
 ```
+
+## Submitting changes
+
+- Open a pull request against `main`.
+- PR titles follow [Conventional Commits](https://www.conventionalcommits.org/) (see below) — they become the squash-merge commit subject.
+- Run `make check` locally before pushing.
+- CI (lint + test + cross-platform build) must be green.
+- No DCO sign-off is required.
 
 ## Release process
 

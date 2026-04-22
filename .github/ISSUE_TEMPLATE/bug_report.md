@@ -23,5 +23,6 @@ What you expected to happen.
 ## Environment
 
 - OS: [e.g., macOS 15, Ubuntu 24.04, Windows 11]
-- `cg version` output:
 - Shell: [e.g., zsh, bash, PowerShell]
+- `cg version` output:
+- `go version` output (only if building from source):
