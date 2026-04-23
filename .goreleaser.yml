@@ -40,6 +40,7 @@ homebrew_casks:
       name: homebrew-tap
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    skip_upload: auto
     homepage: "https://github.com/mnemcik/consigliere"
     description: "Your trusted advisor for managing knowledge, projects, and ideas — powered by AI."
     license: "MIT"
