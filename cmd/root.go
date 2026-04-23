@@ -8,9 +8,17 @@ import (
 var Version = "dev"
 
 var rootCmd = &cobra.Command{
-	Use:   "cg",
-	Short: "Consigliere — personal workspace management",
-	Long:  "Consigliere (cg) is a personal workspace management framework.\nIt provides structure, templates, and conventions for organizing projects, ideas, notes, areas, and insights.",
+	Use:     "cg",
+	Short:   "Consigliere — personal workspace management",
+	Long:    "Consigliere (cg) is a personal workspace management framework.\nIt provides structure, templates, and conventions for organizing projects, ideas, notes, areas, and insights.",
+	Version: Version,
+}
+
+func init() {
+	rootCmd.InitDefaultVersionFlag()
+	if f := rootCmd.Flags().Lookup("version"); f != nil {
+		f.Shorthand = "v"
+	}
 }
 
 func Execute() error {
