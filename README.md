@@ -30,6 +30,14 @@ Consigliere solves this by giving your AI assistant a **structured knowledge bas
 
 ## 📦 Installation
 
+### Homebrew (macOS / Linux)
+
+```bash
+brew install mnemcik/tap/cg
+```
+
+Upgrades follow the standard `brew upgrade` flow.
+
 ### One-liner (Linux / macOS)
 
 ```bash

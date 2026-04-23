@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - `.github/ISSUE_TEMPLATE/config.yml` — disables blank issues, surfaces the security contact
 - README maturity + project docs sections
 - `install.sh` — one-liner installer for Linux/macOS: platform detection, checksum verification, state file at `${XDG_CONFIG_HOME:-$HOME/.config}/consigliere/installed.json`, supports `--tag`, `--dir`, `--force`, `CG_INSTALL_TAG`, `CG_INSTALL_DIR`
+- Homebrew tap (`mnemcik/homebrew-tap`) — `brew install mnemcik/tap/cg`. GoReleaser publishes a Homebrew Cask on each release (removes macOS quarantine xattr on install). Requires `HOMEBREW_TAP_GITHUB_TOKEN` secret on the repo.
 
 ### Changed
 
