@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit config for mnemcik/consigliere.
+# Reference: https://docs.coderabbit.ai/guides/configure-coderabbit
+
+language: en-US
+early_access: false
+tone_instructions: |
+  Solo-maintained Go CLI. Keep reviews concise and actionable.
+  Don't restate obvious things or add decorative commentary.
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+
+  path_filters:
+    - "!cmd/embed_templates/**"
+    - "!dist/**"
+    - "!vendor/**"
+
+  path_instructions:
+    - path: "**/*.go"
+      instructions: |
+        Focus on unhandled errors, goroutine leaks, nil-deref risk, and concurrency races.
+        Skip idiomatic-style nits — golangci-lint already runs in CI.
+    - path: "cmd/**/*.go"
+      instructions: |
+        Cobra commands. Flag anything that breaks backward compatibility of CLI flags
+        or output format without a corresponding CHANGELOG entry under [Unreleased].
+    - path: "install.sh"
+      instructions: |
+        POSIX-leaning bash. Must work under `curl … | bash` — stdin is the script pipe,
+        so interactive prompts go through /dev/tty. Portability targets macOS and Linux.
+    - path: ".github/workflows/**"
+      instructions: |
+        Focus on secret handling and least-privilege permissions.
+        Third-party actions pinned by major version are acceptable (Dependabot bumps them).
+    - path: ".goreleaser.yml"
+      instructions: |
+        Watch for deprecations — `brews:` is slated for removal in v3 and
+        `homebrew_casks.binary` (singular) is deprecated since v2.12.6.
+        Flag any use of deprecated fields.
+    - path: "templates/**"
+    - path: "CLAUDE.md"
+      instructions: |
+        Embedded framework templates and rules for Consigliere workspaces.
+        Content changes here affect every `cg init`'d workspace.
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+    ignore_usernames:
+      - "dependabot[bot]"
+      - "goreleaserbot"
+
+chat:
+  auto_reply: true
