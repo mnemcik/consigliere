@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- `cg --version` / `cg -v` root flags — identical output to `cg version` (`cg version <semver>`). The existing `cg version` subcommand is unchanged.
+
 ## [1.0.1] - 2026-04-23
 
 Distribution-only release — no Go code changes vs `v1.0.0`. Ships the public-release hygiene + install infrastructure.

@@ -7,11 +7,12 @@ import (
 
 func TestVersionSubcommand(t *testing.T) {
 	oldVersion := Version
+	oldRootVersion := rootCmd.Version
 	Version = "test-1.2.3"
 	rootCmd.Version = Version
 	defer func() {
 		Version = oldVersion
-		rootCmd.Version = oldVersion
+		rootCmd.Version = oldRootVersion
 	}()
 
 	buf := new(bytes.Buffer)

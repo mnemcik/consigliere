@@ -13,7 +13,8 @@ func init() {
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the Consigliere version",
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Fprintf(cmd.OutOrStdout(), "cg version %s\n", Version)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		_, err := fmt.Fprintf(cmd.OutOrStdout(), "cg version %s\n", Version)
+		return err
 	},
 }
