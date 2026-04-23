@@ -11,7 +11,7 @@ tone_instructions: |
 
 reviews:
   profile: chill
-  request_changes_workflow: false
+  request_changes_workflow: true
   high_level_summary: true
   poem: false
   review_status: true
@@ -56,7 +56,6 @@ reviews:
     base_branches:
       - main
     ignore_usernames:
-      - "dependabot[bot]"
       - "goreleaserbot"
 
 chat:
