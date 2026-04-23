@@ -45,10 +45,14 @@ reviews:
         `homebrew_casks.binary` (singular) is deprecated since v2.12.6.
         Flag any use of deprecated fields.
     - path: "templates/**"
+      instructions: |
+        Embedded framework templates. Flag backward-incompatible changes to
+        generated workspace structure, file names, or template variables —
+        they affect every `cg init`'d workspace.
     - path: "CLAUDE.md"
       instructions: |
-        Embedded framework templates and rules for Consigliere workspaces.
-        Content changes here affect every `cg init`'d workspace.
+        Framework rules for Consigliere workspaces. Content changes here
+        affect every `cg init`'d workspace.
 
   auto_review:
     enabled: true
