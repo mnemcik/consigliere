@@ -197,7 +197,7 @@ TARGET="$INSTALL_DIR/cg"
 mkdir -p "$INSTALL_DIR" || fail "Could not create $INSTALL_DIR. Pass --dir <path> to install somewhere else."
 
 if [[ -e "$TARGET" && $FORCE -eq 0 ]]; then
-  EXISTING_VERSION="$("$TARGET" version 2>/dev/null | head -n1 || echo "unknown")"
+  EXISTING_VERSION="$("$TARGET" version 2>/dev/null | head -n1 | sed -E 's/^cg version //' || echo "unknown")"
   warn "$TARGET already exists ($EXISTING_VERSION)."
   if ! confirm "Overwrite with $TAG?"; then
     fail "Aborted by user. Re-run with --force to skip this prompt."
@@ -209,7 +209,10 @@ chmod +x "$TARGET"
 ok "Installed $TARGET"
 
 # ----- 8. verify -----
-INSTALLED_VERSION="$("$TARGET" version 2>/dev/null | head -n1 || echo "$TAG")"
+# `cg version` prints `cg version X.Y.Z` (full line). Strip the prefix so
+# $INSTALLED_VERSION holds just the version token, both for the log line
+# below and for the state file's `version` field.
+INSTALLED_VERSION="$("$TARGET" version 2>/dev/null | head -n1 | sed -E 's/^cg version //' || echo "$TAG")"
 ok "cg $INSTALLED_VERSION is ready"
 
 # ----- 9. state file -----
