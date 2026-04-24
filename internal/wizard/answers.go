@@ -23,7 +23,10 @@ type Answers struct {
 }
 
 // HasFirstArea reports whether the user provided enough to generate a first
-// area file. Empty slug means the user skipped the area step.
+// area file. Empty slug means the user skipped the area step. Nil-safe.
 func (a *Answers) HasFirstArea() bool {
+	if a == nil {
+		return false
+	}
 	return a.AreaSlug != "" && a.AreaName != ""
 }

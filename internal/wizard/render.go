@@ -10,6 +10,9 @@ import (
 // answers. Callers write this to the workspace root, overwriting the default
 // template that `cg init` copies.
 func RenderProfile(a *Answers) string {
+	if a == nil {
+		a = &Answers{}
+	}
 	var b strings.Builder
 	b.WriteString("# Profile\n\n")
 	b.WriteString("## Role\n\n")
@@ -44,6 +47,9 @@ func RenderProfile(a *Answers) string {
 // wizard collected. `today` should be "YYYY-MM-DD" — injected by the caller so
 // tests are deterministic.
 func RenderArea(a *Answers, today string) string {
+	if a == nil {
+		return ""
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n\n", a.AreaName)
 	b.WriteString("## Meta\n\n")
@@ -79,6 +85,9 @@ func RenderArea(a *Answers, today string) string {
 // found, the input is returned unchanged — callers should fall back to
 // appending manually or surfacing a warning.
 func InsertAreaIndexRow(index string, a *Answers) string {
+	if a == nil {
+		return index
+	}
 	section := "## Service/System Areas"
 	if a.AreaCategory == "Practice/Platform" {
 		section = "## Practice/Platform Areas"

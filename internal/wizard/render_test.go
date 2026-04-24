@@ -212,6 +212,23 @@ func TestInsertAreaIndexRow_EscapesPipesAndNewlines(t *testing.T) {
 	}
 }
 
+func TestRenderers_NilSafe(t *testing.T) {
+	if got := RenderProfile(nil); !strings.Contains(got, "[Your role and organization]") {
+		t.Errorf("RenderProfile(nil) should render placeholder profile, got:\n%s", got)
+	}
+	if got := RenderArea(nil, "2026-04-24"); got != "" {
+		t.Errorf("RenderArea(nil) = %q, want empty string", got)
+	}
+	index := "## Service/System Areas\n\n| A | B | C |\n|---|---|---|\n"
+	if got := InsertAreaIndexRow(index, nil); got != index {
+		t.Errorf("InsertAreaIndexRow(_, nil) should return input unchanged")
+	}
+	var a *Answers
+	if a.HasFirstArea() {
+		t.Errorf("(*Answers)(nil).HasFirstArea() should be false")
+	}
+}
+
 func TestAnswersHasFirstArea(t *testing.T) {
 	cases := []struct {
 		a    Answers
