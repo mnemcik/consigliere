@@ -24,6 +24,6 @@ type Answers struct {
 
 // HasFirstArea reports whether the user provided enough to generate a first
 // area file. Empty slug means the user skipped the area step.
-func (a Answers) HasFirstArea() bool {
+func (a *Answers) HasFirstArea() bool {
 	return a.AreaSlug != "" && a.AreaName != ""
 }

@@ -28,7 +28,7 @@ func TestRenderProfile_WithAnswers(t *testing.T) {
 		ProfileRole:  "Staff engineer at Acme",
 		ProfileFocus: "API design\nBacklog hygiene",
 	}
-	got := RenderProfile(a)
+	got := RenderProfile(&a)
 	for _, s := range []string{
 		"Staff engineer at Acme",
 		"- API design",
@@ -42,7 +42,7 @@ func TestRenderProfile_WithAnswers(t *testing.T) {
 }
 
 func TestRenderProfile_EmptyAnswersFallsBackToPlaceholders(t *testing.T) {
-	got := RenderProfile(Answers{})
+	got := RenderProfile(&Answers{})
 	for _, s := range []string{
 		"[Your role and organization]",
 		"[Primary responsibility]",
@@ -63,7 +63,7 @@ func TestRenderArea(t *testing.T) {
 		AreaCategory: "Service/System",
 		AreaOverview: "Computes pension benefits.",
 	}
-	got := RenderArea(a, "2026-04-24")
+	got := RenderArea(&a, "2026-04-24")
 	for _, s := range []string{
 		"# Pension Calculation",
 		"- **Slug:** `pension-calc`",
@@ -94,7 +94,7 @@ func TestInsertAreaIndexRow_EmptyTable(t *testing.T) {
 		AreaSlug: "pension-calc", AreaName: "Pension Calc",
 		AreaCategory: "Service/System", AreaOverview: "Pensions. Done.",
 	}
-	got := InsertAreaIndexRow(index, a)
+	got := InsertAreaIndexRow(index, &a)
 	wantRow := "| [Pension Calc](pension-calc.md) | `pension-calc` | Pensions |"
 	if !strings.Contains(got, wantRow) {
 		t.Errorf("expected row %q in output, got:\n%s", wantRow, got)
@@ -125,7 +125,7 @@ func TestInsertAreaIndexRow_PracticePlatformCategory(t *testing.T) {
 		AreaSlug: "devops", AreaName: "DevOps",
 		AreaCategory: "Practice/Platform", AreaOverview: "CI/CD",
 	}
-	got := InsertAreaIndexRow(index, a)
+	got := InsertAreaIndexRow(index, &a)
 	ppIdx := strings.Index(got, "## Practice/Platform Areas")
 	rowIdx := strings.Index(got, "| [DevOps](devops.md) | `devops` |")
 	if rowIdx <= ppIdx {
@@ -144,9 +144,9 @@ func TestInsertAreaIndexRow_AppendsAfterExistingRows(t *testing.T) {
 		AreaSlug: "new-one", AreaName: "New",
 		AreaCategory: "Service/System", AreaOverview: "Second",
 	}
-	got := InsertAreaIndexRow(index, a)
+	got := InsertAreaIndexRow(index, &a)
 	lines := strings.Split(got, "\n")
-	var existingIdx, newIdx int = -1, -1
+	existingIdx, newIdx := -1, -1
 	for i, l := range lines {
 		if strings.Contains(l, "existing.md") {
 			existingIdx = i

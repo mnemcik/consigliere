@@ -18,7 +18,7 @@ var ErrNotATTY = errors.New("wizard requires an interactive terminal")
 // Returns ErrNotATTY when stdin is not a TTY; huh cannot render a form in
 // that case and would otherwise hang silently.
 func Run() (Answers, error) {
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
+	if !term.IsTerminal(int(os.Stdin.Fd())) { //nolint:gosec // stdin fd fits in int on every supported platform
 		return Answers{}, ErrNotATTY
 	}
 

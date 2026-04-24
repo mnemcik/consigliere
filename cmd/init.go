@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -15,6 +16,11 @@ import (
 	"github.com/mnemcik/consigliere/internal/wizard"
 	"github.com/mnemcik/consigliere/internal/workspace"
 )
+
+// validSlug matches a canonical area slug: lowercase letters/digits separated
+// by single dashes. Used as a defense-in-depth check before writing files
+// whose path is derived from the slug.
+var validSlug = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 //go:embed all:embed_templates
 var embeddedFS embed.FS
@@ -168,7 +174,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if fileExists(profilePath) && !forceInit {
 			skipped = append(skipped, "PROFILE.md")
 		} else {
-			if err := os.WriteFile(profilePath, []byte(wizard.RenderProfile(answers)), 0o644); err != nil {
+			if err := os.WriteFile(profilePath, []byte(wizard.RenderProfile(&answers)), 0o644); err != nil {
 				return fmt.Errorf("writing PROFILE.md: %w", err)
 			}
 			created = append(created, "PROFILE.md (from wizard)")
@@ -199,22 +205,26 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Wizard-only post-bootstrap steps: first area + optional git init.
 	if wizardInit && answers.HasFirstArea() {
+		if !validSlug.MatchString(answers.AreaSlug) {
+			return fmt.Errorf("invalid area slug %q: expected lowercase letters, digits, and single dashes", answers.AreaSlug)
+		}
 		today := time.Now().Format("2006-01-02")
-		areaPath := filepath.Join(dir, "areas", answers.AreaSlug+".md")
+		areaRel := filepath.Join("areas", answers.AreaSlug+".md")
+		areaPath := filepath.Join(dir, areaRel)
 		if fileExists(areaPath) {
-			skipped = append(skipped, filepath.Join("areas", answers.AreaSlug+".md"))
+			skipped = append(skipped, areaRel)
 		} else {
-			if err := os.WriteFile(areaPath, []byte(wizard.RenderArea(answers, today)), 0o644); err != nil {
+			if err := os.WriteFile(areaPath, []byte(wizard.RenderArea(&answers, today)), 0o644); err != nil {
 				return fmt.Errorf("writing area file: %w", err)
 			}
-			created = append(created, filepath.Join("areas", answers.AreaSlug+".md"))
+			created = append(created, areaRel)
 		}
 
 		indexPath := filepath.Join(dir, "areas", "INDEX.md")
-		if existing, err := os.ReadFile(indexPath); err == nil {
-			updated := wizard.InsertAreaIndexRow(string(existing), answers)
+		if existing, err := os.ReadFile(indexPath); err == nil { //nolint:gosec // indexPath is a fixed name under dir
+			updated := wizard.InsertAreaIndexRow(string(existing), &answers)
 			if updated != string(existing) {
-				if err := os.WriteFile(indexPath, []byte(updated), 0o644); err != nil {
+				if err := os.WriteFile(indexPath, []byte(updated), 0o644); err != nil { //nolint:gosec // indexPath is a fixed name under dir
 					return fmt.Errorf("updating areas/INDEX.md: %w", err)
 				}
 				created = append(created, "areas/INDEX.md (row added)")
@@ -224,7 +234,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	if wizardInit && answers.RunGitInit {
 		if _, err := os.Stat(filepath.Join(dir, ".git")); errors.Is(err, os.ErrNotExist) {
-			gitCmd := exec.Command("git", "init")
+			gitCmd := exec.CommandContext(cmd.Context(), "git", "init")
 			gitCmd.Dir = dir
 			if out, err := gitCmd.CombinedOutput(); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: git init failed: %v\n%s\n", err, out)
