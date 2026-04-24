@@ -87,17 +87,17 @@ When the user submits a new idea (e.g., "idea: ..."), interpret what it refers t
 Areas are domains of knowledge and responsibility. They serve as **reference hubs** — the single source of truth for a domain's systems, contacts, constraints, and current state. Projects, ideas, and notes link to areas instead of duplicating context.
 <!-- cg:section:end=areas -->
 
-<!-- user:section:start=area-categories -->
-### Area Categories
+<!-- user:section:start=area-tags -->
+### Area Tags
 
-Define your area categories here. Areas typically fall into two types:
+Areas use **free-form tags** to describe what kind of domain they cover. Tags are multi-valued, no fixed enum — the taxonomy emerges from use. List the tags currently in play here so new areas can reuse existing vocabulary instead of inventing near-duplicates.
 
-**Service/System Areas** — specific services, APIs, infrastructure components, or products:
-- `example-slug` — Example Service Name
+**Currently in use:**
 
-**Practice/Platform Areas** — processes, tools, and organizational practices:
-- `example-slug` — Example Practice Name
-<!-- user:section:end=area-categories -->
+- `example-tag` — short description of what this tag means
+
+Add new tags freely. Run `scripts/area-tags.sh` (if present) to list all tags currently used across `areas/*.md` with counts.
+<!-- user:section:end=area-tags -->
 
 <!-- cg:section:start=area-rules -->
 ### Area Rules
@@ -105,7 +105,7 @@ Define your area categories here. Areas typically fall into two types:
 1. **Every project, idea, and note MUST have an `Areas:` field** linking to one or more areas. Use the area slug(s).
 2. **Areas are reference hubs, not duplicators.** When a project needs context about a system (contacts, constraints, architecture), link to the area file instead of writing it again. If the context doesn't exist in the area yet, add it there first, then reference it.
 3. **Items can belong to multiple areas.** Use the primary area first, then secondary areas.
-4. **When creating a new area,** use `templates/area.md`, add it to `areas/INDEX.md` under the correct category, and update the Area Categories section in CLAUDE.md.
+4. **When creating a new area,** use `templates/area.md`, add it to `areas/INDEX.md`, and add any new tags (with short descriptions) to the Area Tags section in CLAUDE.md.
 5. **When reading an area for a project,** check the `Last reviewed` date. If it's older than 2 weeks, verify the content is still accurate before relying on it.
 
 ### Linking to Areas from Projects
@@ -295,7 +295,7 @@ Run the loop immediately after `gh pr create`, and again after each push of foll
 - Idea statuses: `raw` → `exploring` → `ready` → `parked` | `rejected`
 - Project statuses: `defining` → `in-progress` → `done` | `on-hold`
 - Project priorities: `high` | `medium` | `low` — stored in each project's README.md Meta section and in `projects/TODO.md` (sorted by priority)
-- Area categories: `Service/System` | `Practice/Platform`
+- Area tags: free-form, multi-valued. The current tag vocabulary is listed in the **Area Tags** section above.
 - Tags on ideas are free-form. Use them to group and filter.
 - Areas on all items are mandatory. Use area slugs from `areas/INDEX.md`.
 - Not everything becomes a ticket — projects may produce tools, docs, automation, or just notes.

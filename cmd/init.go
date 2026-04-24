@@ -228,7 +228,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		updated := wizard.InsertAreaIndexRow(string(existing), &answers)
 		switch {
 		case updated == string(existing):
-			// Idempotent re-run (row already present) or category section
+			// Idempotent re-run (row already present) or Areas section
 			// missing from the template. Surface as skipped, not created.
 			skipped = append(skipped, "areas/INDEX.md (row already present or section missing)")
 		default:
@@ -284,7 +284,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println("### Next steps")
 	if wizardInit {
 		fmt.Println("1. Review `PROFILE.md` and fill any remaining placeholders")
-		fmt.Println("2. Edit the `Purpose` and `Area Categories` sections in `CLAUDE.md`")
+		fmt.Println("2. Edit the `Purpose` and `Area Tags` sections in `CLAUDE.md`")
 		if answers.HasFirstArea() {
 			fmt.Printf("3. Flesh out `areas/%s.md` with key systems, contacts, and constraints\n", answers.AreaSlug)
 		} else {
@@ -296,7 +296,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("5. Commit the initial workspace structure")
 	} else {
 		fmt.Println("1. Edit `PROFILE.md` with your role, responsibilities, and context")
-		fmt.Println("2. Edit the `Purpose` and `Area Categories` sections in `CLAUDE.md`")
+		fmt.Println("2. Edit the `Purpose` and `Area Tags` sections in `CLAUDE.md`")
 		fmt.Println("3. Define your first area in `areas/` using `templates/area.md`")
 		fmt.Println("4. Run `git init` if this is not yet a git repository")
 		fmt.Println("5. Commit the initial workspace structure")
@@ -372,15 +372,12 @@ const indexAreas = `# Areas Index
 
 Areas are domains of knowledge and responsibility. They serve as reference hubs — the single source of truth for a domain's systems, contacts, constraints, and current state.
 
-## Service/System Areas
+Each area carries free-form **tags** describing what kind of domain it covers (e.g. ` + "`microservice`" + `, ` + "`practice`" + `, ` + "`compliance`" + `). Tags are multi-valued; taxonomy emerges from use.
 
-| Area | Slug | Description |
-|------|------|-------------|
+## Areas
 
-## Practice/Platform Areas
-
-| Area | Slug | Description |
-|------|------|-------------|
+| Area | Slug | Tags | Description |
+|------|------|------|-------------|
 `
 
 const indexIdeas = `# Ideas Backlog

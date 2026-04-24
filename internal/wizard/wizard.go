@@ -59,13 +59,10 @@ func Run() (Answers, error) {
 				Title("Area display name").
 				Description("e.g., Pension Calculation Engine.").
 				Value(&a.AreaName),
-			huh.NewSelect[string]().
-				Title("Area category").
-				Options(
-					huh.NewOption("Service/System — a microservice, API, or infrastructure component", "Service/System"),
-					huh.NewOption("Practice/Platform — a process, tool, or organizational practice", "Practice/Platform"),
-				).
-				Value(&a.AreaCategory),
+			huh.NewInput().
+				Title("Area tags").
+				Description("Comma-separated, free-form. e.g. `microservice, compliance` or `practice, release`. Leave empty to tag later.").
+				Value(&a.AreaTags),
 			huh.NewText().
 				Title("One-line overview").
 				Description("Optional. What does this area cover?").
@@ -92,12 +89,13 @@ func Run() (Answers, error) {
 	// Post-process free-form inputs so downstream code sees canonical shapes.
 	a.AreaSlug = SanitizeSlug(a.AreaSlug)
 	a.AreaName = strings.TrimSpace(a.AreaName)
+	a.AreaTags = normalizeTags(a.AreaTags)
 	a.AreaOverview = strings.TrimSpace(a.AreaOverview)
 
 	// First-area block is all-or-nothing: either every field is empty (user
 	// skipped it) or both slug and display name are present. Partial input
 	// would otherwise be silently dropped by the caller.
-	hasAreaInput := a.AreaSlug != "" || a.AreaName != "" || a.AreaOverview != ""
+	hasAreaInput := a.AreaSlug != "" || a.AreaName != "" || a.AreaTags != "" || a.AreaOverview != ""
 	if hasAreaInput && (a.AreaSlug == "" || a.AreaName == "") {
 		return Answers{}, errors.New("first area requires both slug and display name (leave all fields empty to skip)")
 	}

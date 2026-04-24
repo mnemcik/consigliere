@@ -16,7 +16,7 @@ type Answers struct {
 	ProfileFocus string
 	AreaSlug     string
 	AreaName     string
-	AreaCategory string // "Service/System" or "Practice/Platform"
+	AreaTags     string // free-form, comma-separated; e.g. "microservice, compliance"
 	AreaOverview string
 	RunGitInit   bool
 	InstallSlash bool
