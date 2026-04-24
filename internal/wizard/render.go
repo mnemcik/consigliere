@@ -54,7 +54,7 @@ func RenderArea(a *Answers, today string) string {
 	fmt.Fprintf(&b, "# %s\n\n", a.AreaName)
 	b.WriteString("## Meta\n\n")
 	fmt.Fprintf(&b, "- **Slug:** `%s`\n", a.AreaSlug)
-	fmt.Fprintf(&b, "- **Category:** %s\n", a.AreaCategory)
+	fmt.Fprintf(&b, "- **Tags:** %s\n", a.AreaTags)
 	fmt.Fprintf(&b, "- **Created:** %s\n", today)
 	fmt.Fprintf(&b, "- **Last reviewed:** %s\n\n", today)
 
@@ -76,10 +76,10 @@ func RenderArea(a *Answers, today string) string {
 	return b.String()
 }
 
-// InsertAreaIndexRow appends a table row for the new area to the correct
-// section of an existing `areas/INDEX.md`. If the section table has no rows
-// yet, the new row is added directly under the header separator; otherwise it
-// is appended after the last existing row in that section.
+// InsertAreaIndexRow appends a table row for the new area to the flat
+// `## Areas` section of an existing `areas/INDEX.md`. If the table has no
+// rows yet, the new row is added directly under the header separator;
+// otherwise it is appended after the last existing row.
 //
 // Returns the updated index content. If the expected section header cannot be
 // found, the input is returned unchanged — callers should fall back to
@@ -88,17 +88,15 @@ func InsertAreaIndexRow(index string, a *Answers) string {
 	if a == nil {
 		return index
 	}
-	section := "## Service/System Areas"
-	if a.AreaCategory == "Practice/Platform" {
-		section = "## Practice/Platform Areas"
-	}
+	section := "## Areas"
 	// Idempotency: if any row already links to `<slug>.md`, leave the index
 	// untouched. Re-running `cg init --wizard --force` must not duplicate rows.
 	if strings.Contains(index, fmt.Sprintf("](%s.md)", a.AreaSlug)) {
 		return index
 	}
-	row := fmt.Sprintf("| [%s](%s.md) | `%s` | %s |",
+	row := fmt.Sprintf("| [%s](%s.md) | `%s` | %s | %s |",
 		escapeTableCell(a.AreaName), a.AreaSlug, a.AreaSlug,
+		escapeTableCell(a.AreaTags),
 		escapeTableCell(firstSentence(a.AreaOverview)))
 
 	lines := strings.Split(index, "\n")
@@ -192,4 +190,27 @@ func firstSentence(s string) string {
 func escapeTableCell(s string) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	return strings.ReplaceAll(s, "|", `\|`)
+}
+
+// normalizeTags canonicalizes a comma-separated tag string: trims whitespace
+// around each entry, lowercases, drops empties and duplicates while preserving
+// first-seen order, and rejoins as "tag1, tag2". Empty input yields "".
+func normalizeTags(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return ""
+	}
+	seen := make(map[string]struct{})
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		t := strings.ToLower(strings.TrimSpace(part))
+		if t == "" {
+			continue
+		}
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	return strings.Join(out, ", ")
 }

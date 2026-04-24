@@ -8,8 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
-- `cg init --wizard` / `-i` — interactive setup walkthrough built on `charmbracelet/huh`. Collects name/role/responsibilities (written into `PROFILE.md`), an optional first area (slug, name, category, overview — written to `areas/<slug>.md` and linked from `areas/INDEX.md`), and confirms `git init` + slash-command install. TTY-only; errors cleanly when stdin isn't a terminal. Non-interactive `cg init` behavior is unchanged.
+- `cg init --wizard` / `-i` — interactive setup walkthrough built on `charmbracelet/huh`. Collects name/role/responsibilities (written into `PROFILE.md`), an optional first area (slug, name, tags, overview — written to `areas/<slug>.md` and linked from `areas/INDEX.md`), and confirms `git init` + slash-command install. TTY-only; errors cleanly when stdin isn't a terminal. Non-interactive `cg init` behavior is unchanged.
 - `cg --version` / `cg -v` root flags — identical output to `cg version` (`cg version <semver>`). The existing `cg version` subcommand is unchanged.
+
+### Changed
+
+- **Area taxonomy: free-form tags replace category enum.** Area files now carry a `Tags:` field (comma-separated, multi-valued, normalized to lowercase) instead of a binary `Category: Service/System | Practice/Platform` choice. `areas/INDEX.md` is now a single flat table with a Tags column instead of two category-split tables. Rationale: the category split forced blurry areas into arbitrary buckets, read enterprise-flavored (poor fit for personal-project workspaces), and was inconsistent with how ideas already use free-form tags. The wizard's category-select step is replaced by a free-text tag input. The `cg:version` marker in the embedded workspace CLAUDE.md stays at `1.0.0` — existing workspaces need a manual migration (add `Tags:` lines to area frontmatter; flatten `areas/INDEX.md`) since there is no automated migrator in this release.
 
 ## [1.0.1] - 2026-04-23
 

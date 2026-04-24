@@ -3,7 +3,7 @@
 ## Meta
 
 - **Slug:** `{slug}`
-- **Category:** {Service/System | Practice/Platform}
+- **Tags:** {comma-separated free-form tags; e.g. `microservice, compliance, active`. Leave empty to add later.}
 - **Created:** YYYY-MM-DD
 - **Last reviewed:** YYYY-MM-DD
 

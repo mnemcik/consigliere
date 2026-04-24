@@ -25,6 +25,26 @@ func TestSanitizeSlug(t *testing.T) {
 	}
 }
 
+func TestNormalizeTags(t *testing.T) {
+	cases := map[string]string{
+		"":                         "",
+		"  ":                       "",
+		"microservice":             "microservice",
+		"Microservice":             "microservice",
+		"microservice, compliance": "microservice, compliance",
+		"  microservice ,compliance  ": "microservice, compliance",
+		"microservice,microservice,MICROSERVICE": "microservice",
+		"a,,b":           "a, b",
+		"a, , b":         "a, b",
+		"foo, bar, foo":  "foo, bar",
+	}
+	for in, want := range cases {
+		if got := normalizeTags(in); got != want {
+			t.Errorf("normalizeTags(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestRenderProfile_WithAnswers(t *testing.T) {
 	a := Answers{
 		ProfileName:  "Matus",
@@ -63,14 +83,14 @@ func TestRenderArea(t *testing.T) {
 	a := Answers{
 		AreaSlug:     "pension-calc",
 		AreaName:     "Pension Calculation",
-		AreaCategory: "Service/System",
+		AreaTags:     "microservice, compliance",
 		AreaOverview: "Computes pension benefits.",
 	}
 	got := RenderArea(&a, "2026-04-24")
 	for _, s := range []string{
 		"# Pension Calculation",
 		"- **Slug:** `pension-calc`",
-		"- **Category:** Service/System",
+		"- **Tags:** microservice, compliance",
 		"- **Created:** 2026-04-24",
 		"Computes pension benefits.",
 	} {
@@ -83,69 +103,32 @@ func TestRenderArea(t *testing.T) {
 func TestInsertAreaIndexRow_EmptyTable(t *testing.T) {
 	index := `# Areas Index
 
-## Service/System Areas
+## Areas
 
-| Area | Slug | Description |
-|------|------|-------------|
-
-## Practice/Platform Areas
-
-| Area | Slug | Description |
-|------|------|-------------|
+| Area | Slug | Tags | Description |
+|------|------|------|-------------|
 `
 	a := Answers{
 		AreaSlug: "pension-calc", AreaName: "Pension Calc",
-		AreaCategory: "Service/System", AreaOverview: "Pensions. Done.",
+		AreaTags: "microservice", AreaOverview: "Pensions. Done.",
 	}
 	got := InsertAreaIndexRow(index, &a)
-	wantRow := "| [Pension Calc](pension-calc.md) | `pension-calc` | Pensions |"
+	wantRow := "| [Pension Calc](pension-calc.md) | `pension-calc` | microservice | Pensions |"
 	if !strings.Contains(got, wantRow) {
 		t.Errorf("expected row %q in output, got:\n%s", wantRow, got)
-	}
-	// Must appear in Service/System section, not Practice/Platform.
-	ssIdx := strings.Index(got, "## Service/System Areas")
-	ppIdx := strings.Index(got, "## Practice/Platform Areas")
-	rowIdx := strings.Index(got, wantRow)
-	if rowIdx < ssIdx || rowIdx > ppIdx {
-		t.Errorf("row inserted in wrong section; ss=%d row=%d pp=%d", ssIdx, rowIdx, ppIdx)
-	}
-}
-
-func TestInsertAreaIndexRow_PracticePlatformCategory(t *testing.T) {
-	index := `# Areas Index
-
-## Service/System Areas
-
-| Area | Slug | Description |
-|------|------|-------------|
-
-## Practice/Platform Areas
-
-| Area | Slug | Description |
-|------|------|-------------|
-`
-	a := Answers{
-		AreaSlug: "devops", AreaName: "DevOps",
-		AreaCategory: "Practice/Platform", AreaOverview: "CI/CD",
-	}
-	got := InsertAreaIndexRow(index, &a)
-	ppIdx := strings.Index(got, "## Practice/Platform Areas")
-	rowIdx := strings.Index(got, "| [DevOps](devops.md) | `devops` |")
-	if rowIdx <= ppIdx {
-		t.Errorf("row should be after Practice/Platform header; pp=%d row=%d", ppIdx, rowIdx)
 	}
 }
 
 func TestInsertAreaIndexRow_AppendsAfterExistingRows(t *testing.T) {
-	index := `## Service/System Areas
+	index := `## Areas
 
-| Area | Slug | Description |
-|------|------|-------------|
-| [Existing](existing.md) | ` + "`existing`" + ` | First |
+| Area | Slug | Tags | Description |
+|------|------|------|-------------|
+| [Existing](existing.md) | ` + "`existing`" + ` | practice | First |
 `
 	a := Answers{
 		AreaSlug: "new-one", AreaName: "New",
-		AreaCategory: "Service/System", AreaOverview: "Second",
+		AreaTags: "microservice", AreaOverview: "Second",
 	}
 	got := InsertAreaIndexRow(index, &a)
 	lines := strings.Split(got, "\n")
@@ -167,15 +150,15 @@ func TestInsertAreaIndexRow_AppendsAfterExistingRows(t *testing.T) {
 }
 
 func TestInsertAreaIndexRow_Idempotent(t *testing.T) {
-	index := `## Service/System Areas
+	index := `## Areas
 
-| Area | Slug | Description |
-|------|------|-------------|
-| [Pension Calc](pension-calc.md) | ` + "`pension-calc`" + ` | First |
+| Area | Slug | Tags | Description |
+|------|------|------|-------------|
+| [Pension Calc](pension-calc.md) | ` + "`pension-calc`" + ` | microservice | First |
 `
 	a := Answers{
 		AreaSlug: "pension-calc", AreaName: "Pension Calc",
-		AreaCategory: "Service/System", AreaOverview: "Duplicate attempt",
+		AreaTags: "microservice", AreaOverview: "Duplicate attempt",
 	}
 	got := InsertAreaIndexRow(index, &a)
 	if got != index {
@@ -187,20 +170,23 @@ func TestInsertAreaIndexRow_Idempotent(t *testing.T) {
 }
 
 func TestInsertAreaIndexRow_EscapesPipesAndNewlines(t *testing.T) {
-	index := `## Service/System Areas
+	index := `## Areas
 
-| Area | Slug | Description |
-|------|------|-------------|
+| Area | Slug | Tags | Description |
+|------|------|------|-------------|
 `
 	a := Answers{
 		AreaSlug: "weird-one", AreaName: "Weird | Name",
-		AreaCategory: "Service/System",
+		AreaTags:     "has | pipe",
 		AreaOverview: "first line\nsecond line with | pipe.",
 	}
 	got := InsertAreaIndexRow(index, &a)
 	// Raw pipes from user input must be escaped so the table still parses.
 	if !strings.Contains(got, `Weird \| Name`) {
 		t.Errorf("pipe in AreaName not escaped; got:\n%s", got)
+	}
+	if !strings.Contains(got, `has \| pipe`) {
+		t.Errorf("pipe in AreaTags not escaped; got:\n%s", got)
 	}
 	// Each output row must be exactly one line.
 	for _, line := range strings.Split(got, "\n") {
@@ -219,7 +205,7 @@ func TestRenderers_NilSafe(t *testing.T) {
 	if got := RenderArea(nil, "2026-04-24"); got != "" {
 		t.Errorf("RenderArea(nil) = %q, want empty string", got)
 	}
-	index := "## Service/System Areas\n\n| A | B | C |\n|---|---|---|\n"
+	index := "## Areas\n\n| A | B | C | D |\n|---|---|---|---|\n"
 	if got := InsertAreaIndexRow(index, nil); got != index {
 		t.Errorf("InsertAreaIndexRow(_, nil) should return input unchanged")
 	}

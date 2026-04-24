@@ -228,7 +228,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		updated := wizard.InsertAreaIndexRow(string(existing), &answers)
 		switch {
 		case updated == string(existing):
-			// Idempotent re-run (row already present) or category section
+			// Idempotent re-run (row already present) or Areas section
 			// missing from the template. Surface as skipped, not created.
 			skipped = append(skipped, "areas/INDEX.md (row already present or section missing)")
 		default:
@@ -372,15 +372,12 @@ const indexAreas = `# Areas Index
 
 Areas are domains of knowledge and responsibility. They serve as reference hubs — the single source of truth for a domain's systems, contacts, constraints, and current state.
 
-## Service/System Areas
+Each area carries free-form **tags** describing what kind of domain it covers (e.g. ` + "`microservice`" + `, ` + "`practice`" + `, ` + "`compliance`" + `). Tags are multi-valued; taxonomy emerges from use.
 
-| Area | Slug | Description |
-|------|------|-------------|
+## Areas
 
-## Practice/Platform Areas
-
-| Area | Slug | Description |
-|------|------|-------------|
+| Area | Slug | Tags | Description |
+|------|------|------|-------------|
 `
 
 const indexIdeas = `# Ideas Backlog
