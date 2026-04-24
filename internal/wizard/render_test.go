@@ -14,6 +14,9 @@ func TestSanitizeSlug(t *testing.T) {
 		"UPPER":                "upper",
 		"":                     "",
 		"!!!":                  "",
+		"foo--bar":             "foo-bar",
+		"foo - bar":            "foo-bar",
+		"a___b___c":            "a-b-c",
 	}
 	for in, want := range cases {
 		if got := SanitizeSlug(in); got != want {

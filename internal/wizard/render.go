@@ -138,7 +138,12 @@ func InsertAreaIndexRow(index string, a *Answers) string {
 	return strings.Join(out, "\n")
 }
 
-var slugSanitizer = regexp.MustCompile(`[^a-z0-9-]+`)
+// slugSanitizer matches any run of characters that aren't lowercase
+// alphanumerics. Runs of existing dashes collapse with other non-alphanum
+// into a single `-`, so `foo--bar` and `foo - bar` both canonicalize to
+// `foo-bar` — guaranteeing SanitizeSlug output always passes the
+// downstream `validSlug` regex in cmd/init.go.
+var slugSanitizer = regexp.MustCompile(`[^a-z0-9]+`)
 
 // SanitizeSlug lowercases, replaces runs of non-alphanumeric characters with
 // a single dash, and trims leading/trailing dashes. Used to nudge free-form
