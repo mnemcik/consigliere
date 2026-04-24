@@ -270,7 +270,9 @@ Run the loop immediately after `gh pr create`, and again after each push of foll
 
 2. **For each open comment, decide one of three outcomes:**
    - **Fix** — comment is valid and the fix is mechanical, local, and low-risk (gofmt, typo, missing null-check, misnamed variable, missing CHANGELOG entry, lint violations, obvious bug). Implement in a follow-up commit on the same branch. Never amend — each review round is its own commit so the PR timeline stays readable.
-   - **Reply with reasoning** — comment is valid *as an observation* but Claude judges the fix unnecessary, incorrect, or out-of-scope for this PR. Post a reply (`gh api repos/<org>/<repo>/pulls/<N>/comments/<comment-id>/replies` or the web UI equivalent) explaining *why* — cite the relevant constraint, test, decision, or scope rule. Do not silently dismiss.
+   - **Reply with reasoning** — comment is valid *as an observation* but Claude judges the fix unnecessary, incorrect, or out-of-scope for this PR. Post a reply explaining *why* — cite the relevant constraint, test, decision, or scope rule. Do not silently dismiss. Endpoint depends on comment type:
+     - **Inline PR review comment** (pinned to a file/line) → `POST /repos/{owner}/{repo}/pulls/{N}/comments/{comment_id}/replies`.
+     - **Issue-level / PR-thread comment** (the general discussion area) → `POST /repos/{owner}/{repo}/issues/{N}/comments`.
    - **Escalate to user** — reserved for genuinely ambiguous calls: comment touches project direction, requires domain knowledge Claude lacks, or the fix has significant blast radius (API rename, architecture shift, deleting substantial code). Surface it with the comment, Claude's read, and the tradeoff — then wait.
 
 3. **For each failing CI check** — read the log (`gh run view <run-id> --log`), fix, push, re-check. Treat CI failures the same as valid review comments: fix or escalate, never ignore.
