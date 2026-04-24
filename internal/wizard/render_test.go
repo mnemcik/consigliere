@@ -27,16 +27,16 @@ func TestSanitizeSlug(t *testing.T) {
 
 func TestNormalizeTags(t *testing.T) {
 	cases := map[string]string{
-		"":                         "",
-		"  ":                       "",
-		"microservice":             "microservice",
-		"Microservice":             "microservice",
-		"microservice, compliance": "microservice, compliance",
-		"  microservice ,compliance  ": "microservice, compliance",
+		"":                                       "",
+		"  ":                                     "",
+		"microservice":                           "microservice",
+		"Microservice":                           "microservice",
+		"microservice, compliance":               "microservice, compliance",
+		"  microservice ,compliance  ":           "microservice, compliance",
 		"microservice,microservice,MICROSERVICE": "microservice",
-		"a,,b":           "a, b",
-		"a, , b":         "a, b",
-		"foo, bar, foo":  "foo, bar",
+		"a,,b":                                   "a, b",
+		"a, , b":                                 "a, b",
+		"foo, bar, foo":                          "foo, bar",
 	}
 	for in, want := range cases {
 		if got := normalizeTags(in); got != want {
