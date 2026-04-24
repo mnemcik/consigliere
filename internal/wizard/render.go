@@ -54,7 +54,7 @@ func RenderArea(a *Answers, today string) string {
 	fmt.Fprintf(&b, "# %s\n\n", a.AreaName)
 	b.WriteString("## Meta\n\n")
 	fmt.Fprintf(&b, "- **Slug:** `%s`\n", a.AreaSlug)
-	fmt.Fprintf(&b, "- **Tags:** %s\n", a.AreaTags)
+	fmt.Fprintf(&b, "- **Tags:** %s\n", normalizeTags(a.AreaTags))
 	fmt.Fprintf(&b, "- **Created:** %s\n", today)
 	fmt.Fprintf(&b, "- **Last reviewed:** %s\n\n", today)
 
@@ -96,7 +96,7 @@ func InsertAreaIndexRow(index string, a *Answers) string {
 	}
 	row := fmt.Sprintf("| [%s](%s.md) | `%s` | %s | %s |",
 		escapeTableCell(a.AreaName), a.AreaSlug, a.AreaSlug,
-		escapeTableCell(a.AreaTags),
+		escapeTableCell(normalizeTags(a.AreaTags)),
 		escapeTableCell(firstSentence(a.AreaOverview)))
 
 	lines := strings.Split(index, "\n")
