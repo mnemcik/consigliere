@@ -163,6 +163,52 @@ func TestInsertAreaIndexRow_AppendsAfterExistingRows(t *testing.T) {
 	}
 }
 
+func TestInsertAreaIndexRow_Idempotent(t *testing.T) {
+	index := `## Service/System Areas
+
+| Area | Slug | Description |
+|------|------|-------------|
+| [Pension Calc](pension-calc.md) | ` + "`pension-calc`" + ` | First |
+`
+	a := Answers{
+		AreaSlug: "pension-calc", AreaName: "Pension Calc",
+		AreaCategory: "Service/System", AreaOverview: "Duplicate attempt",
+	}
+	got := InsertAreaIndexRow(index, &a)
+	if got != index {
+		t.Errorf("expected index unchanged when slug already present; got diff:\n%s", got)
+	}
+	if strings.Count(got, "pension-calc.md") != 1 {
+		t.Errorf("slug appears more than once: %d", strings.Count(got, "pension-calc.md"))
+	}
+}
+
+func TestInsertAreaIndexRow_EscapesPipesAndNewlines(t *testing.T) {
+	index := `## Service/System Areas
+
+| Area | Slug | Description |
+|------|------|-------------|
+`
+	a := Answers{
+		AreaSlug: "weird-one", AreaName: "Weird | Name",
+		AreaCategory: "Service/System",
+		AreaOverview: "first line\nsecond line with | pipe.",
+	}
+	got := InsertAreaIndexRow(index, &a)
+	// Raw pipes from user input must be escaped so the table still parses.
+	if !strings.Contains(got, `Weird \| Name`) {
+		t.Errorf("pipe in AreaName not escaped; got:\n%s", got)
+	}
+	// Each output row must be exactly one line.
+	for _, line := range strings.Split(got, "\n") {
+		if strings.Contains(line, "weird-one.md") {
+			if strings.Contains(line, "\n") {
+				t.Errorf("row contains an embedded newline: %q", line)
+			}
+		}
+	}
+}
+
 func TestAnswersHasFirstArea(t *testing.T) {
 	cases := []struct {
 		a    Answers

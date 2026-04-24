@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"golang.org/x/term"
@@ -90,6 +91,16 @@ func Run() (Answers, error) {
 
 	// Post-process free-form inputs so downstream code sees canonical shapes.
 	a.AreaSlug = SanitizeSlug(a.AreaSlug)
+	a.AreaName = strings.TrimSpace(a.AreaName)
+	a.AreaOverview = strings.TrimSpace(a.AreaOverview)
+
+	// First-area block is all-or-nothing: either every field is empty (user
+	// skipped it) or both slug and display name are present. Partial input
+	// would otherwise be silently dropped by the caller.
+	hasAreaInput := a.AreaSlug != "" || a.AreaName != "" || a.AreaOverview != ""
+	if hasAreaInput && (a.AreaSlug == "" || a.AreaName == "") {
+		return Answers{}, errors.New("first area requires both slug and display name (leave all fields empty to skip)")
+	}
 	return a, nil
 }
 

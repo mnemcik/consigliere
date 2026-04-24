@@ -221,19 +221,31 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 
 		indexPath := filepath.Join(dir, "areas", "INDEX.md")
-		if existing, err := os.ReadFile(indexPath); err == nil { //nolint:gosec // indexPath is a fixed name under dir
-			updated := wizard.InsertAreaIndexRow(string(existing), &answers)
-			if updated != string(existing) {
-				if err := os.WriteFile(indexPath, []byte(updated), 0o644); err != nil { //nolint:gosec // indexPath is a fixed name under dir
-					return fmt.Errorf("updating areas/INDEX.md: %w", err)
-				}
-				created = append(created, "areas/INDEX.md (row added)")
+		existing, err := os.ReadFile(indexPath) //nolint:gosec // indexPath is a fixed name under dir
+		if err != nil {
+			return fmt.Errorf("reading areas/INDEX.md: %w", err)
+		}
+		updated := wizard.InsertAreaIndexRow(string(existing), &answers)
+		switch {
+		case updated == string(existing):
+			// Idempotent re-run (row already present) or category section
+			// missing from the template. Surface as skipped, not created.
+			skipped = append(skipped, "areas/INDEX.md (row already present or section missing)")
+		default:
+			if err := os.WriteFile(indexPath, []byte(updated), 0o644); err != nil { //nolint:gosec // indexPath is a fixed name under dir
+				return fmt.Errorf("updating areas/INDEX.md: %w", err)
 			}
+			created = append(created, "areas/INDEX.md (row added)")
 		}
 	}
 
 	if wizardInit && answers.RunGitInit {
-		if _, err := os.Stat(filepath.Join(dir, ".git")); errors.Is(err, os.ErrNotExist) {
+		gitDir := filepath.Join(dir, ".git")
+		_, statErr := os.Stat(gitDir)
+		switch {
+		case statErr == nil:
+			skipped = append(skipped, ".git/ (already a git repo)")
+		case errors.Is(statErr, os.ErrNotExist):
 			gitCmd := exec.CommandContext(cmd.Context(), "git", "init")
 			gitCmd.Dir = dir
 			if out, err := gitCmd.CombinedOutput(); err != nil {
@@ -241,8 +253,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 			} else {
 				created = append(created, ".git/ (git init)")
 			}
-		} else {
-			skipped = append(skipped, ".git/ (already a git repo)")
+		default:
+			fmt.Fprintf(os.Stderr, "warning: cannot stat .git: %v\n", statErr)
 		}
 	}
 

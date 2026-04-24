@@ -83,8 +83,14 @@ func InsertAreaIndexRow(index string, a *Answers) string {
 	if a.AreaCategory == "Practice/Platform" {
 		section = "## Practice/Platform Areas"
 	}
+	// Idempotency: if any row already links to `<slug>.md`, leave the index
+	// untouched. Re-running `cg init --wizard --force` must not duplicate rows.
+	if strings.Contains(index, fmt.Sprintf("](%s.md)", a.AreaSlug)) {
+		return index
+	}
 	row := fmt.Sprintf("| [%s](%s.md) | `%s` | %s |",
-		a.AreaName, a.AreaSlug, a.AreaSlug, firstSentence(a.AreaOverview))
+		escapeTableCell(a.AreaName), a.AreaSlug, a.AreaSlug,
+		escapeTableCell(firstSentence(a.AreaOverview)))
 
 	lines := strings.Split(index, "\n")
 	sectionIdx := -1
@@ -163,4 +169,13 @@ func firstSentence(s string) string {
 		return strings.TrimSpace(s[:i])
 	}
 	return s
+}
+
+// escapeTableCell sanitises free-form user input for safe use inside a
+// Markdown table cell: replaces newlines with spaces and pipes with escaped
+// pipes. Keeps the INDEX.md table well-formed even if the user types "foo |
+// bar" or pastes multi-line text as an area overview.
+func escapeTableCell(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	return strings.ReplaceAll(s, "|", `\|`)
 }
