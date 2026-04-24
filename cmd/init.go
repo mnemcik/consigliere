@@ -3,22 +3,36 @@ package cmd
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/mnemcik/consigliere/internal/wizard"
 	"github.com/mnemcik/consigliere/internal/workspace"
 )
+
+// validSlug matches a canonical area slug: lowercase letters/digits separated
+// by single dashes. Used as a defense-in-depth check before writing files
+// whose path is derived from the slug.
+var validSlug = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 //go:embed all:embed_templates
 var embeddedFS embed.FS
 
-var forceInit bool
+var (
+	forceInit  bool
+	wizardInit bool
+)
 
 func init() {
 	initCmd.Flags().BoolVar(&forceInit, "force", false, "Re-initialize (preserves CLAUDE.md and PROFILE.md)")
+	initCmd.Flags().BoolVarP(&wizardInit, "wizard", "i", false, "Run the interactive setup wizard (TTY required)")
 	rootCmd.AddCommand(initCmd)
 }
 
@@ -44,6 +58,19 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("This directory is already a Consigliere workspace (version %s).\n", cfg.Version)
 		fmt.Println("Use `cg init --force` to re-initialize.")
 		return nil
+	}
+
+	var answers wizard.Answers
+	answers.InstallSlash = true // default for non-wizard path
+	if wizardInit {
+		a, werr := wizard.Run()
+		if werr != nil {
+			if errors.Is(werr, wizard.ErrNotATTY) {
+				return fmt.Errorf("--wizard requires a TTY; re-run without the flag for non-interactive init")
+			}
+			return werr
+		}
+		answers = a
 	}
 
 	var created, skipped []string
@@ -141,25 +168,94 @@ func runInit(cmd *cobra.Command, args []string) error {
 		skipped = append(skipped, s...)
 	}
 
-	// PROFILE.md
-	c, s := copyEmbeddedFile(dir, "embed_templates/workspace/PROFILE.md", "PROFILE.md", false)
-	created = append(created, c...)
-	skipped = append(skipped, s...)
+	// PROFILE.md — wizard answers, if provided, override the default template.
+	profilePath := filepath.Join(dir, "PROFILE.md")
+	if wizardInit {
+		if fileExists(profilePath) && !forceInit {
+			skipped = append(skipped, "PROFILE.md")
+		} else {
+			if err := os.WriteFile(profilePath, []byte(wizard.RenderProfile(&answers)), 0o644); err != nil {
+				return fmt.Errorf("writing PROFILE.md: %w", err)
+			}
+			created = append(created, "PROFILE.md (from wizard)")
+		}
+	} else {
+		c, s := copyEmbeddedFile(dir, "embed_templates/workspace/PROFILE.md", "PROFILE.md", false)
+		created = append(created, c...)
+		skipped = append(skipped, s...)
+	}
 
 	// .gitignore
-	c, s = copyEmbeddedFile(dir, "embed_templates/workspace/.gitignore", ".gitignore", false)
+	c, s := copyEmbeddedFile(dir, "embed_templates/workspace/.gitignore", ".gitignore", false)
 	created = append(created, c...)
 	skipped = append(skipped, s...)
 
 	// Claude Code slash commands (.claude/commands/)
-	commands := map[string]string{
-		"embed_templates/commands/match-project.md": filepath.Join(".claude", "commands", "match-project.md"),
-		"embed_templates/commands/cg-init.md":       filepath.Join(".claude", "commands", "cg-init.md"),
+	if answers.InstallSlash {
+		commands := map[string]string{
+			"embed_templates/commands/match-project.md": filepath.Join(".claude", "commands", "match-project.md"),
+			"embed_templates/commands/cg-init.md":       filepath.Join(".claude", "commands", "cg-init.md"),
+		}
+		for src, dst := range commands {
+			c, s := copyEmbeddedFile(dir, src, dst, forceInit)
+			created = append(created, c...)
+			skipped = append(skipped, s...)
+		}
 	}
-	for src, dst := range commands {
-		c, s := copyEmbeddedFile(dir, src, dst, forceInit)
-		created = append(created, c...)
-		skipped = append(skipped, s...)
+
+	// Wizard-only post-bootstrap steps: first area + optional git init.
+	if wizardInit && answers.HasFirstArea() {
+		if !validSlug.MatchString(answers.AreaSlug) {
+			return fmt.Errorf("invalid area slug %q: expected lowercase letters, digits, and single dashes", answers.AreaSlug)
+		}
+		today := time.Now().Format("2006-01-02")
+		areaRel := filepath.Join("areas", answers.AreaSlug+".md")
+		areaPath := filepath.Join(dir, areaRel)
+		if fileExists(areaPath) {
+			skipped = append(skipped, areaRel)
+		} else {
+			if err := os.WriteFile(areaPath, []byte(wizard.RenderArea(&answers, today)), 0o644); err != nil {
+				return fmt.Errorf("writing area file: %w", err)
+			}
+			created = append(created, areaRel)
+		}
+
+		indexPath := filepath.Join(dir, "areas", "INDEX.md")
+		existing, err := os.ReadFile(indexPath) //nolint:gosec // indexPath is a fixed name under dir
+		if err != nil {
+			return fmt.Errorf("reading areas/INDEX.md: %w", err)
+		}
+		updated := wizard.InsertAreaIndexRow(string(existing), &answers)
+		switch {
+		case updated == string(existing):
+			// Idempotent re-run (row already present) or category section
+			// missing from the template. Surface as skipped, not created.
+			skipped = append(skipped, "areas/INDEX.md (row already present or section missing)")
+		default:
+			if err := os.WriteFile(indexPath, []byte(updated), 0o644); err != nil { //nolint:gosec // indexPath is a fixed name under dir
+				return fmt.Errorf("updating areas/INDEX.md: %w", err)
+			}
+			created = append(created, "areas/INDEX.md (row added)")
+		}
+	}
+
+	if wizardInit && answers.RunGitInit {
+		gitDir := filepath.Join(dir, ".git")
+		_, statErr := os.Stat(gitDir)
+		switch {
+		case statErr == nil:
+			skipped = append(skipped, ".git/ (already a git repo)")
+		case errors.Is(statErr, os.ErrNotExist):
+			gitCmd := exec.CommandContext(cmd.Context(), "git", "init")
+			gitCmd.Dir = dir
+			if out, err := gitCmd.CombinedOutput(); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: git init failed: %v\n%s\n", err, out)
+			} else {
+				created = append(created, ".git/ (git init)")
+			}
+		default:
+			fmt.Fprintf(os.Stderr, "warning: cannot stat .git: %v\n", statErr)
+		}
 	}
 
 	// Summary
@@ -186,11 +282,27 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("### Next steps")
-	fmt.Println("1. Edit `PROFILE.md` with your role, responsibilities, and context")
-	fmt.Println("2. Edit the `Purpose` and `Area Categories` sections in `CLAUDE.md`")
-	fmt.Println("3. Define your first area in `areas/` using `templates/area.md`")
-	fmt.Println("4. Run `git init` if this is not yet a git repository")
-	fmt.Println("5. Commit the initial workspace structure")
+	if wizardInit {
+		fmt.Println("1. Review `PROFILE.md` and fill any remaining placeholders")
+		fmt.Println("2. Edit the `Purpose` and `Area Categories` sections in `CLAUDE.md`")
+		if answers.HasFirstArea() {
+			fmt.Printf("3. Flesh out `areas/%s.md` with key systems, contacts, and constraints\n", answers.AreaSlug)
+		} else {
+			fmt.Println("3. Define your first area in `areas/` using `templates/area.md`")
+		}
+		if !answers.RunGitInit {
+			fmt.Println("4. Run `git init` if this is not yet a git repository")
+		}
+		fmt.Println("5. Commit the initial workspace structure")
+	} else {
+		fmt.Println("1. Edit `PROFILE.md` with your role, responsibilities, and context")
+		fmt.Println("2. Edit the `Purpose` and `Area Categories` sections in `CLAUDE.md`")
+		fmt.Println("3. Define your first area in `areas/` using `templates/area.md`")
+		fmt.Println("4. Run `git init` if this is not yet a git repository")
+		fmt.Println("5. Commit the initial workspace structure")
+		fmt.Println()
+		fmt.Println("Tip: re-run with `cg init --wizard` for an interactive walkthrough.")
+	}
 
 	return nil
 }

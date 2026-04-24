@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- `cg init --wizard` / `-i` — interactive setup walkthrough built on `charmbracelet/huh`. Collects name/role/responsibilities (written into `PROFILE.md`), an optional first area (slug, name, category, overview — written to `areas/<slug>.md` and linked from `areas/INDEX.md`), and confirms `git init` + slash-command install. TTY-only; errors cleanly when stdin isn't a terminal. Non-interactive `cg init` behavior is unchanged.
 - `cg --version` / `cg -v` root flags — identical output to `cg version` (`cg version <semver>`). The existing `cg version` subcommand is unchanged.
 
 ## [1.0.1] - 2026-04-23
