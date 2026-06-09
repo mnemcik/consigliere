@@ -1,9 +1,9 @@
 # CLAUDE.md
 
+<!-- cg:section:start=intro -->
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 This is a **Consigliere workspace**. Sections marked with `cg:section` comments are maintained by the [Consigliere](https://github.com/mnemcik/consigliere) framework and can be updated automatically. Sections marked with `user:section` are yours to customize freely.
-
-<!-- cg:version=1.0.0 -->
+<!-- cg:section:end=intro -->
 
 <!-- user:section:start=purpose -->
 ## Purpose
