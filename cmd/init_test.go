@@ -66,6 +66,7 @@ func TestInitCreatesWorkspace(t *testing.T) {
 		"templates/project/README.md",
 		".claude/commands/match-project.md",
 		".claude/commands/cg-init.md",
+		".claude/commands/cg-sync.md",
 	}
 	for _, f := range expectedFiles {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
