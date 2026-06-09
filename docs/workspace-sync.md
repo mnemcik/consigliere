@@ -57,8 +57,12 @@ re-clone so `cg sync` can reconcile after the binary self-updates.
 - **`sections`** — keyed by `cg:section` id. The hash is the SHA-256 of the
   section's *inner* content (the bytes between the start and end markers, with
   surrounding newlines trimmed).
-- **`notes`** — keyed by workspace-relative note path. Empty until the
-  load-on-demand work ships framework notes; those PRs register their notes here.
+- **`notes`** — keyed by workspace-relative note path (forward-slash), with the
+  SHA-256 of the note's content. `cg init` copies every framework note shipped
+  in the embed tree into the workspace's `notes/` directory and registers it
+  here automatically, so each record always has a backing file. Empty today —
+  the framework ships no notes yet; the load-on-demand work populates the embed
+  tree and these records light up with no further `cg init` changes.
 - **`schemaVersion`** — bumped only on an incompatible manifest format change.
 
 ## How `cg sync` will use it (planned)

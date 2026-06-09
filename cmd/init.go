@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -169,17 +171,46 @@ func runInit(cmd *cobra.Command, args []string) error {
 		skipped = append(skipped, s...)
 	}
 
+	// Framework notes live under notesEmbedRoot in the embed tree; the same
+	// sub-FS drives both the on-disk copy and the manifest registration so they
+	// can never disagree. Empty today — the directory carries only a .gitkeep
+	// until the load-on-demand work ships framework notes.
+	notesSub, notesErr := fs.Sub(embeddedFS, notesEmbedRoot)
+	notesCopyOK := false
+	if notesErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: cannot read embedded notes: %v\n", notesErr)
+	} else {
+		// Copy notes into the workspace (skip-if-exists, like CLAUDE.md) so every
+		// manifest note record has a backing file.
+		nc, ns, cerr := copyFrameworkNotes(notesSub, dir, dirNotes)
+		if cerr != nil {
+			fmt.Fprintf(os.Stderr, "warning: cannot copy framework notes: %v\n", cerr)
+		} else {
+			notesCopyOK = true
+		}
+		created = append(created, nc...)
+		skipped = append(skipped, ns...)
+	}
+
 	// Seed the workspace-sync manifest: record the framework-managed CLAUDE.md
-	// sections and their content hashes at this framework version, so a future
-	// `cg sync` can distinguish framework-shipped content from the user's edits.
-	// Notes are registered later by the projects that ship them. The manifest is
-	// derived from the embedded template (the canonical content for this version),
-	// not the on-disk CLAUDE.md, which may be a preserved user copy under --force.
-	// See docs/workspace-sync.md.
+	// sections and the framework notes, each with a content hash at this
+	// framework version, so a future `cg sync` can distinguish framework-shipped
+	// content from the user's edits. The manifest is derived from the embedded
+	// templates (the canonical content for this version), not the on-disk copies,
+	// which may be preserved user copies under --force. See docs/workspace-sync.md.
 	if claudeMD, rerr := embeddedFS.ReadFile(claudeSrc); rerr != nil {
 		fmt.Fprintf(os.Stderr, "warning: cannot read embedded CLAUDE.md for manifest: %v\n", rerr)
 	} else {
 		mf := manifest.FromCLAUDE(string(claudeMD), Version)
+		// Only register notes in the manifest if the copy succeeded, so a manifest
+		// entry never points at a file that was not written.
+		if notesErr == nil && notesCopyOK {
+			if notes, nerr := manifest.NotesFromFS(notesSub, dirNotes); nerr != nil {
+				fmt.Fprintf(os.Stderr, "warning: cannot hash embedded notes for manifest: %v\n", nerr)
+			} else {
+				mf.Notes = notes
+			}
+		}
 		manifestRel := filepath.Join(manifest.Dir, manifest.File)
 		if werr := mf.Save(dir); werr != nil {
 			fmt.Fprintf(os.Stderr, "warning: cannot write %s: %v\n", manifestRel, werr)
@@ -353,6 +384,53 @@ func copyEmbeddedFile(dir, src, dst string, overwrite bool) (created, skipped []
 	}
 
 	return []string{dst}, nil
+}
+
+// copyFrameworkNotes copies every framework note from srcFS into <dir>/<destPrefix>/,
+// preserving the tree shape, skipping dotfiles (e.g. .gitkeep), and never
+// overwriting an existing file (skip-if-exists, like CLAUDE.md). The set of
+// files it copies mirrors exactly what manifest.NotesFromFS(srcFS, destPrefix)
+// registers, so every manifest note record has a backing file on disk. Returned
+// paths are workspace-relative (forward-slash). It is a no-op while the
+// framework ships no notes.
+func copyFrameworkNotes(srcFS fs.FS, dir, destPrefix string) (created, skipped []string, err error) {
+	walkErr := fs.WalkDir(srcFS, ".", func(p string, d fs.DirEntry, we error) error {
+		if we != nil {
+			return we
+		}
+		if d.IsDir() {
+			// Prune hidden directories so nested files aren't copied — mirrors
+			// manifest.NotesFromFS so copy and registration stay consistent.
+			if p != "." && strings.HasPrefix(filepath.Base(p), ".") {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if strings.HasPrefix(filepath.Base(p), ".") {
+			return nil // dotfile (e.g. .gitkeep)
+		}
+		// p is a forward-slash fs path relative to srcFS root; keep the manifest
+		// key portable (forward-slash) to match manifest.NotesFromFS exactly.
+		rel := destPrefix + "/" + p // "notes/<rel>"
+		destPath := filepath.Join(dir, filepath.FromSlash(rel))
+		if fileExists(destPath) {
+			skipped = append(skipped, rel)
+			return nil
+		}
+		data, rerr := fs.ReadFile(srcFS, p)
+		if rerr != nil {
+			return rerr
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(destPath), 0o755); mkErr != nil {
+			return mkErr
+		}
+		if wErr := os.WriteFile(destPath, data, 0o644); wErr != nil {
+			return wErr
+		}
+		created = append(created, rel)
+		return nil
+	})
+	return created, skipped, walkErr
 }
 
 func writeFileIfNotExists(dir, dst, content string) (created, skipped []string) {

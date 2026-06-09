@@ -1,7 +1,7 @@
 // Package manifest tracks the framework-managed artifacts in a Consigliere
-// workspace — the CLAUDE.md sections (and, later, framework notes) that `cg`
-// owns — so a future `cg sync` can distinguish what `cg` last wrote from what
-// the user has since changed.
+// workspace — the CLAUDE.md sections and framework notes that `cg` owns — so a
+// future `cg sync` can distinguish what `cg` last wrote from what the user has
+// since changed.
 //
 // It records, per managed artifact, a content hash of what `cg` last wrote plus
 // the framework version, in `.cg/manifest.json`. This is durable workspace
@@ -19,7 +19,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -96,6 +98,47 @@ func FromCLAUDE(claudeMD, frameworkVersion string) *Manifest {
 		Sections:         sections,
 		Notes:            make(map[string]Artifact),
 	}
+}
+
+// NotesFromFS walks fsys — a tree of framework notes — and returns a manifest
+// note map keyed by workspace-relative path. Each key is destPrefix joined with
+// the note's path within fsys (forward-slash separated, matching the manifest's
+// portable path convention); the value records a SHA-256 hash of the note's
+// content as the framework ships it.
+//
+// Directories and dotfiles (any path element whose base name begins with ".")
+// are skipped, so VCS/editor artifacts like `.gitkeep` — which keep the
+// otherwise-empty framework-notes directory present in the embed tree — never
+// become managed notes. The result is a non-nil (possibly empty) map.
+func NotesFromFS(fsys fs.FS, destPrefix string) (map[string]Artifact, error) {
+	out := make(map[string]Artifact)
+	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			// Prune hidden directories entirely so files nested under them (whose
+			// own names aren't dot-prefixed) are not registered. The root "." is
+			// a directory too, but must not be skipped.
+			if p != "." && strings.HasPrefix(path.Base(p), ".") {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if strings.HasPrefix(path.Base(p), ".") {
+			return nil // dotfile (e.g. .gitkeep)
+		}
+		data, rerr := fs.ReadFile(fsys, p)
+		if rerr != nil {
+			return rerr
+		}
+		out[path.Join(destPrefix, p)] = Artifact{Hash: HashContent(string(data))}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // Path returns the manifest path for a workspace directory.
