@@ -84,6 +84,39 @@ func ParseSections(content string) map[string]string {
 	return out
 }
 
+// ReplaceSection rewrites the inner body of the framework `cg:section` with the
+// given id, preserving the sentinel markers and the single newline padding the
+// other sections use. It returns the new content and whether the section was
+// found. The sentinels themselves are never altered.
+func ReplaceSection(content, id, newInner string) (string, bool) {
+	startMarker := fmt.Sprintf("<!-- cg:section:start=%s -->", id)
+	endMarker := fmt.Sprintf("<!-- cg:section:end=%s -->", id)
+	startIdx := strings.Index(content, startMarker)
+	if startIdx < 0 {
+		return content, false
+	}
+	afterStart := startIdx + len(startMarker)
+	rel := strings.Index(content[afterStart:], endMarker)
+	if rel < 0 {
+		return content, false
+	}
+	endIdx := afterStart + rel
+	rebuilt := content[:afterStart] + "\n" + newInner + "\n" + content[endIdx:]
+	return rebuilt, true
+}
+
+// AppendSection appends a new framework `cg:section` block (markers + inner body)
+// to the end of content, separated from the preceding text by a blank line and
+// terminated with a trailing newline. Use it to insert a section the workspace
+// does not yet have.
+func AppendSection(content, id, inner string) string {
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	block := fmt.Sprintf("\n<!-- cg:section:start=%s -->\n%s\n<!-- cg:section:end=%s -->\n", id, inner, id)
+	return content + block
+}
+
 // FromCLAUDE builds a Manifest from CLAUDE.md content at the given framework
 // version. Notes are initialized empty; they are registered by the projects
 // that ship framework notes.

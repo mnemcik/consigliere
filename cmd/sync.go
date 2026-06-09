@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/mnemcik/consigliere/internal/manifest"
 	syncpkg "github.com/mnemcik/consigliere/internal/sync"
@@ -12,19 +13,27 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var syncApply bool
+
 func init() {
+	syncCmd.Flags().BoolVar(&syncApply, "apply", false,
+		"apply the safe changes (update untouched framework sections/notes, add new ones); drifted artifacts are never touched")
 	rootCmd.AddCommand(syncCmd)
 }
 
 var syncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Report how the workspace's framework content compares to this cg version",
+	Short: "Reconcile the workspace's framework content with this cg version",
 	Long: `Reconcile this workspace's framework-managed content (CLAUDE.md sections and
 framework notes) against the content shipped by the current cg binary.
 
 This is the content side of upgrades — distinct from 'cg update', which would
-replace the binary itself. 'cg sync' is currently report-only (a dry run): it
-classifies each managed artifact and prints what would change. It never writes.`,
+replace the binary itself.
+
+Without --apply, 'cg sync' is a dry run: it classifies each managed artifact and
+prints what would change, writing nothing. With --apply, it updates framework
+sections/notes you have not edited and adds new ones, but never clobbers an
+artifact you have edited (those are reported for you to resolve).`,
 	RunE: runSync,
 }
 
@@ -62,8 +71,176 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	printSyncReport(report, cfg.Version, Version)
+
+	if !syncApply {
+		printSyncReport(report, cfg.Version, Version)
+		return nil
+	}
+
+	frameworkNoteBytes, err := embeddedNoteContents()
+	if err != nil {
+		return err
+	}
+	appliedSections, appliedNotes, err := applySync(dir, mf, report, manifest.ParseSections(frameworkCLAUDE), frameworkNoteBytes)
+	if err != nil {
+		return err
+	}
+	printApplySummary(report, appliedSections, appliedNotes)
 	return nil
+}
+
+// applySync writes the safe changes (updatable + new sections and notes) to the
+// workspace, updates the manifest hashes for what it wrote, and bumps the
+// recorded framework version. Drifted/removed/missing artifacts are never
+// modified — they are reported (by the caller) for the user or the /cg-sync
+// skill to resolve. It is idempotent: a second run finds everything up to date.
+// Framework content is passed in (not read from the embed) so apply is testable.
+func applySync(dir string, mf *manifest.Manifest, report syncpkg.Report, frameworkSections map[string]string, frameworkNoteBytes map[string][]byte) (appliedSections, appliedNotes []string, err error) {
+	// Sections: batch all edits to CLAUDE.md, write once.
+	claudePath := filepath.Join(dir, "CLAUDE.md")
+	content, err := readFileAllowMissing(claudePath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading CLAUDE.md: %w", err)
+	}
+	sectionsChanged := false
+	for _, it := range report.Items {
+		if it.Kind != syncpkg.KindSection {
+			continue
+		}
+		inner, ok := frameworkSections[it.ID]
+		if !ok {
+			continue
+		}
+		switch it.Status {
+		case syncpkg.StatusUpdatable:
+			if updated, replaced := manifest.ReplaceSection(content, it.ID, inner); replaced {
+				content = updated
+				sectionsChanged = true
+				mf.Sections[it.ID] = manifest.Artifact{Hash: manifest.HashContent(inner)}
+				appliedSections = append(appliedSections, it.ID)
+			}
+		case syncpkg.StatusNew:
+			content = manifest.AppendSection(content, it.ID, inner)
+			sectionsChanged = true
+			mf.Sections[it.ID] = manifest.Artifact{Hash: manifest.HashContent(inner)}
+			appliedSections = append(appliedSections, it.ID)
+		case syncpkg.StatusUpToDate, syncpkg.StatusDrifted, syncpkg.StatusRemoved, syncpkg.StatusMissing:
+			// Never auto-applied: nothing to do (up-to-date) or needs the user/skill.
+		}
+	}
+	if sectionsChanged {
+		if werr := os.WriteFile(claudePath, []byte(content), 0o644); werr != nil {
+			return nil, nil, fmt.Errorf("writing CLAUDE.md: %w", werr)
+		}
+	}
+
+	// Notes: write each updated/new file (whole-file).
+	for _, it := range report.Items {
+		if it.Kind != syncpkg.KindNote {
+			continue
+		}
+		if it.Status != syncpkg.StatusUpdatable && it.Status != syncpkg.StatusNew {
+			continue
+		}
+		body, ok := frameworkNoteBytes[it.ID]
+		if !ok {
+			continue
+		}
+		notePath := filepath.Join(dir, filepath.FromSlash(it.ID))
+		if mkErr := os.MkdirAll(filepath.Dir(notePath), 0o755); mkErr != nil {
+			return nil, nil, fmt.Errorf("creating dir for %s: %w", it.ID, mkErr)
+		}
+		if werr := os.WriteFile(notePath, body, 0o644); werr != nil {
+			return nil, nil, fmt.Errorf("writing %s: %w", it.ID, werr)
+		}
+		mf.Notes[it.ID] = manifest.Artifact{Hash: manifest.HashContent(string(body))}
+		appliedNotes = append(appliedNotes, it.ID)
+	}
+
+	mf.FrameworkVersion = Version
+	if serr := mf.Save(dir); serr != nil {
+		return nil, nil, fmt.Errorf("saving manifest: %w", serr)
+	}
+
+	return appliedSections, appliedNotes, nil
+}
+
+// readFileAllowMissing returns the file content, or "" if the file is absent.
+func readFileAllowMissing(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	return string(data), nil
+}
+
+// embeddedNoteContents returns the raw bytes of every framework note shipped in
+// the embed tree, keyed by workspace-relative path (matching manifest keys).
+func embeddedNoteContents() (map[string][]byte, error) {
+	out := map[string][]byte{}
+	notesSub, err := fs.Sub(embeddedFS, notesEmbedRoot)
+	if err != nil {
+		return out, nil // no notes shipped
+	}
+	walkErr := fs.WalkDir(notesSub, ".", func(p string, d fs.DirEntry, we error) error {
+		if we != nil {
+			return we
+		}
+		if d.IsDir() || strings.HasPrefix(filepath.Base(p), ".") {
+			return nil
+		}
+		body, rerr := fs.ReadFile(notesSub, p)
+		if rerr != nil {
+			return rerr
+		}
+		out[dirNotes+"/"+p] = body
+		return nil
+	})
+	if walkErr != nil {
+		return nil, fmt.Errorf("reading embedded notes: %w", walkErr)
+	}
+	return out, nil
+}
+
+func printApplySummary(report syncpkg.Report, appliedSections, appliedNotes []string) {
+	total := len(appliedSections) + len(appliedNotes)
+	if total == 0 {
+		fmt.Println("Nothing to apply — no untouched framework changes or new artifacts.")
+	} else {
+		fmt.Printf("Applied %d change(s): %d section(s), %d note(s).\n", total, len(appliedSections), len(appliedNotes))
+		for _, id := range appliedSections {
+			fmt.Printf("  updated section %s\n", id)
+		}
+		for _, id := range appliedNotes {
+			fmt.Printf("  wrote note %s\n", id)
+		}
+	}
+
+	// Surface what was deliberately left alone.
+	byStatus := report.ByStatus()
+	if left := byStatus[syncpkg.StatusDrifted]; len(left) > 0 {
+		fmt.Printf("\n%d artifact(s) you edited were left untouched — resolve manually:\n", len(left))
+		for _, it := range left {
+			fmt.Printf("  - %s %s\n", it.Kind, it.ID)
+		}
+	}
+	for _, st := range []struct {
+		s     syncpkg.Status
+		label string
+	}{
+		{syncpkg.StatusMissing, "managed but missing from disk"},
+		{syncpkg.StatusRemoved, "no longer shipped by the framework"},
+	} {
+		if items := byStatus[st.s]; len(items) > 0 {
+			fmt.Printf("\n%d artifact(s) %s:\n", len(items), st.label)
+			for _, it := range items {
+				fmt.Printf("  - %s %s\n", it.Kind, it.ID)
+			}
+		}
+	}
 }
 
 // embeddedFramework returns the framework content this cg binary ships: the

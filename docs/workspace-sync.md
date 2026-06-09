@@ -65,23 +65,32 @@ re-clone so `cg sync` can reconcile after the binary self-updates.
   tree and these records light up with no further `cg init` changes.
 - **`schemaVersion`** — bumped only on an incompatible manifest format change.
 
-## How `cg sync` will use it (planned)
+## How `cg sync` uses it
 
-For each managed artifact, compare the workspace's current content hash against
-the manifest hash:
+`cg sync` classifies every managed artifact by comparing three content hashes —
+on disk, manifest-recorded (what `cg` last wrote), and framework (what this
+binary ships):
 
-- **untouched** (hashes match) → replace with the new framework content, update
-  the stored hash. Hands-off.
-- **drifted** (hashes differ — the user edited a framework artifact) → **never
-  clobber.** Present a diff and require an explicit keep-mine / take-theirs choice.
-- **new** (a managed artifact the new framework version added) → insert.
-- **removed** (dropped by the new version) → flag for the user.
+- **up-to-date** — on-disk content already equals the framework's. Nothing to do.
+- **updatable** — on-disk content equals what `cg` recorded and the framework has
+  since changed it. The user never touched it, so it is safe to auto-update.
+- **drifted** — on-disk content matches neither. The user edited a framework
+  artifact: **never clobbered.** Reported for a manual / skill-driven decision.
+- **new** — a managed artifact the current framework adds. Inserted.
+- **removed** — recorded but no longer shipped. Flagged (not deleted).
+- **missing** — recorded but gone from disk. Flagged.
 
-`cg sync` emits a structured report; the optional `/cg-sync` Claude skill reads
-it plus the user's `user:section` rules to flag *semantic* contradictions
-(a new framework rule that conflicts with a user rule) for a decision — the part
-hashing can't do.
+Without flags, `cg sync` is a **dry run**: it prints a grouped report and writes
+nothing. With **`--apply`** it writes the safe changes — updates *updatable*
+sections in place (preserving sentinels) and notes (whole-file), inserts *new*
+ones, updates the manifest hashes for what it wrote, and bumps the recorded
+framework version. Drifted, removed, and missing artifacts are never modified;
+they are reported. Apply is idempotent.
 
-Drift handling is hash-classification + conflict-or-choose to start; a
+The optional `/cg-sync` Claude skill reads the report plus the user's
+`user:section` rules to flag *semantic* contradictions (a new framework rule
+that conflicts with a user rule) for a decision — the part hashing can't do.
+
+Drift handling is hash-classification + leave-and-report to start; a
 stored-baseline 3-way merge is a possible later upgrade. Both use this same
 manifest + ownership contract, so the upgrade is non-breaking.
