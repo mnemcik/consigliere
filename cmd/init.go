@@ -158,7 +158,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// CLAUDE.md
-	claudeSrc := "embed_templates/workspace/CLAUDE.md"
+	claudeSrc := claudeEmbedPath
 	claudeDst := "CLAUDE.md"
 	if forceInit && fileExists(filepath.Join(dir, claudeDst)) {
 		// Don't overwrite, save as template reference
