@@ -176,6 +176,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// can never disagree. Empty today — the directory carries only a .gitkeep
 	// until the load-on-demand work ships framework notes.
 	notesSub, notesErr := fs.Sub(embeddedFS, notesEmbedRoot)
+	notesCopyOK := false
 	if notesErr != nil {
 		fmt.Fprintf(os.Stderr, "warning: cannot read embedded notes: %v\n", notesErr)
 	} else {
@@ -184,6 +185,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 		nc, ns, cerr := copyFrameworkNotes(notesSub, dir, dirNotes)
 		if cerr != nil {
 			fmt.Fprintf(os.Stderr, "warning: cannot copy framework notes: %v\n", cerr)
+		} else {
+			notesCopyOK = true
 		}
 		created = append(created, nc...)
 		skipped = append(skipped, ns...)
@@ -199,7 +202,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "warning: cannot read embedded CLAUDE.md for manifest: %v\n", rerr)
 	} else {
 		mf := manifest.FromCLAUDE(string(claudeMD), Version)
-		if notesErr == nil {
+		// Only register notes in the manifest if the copy succeeded, so a manifest
+		// entry never points at a file that was not written.
+		if notesErr == nil && notesCopyOK {
 			if notes, nerr := manifest.NotesFromFS(notesSub, dirNotes); nerr != nil {
 				fmt.Fprintf(os.Stderr, "warning: cannot hash embedded notes for manifest: %v\n", nerr)
 			} else {
@@ -393,8 +398,16 @@ func copyFrameworkNotes(srcFS fs.FS, dir, destPrefix string) (created, skipped [
 		if we != nil {
 			return we
 		}
-		if d.IsDir() || strings.HasPrefix(filepath.Base(p), ".") {
+		if d.IsDir() {
+			// Prune hidden directories so nested files aren't copied — mirrors
+			// manifest.NotesFromFS so copy and registration stay consistent.
+			if p != "." && strings.HasPrefix(filepath.Base(p), ".") {
+				return fs.SkipDir
+			}
 			return nil
+		}
+		if strings.HasPrefix(filepath.Base(p), ".") {
+			return nil // dotfile (e.g. .gitkeep)
 		}
 		// p is a forward-slash fs path relative to srcFS root; keep the manifest
 		// key portable (forward-slash) to match manifest.NotesFromFS exactly.

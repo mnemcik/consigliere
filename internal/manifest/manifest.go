@@ -116,8 +116,17 @@ func NotesFromFS(fsys fs.FS, destPrefix string) (map[string]Artifact, error) {
 		if walkErr != nil {
 			return walkErr
 		}
-		if d.IsDir() || strings.HasPrefix(path.Base(p), ".") {
+		if d.IsDir() {
+			// Prune hidden directories entirely so files nested under them (whose
+			// own names aren't dot-prefixed) are not registered. The root "." is
+			// a directory too, but must not be skipped.
+			if p != "." && strings.HasPrefix(path.Base(p), ".") {
+				return fs.SkipDir
+			}
 			return nil
+		}
+		if strings.HasPrefix(path.Base(p), ".") {
+			return nil // dotfile (e.g. .gitkeep)
 		}
 		data, rerr := fs.ReadFile(fsys, p)
 		if rerr != nil {

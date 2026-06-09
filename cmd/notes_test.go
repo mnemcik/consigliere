@@ -16,10 +16,12 @@ import (
 // backing file (and no orphan files exist).
 func TestCopyFrameworkNotesMatchesManifestRegistration(t *testing.T) {
 	srcFS := fstest.MapFS{
-		"hygiene.md":   {Data: []byte("hygiene body")},
-		"sub/deep.md":  {Data: []byte("deep body")},
-		".gitkeep":     {Data: []byte("placeholder")},
-		"sub/.tmpjunk": {Data: []byte("junk")},
+		"hygiene.md":      {Data: []byte("hygiene body")},
+		"sub/deep.md":     {Data: []byte("deep body")},
+		".gitkeep":        {Data: []byte("placeholder")},
+		"sub/.tmpjunk":    {Data: []byte("junk")},
+		".git/config":     {Data: []byte("must be pruned")},
+		"sub/.cache/c.md": {Data: []byte("nested hidden")},
 	}
 	dir := t.TempDir()
 
@@ -47,6 +49,12 @@ func TestCopyFrameworkNotesMatchesManifestRegistration(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "notes", ".gitkeep")); err == nil {
 		t.Error("notes/.gitkeep must not be copied")
+	}
+	// Hidden directories must be pruned, not descended into.
+	for _, pruned := range []string{"notes/.git/config", "notes/sub/.cache/c.md"} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(pruned))); err == nil {
+			t.Errorf("%s under a dot-directory must not be copied", pruned)
+		}
 	}
 
 	// The created set must equal the manifest's registered note keys.

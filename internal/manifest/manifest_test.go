@@ -62,10 +62,12 @@ func TestHashContentIsDeterministicAndDistinct(t *testing.T) {
 
 func TestNotesFromFSHashesFilesAndSkipsDotfiles(t *testing.T) {
 	fsys := fstest.MapFS{
-		"guide.md":         {Data: []byte("guide body")},
-		"sub/deep.md":      {Data: []byte("deep body")},
-		".gitkeep":         {Data: []byte("placeholder")},
-		"sub/.editorcache": {Data: []byte("junk")},
+		"guide.md":          {Data: []byte("guide body")},
+		"sub/deep.md":       {Data: []byte("deep body")},
+		".gitkeep":          {Data: []byte("placeholder")},
+		"sub/.editorcache":  {Data: []byte("junk")},
+		".hidden/buried.md": {Data: []byte("must not be registered")},
+		"sub/.cache/x.md":   {Data: []byte("also hidden")},
 	}
 
 	got, err := NotesFromFS(fsys, "notes")
@@ -73,10 +75,17 @@ func TestNotesFromFSHashesFilesAndSkipsDotfiles(t *testing.T) {
 		t.Fatalf("NotesFromFS: %v", err)
 	}
 	if len(got) != 2 {
-		t.Fatalf("expected 2 notes (dotfiles skipped), got %d: %v", len(got), got)
+		t.Fatalf("expected 2 notes (dotfiles + hidden dirs skipped), got %d: %v", len(got), got)
 	}
 	if _, ok := got["notes/.gitkeep"]; ok {
 		t.Error("dotfile .gitkeep must not be registered as a managed note")
+	}
+	// Files nested under a hidden directory must be pruned, not registered.
+	if _, ok := got["notes/.hidden/buried.md"]; ok {
+		t.Error("file under a dot-directory must not be registered")
+	}
+	if _, ok := got["notes/sub/.cache/x.md"]; ok {
+		t.Error("file under a nested dot-directory must not be registered")
 	}
 	if want := HashContent("guide body"); got["notes/guide.md"].Hash != want {
 		t.Errorf("notes/guide.md hash = %q, want %q", got["notes/guide.md"].Hash, want)
