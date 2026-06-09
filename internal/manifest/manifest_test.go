@@ -3,6 +3,7 @@ package manifest
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -46,6 +47,61 @@ func TestParseSectionsSkipsUnmatchedStart(t *testing.T) {
 	content := "<!-- cg:section:start=orphan -->\nno end marker here\n"
 	if got := ParseSections(content); len(got) != 0 {
 		t.Errorf("expected no sections for unmatched start, got %v", got)
+	}
+}
+
+func TestReplaceSectionRewritesInnerAndIsParseable(t *testing.T) {
+	content := "# CLAUDE.md\n" +
+		"<!-- cg:section:start=a -->\nold a\n<!-- cg:section:end=a -->\n" +
+		"<!-- cg:section:start=b -->\nold b\n<!-- cg:section:end=b -->\n"
+
+	got, ok := ReplaceSection(content, "a", "new a body")
+	if !ok {
+		t.Fatal("expected section a to be found")
+	}
+	parsed := ParseSections(got)
+	if parsed["a"] != "new a body" {
+		t.Errorf("section a inner = %q, want %q", parsed["a"], "new a body")
+	}
+	if parsed["b"] != "old b" {
+		t.Errorf("section b must be untouched, got %q", parsed["b"])
+	}
+	// Sentinels preserved exactly once each.
+	if strings.Count(got, "cg:section:start=a") != 1 || strings.Count(got, "cg:section:end=a") != 1 {
+		t.Errorf("section a sentinels not preserved exactly once: %q", got)
+	}
+}
+
+func TestReplaceSectionReturnsFalseForMissingOrUnterminated(t *testing.T) {
+	content := "<!-- cg:section:start=a -->\nbody\n<!-- cg:section:end=a -->\n"
+	if _, ok := ReplaceSection(content, "missing", "x"); ok {
+		t.Error("expected ok=false for a section that does not exist")
+	}
+	unterminated := "<!-- cg:section:start=a -->\nbody but no end marker\n"
+	if got, ok := ReplaceSection(unterminated, "a", "x"); ok || got != unterminated {
+		t.Error("expected ok=false and unchanged content for an unterminated section")
+	}
+}
+
+func TestAppendSectionAddsParseableBlock(t *testing.T) {
+	content := "# CLAUDE.md\n<!-- cg:section:start=a -->\nbody a\n<!-- cg:section:end=a -->\n"
+	got := AppendSection(content, "fresh", "fresh body")
+	parsed := ParseSections(got)
+	if parsed["fresh"] != "fresh body" {
+		t.Errorf("appended section not parseable: got %q", parsed["fresh"])
+	}
+	if parsed["a"] != "body a" {
+		t.Errorf("existing section disturbed: got %q", parsed["a"])
+	}
+	if !strings.HasSuffix(got, "\n") {
+		t.Error("appended content should end with a newline")
+	}
+}
+
+func TestAppendSectionAddsTrailingNewlineWhenMissing(t *testing.T) {
+	got := AppendSection("no trailing newline", "x", "y")
+	if ParseSections(got)["x"] != "y" {
+		t.Errorf("appended section not parseable when source lacked a trailing newline: %q", got)
 	}
 }
 
