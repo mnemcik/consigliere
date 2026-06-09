@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mnemcik/consigliere/internal/manifest"
 	"github.com/mnemcik/consigliere/internal/wizard"
 	"github.com/mnemcik/consigliere/internal/workspace"
 )
@@ -166,6 +167,25 @@ func runInit(cmd *cobra.Command, args []string) error {
 		c, s := copyEmbeddedFile(dir, claudeSrc, claudeDst, false)
 		created = append(created, c...)
 		skipped = append(skipped, s...)
+	}
+
+	// Seed the workspace-sync manifest: record the framework-managed CLAUDE.md
+	// sections and their content hashes at this framework version, so a future
+	// `cg sync` can distinguish framework-shipped content from the user's edits.
+	// Notes are registered later by the projects that ship them. The manifest is
+	// derived from the embedded template (the canonical content for this version),
+	// not the on-disk CLAUDE.md, which may be a preserved user copy under --force.
+	// See docs/workspace-sync.md.
+	if claudeMD, rerr := embeddedFS.ReadFile(claudeSrc); rerr != nil {
+		fmt.Fprintf(os.Stderr, "warning: cannot read embedded CLAUDE.md for manifest: %v\n", rerr)
+	} else {
+		mf := manifest.FromCLAUDE(string(claudeMD), Version)
+		manifestRel := filepath.Join(manifest.Dir, manifest.File)
+		if werr := mf.Save(dir); werr != nil {
+			fmt.Fprintf(os.Stderr, "warning: cannot write %s: %v\n", manifestRel, werr)
+		} else {
+			created = append(created, manifestRel)
+		}
 	}
 
 	// PROFILE.md — wizard answers, if provided, override the default template.
