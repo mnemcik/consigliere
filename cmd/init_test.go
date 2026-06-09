@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/mnemcik/consigliere/internal/manifest"
 )
 
 func chdir(t *testing.T, dir string) {
@@ -113,5 +115,50 @@ func TestInitGuardExistingWorkspace(t *testing.T) {
 	forceInit = false
 	if err := runInit(nil, nil); err != nil {
 		t.Fatalf("second init should not fail: %v", err)
+	}
+}
+
+func TestInitSeedsManifest(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer chdir(t, origDir)
+	chdir(t, dir)
+
+	if err := runInit(nil, nil); err != nil {
+		t.Fatalf("init failed: %v", err)
+	}
+
+	mf, err := manifest.Load(dir)
+	if err != nil {
+		t.Fatalf("loading manifest: %v", err)
+	}
+	if mf == nil {
+		t.Fatal("expected manifest at .cg/manifest.json, got none")
+	}
+	if mf.SchemaVersion != manifest.SchemaVersion {
+		t.Errorf("schemaVersion = %d, want %d", mf.SchemaVersion, manifest.SchemaVersion)
+	}
+	if mf.FrameworkVersion != Version {
+		t.Errorf("frameworkVersion = %q, want %q (build Version)", mf.FrameworkVersion, Version)
+	}
+	if len(mf.Sections) == 0 {
+		t.Fatal("expected the seeded manifest to record CLAUDE.md sections, got none")
+	}
+	// A known framework section should be tracked, and its recorded hash must
+	// match the hash of that section as parsed from the on-disk CLAUDE.md —
+	// i.e. on a fresh init the manifest agrees with the workspace (no drift).
+	claudeMD, err := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("cannot read CLAUDE.md: %v", err)
+	}
+	parsed := manifest.ParseSections(string(claudeMD))
+	if _, ok := mf.Sections["session-start"]; !ok {
+		t.Error("expected 'session-start' section to be tracked in the manifest")
+	}
+	for id, art := range mf.Sections {
+		want := manifest.HashContent(parsed[id])
+		if art.Hash != want {
+			t.Errorf("section %q: manifest hash %q != on-disk hash %q (fresh init should not show drift)", id, art.Hash, want)
+		}
 	}
 }
