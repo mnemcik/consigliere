@@ -10,4 +10,8 @@ const (
 	dirInsights = "insights"
 
 	indexProjectsPath = "projects/TODO.md"
+
+	// notesEmbedRoot is the embed-tree directory holding framework-shipped notes.
+	// Currently it carries only a .gitkeep; the load-on-demand work populates it.
+	notesEmbedRoot = "embed_templates/notes"
 )

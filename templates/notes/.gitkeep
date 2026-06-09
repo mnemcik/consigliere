@@ -1,0 +1,4 @@
+# Framework notes
+
+Framework-shipped notes are placed in this directory and registered in
+.cg/manifest.json by `cg init`. Empty until the load-on-demand work ships notes.

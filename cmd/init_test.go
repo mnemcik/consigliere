@@ -161,4 +161,20 @@ func TestInitSeedsManifest(t *testing.T) {
 			t.Errorf("section %q: manifest hash %q != on-disk hash %q (fresh init should not show drift)", id, art.Hash, want)
 		}
 	}
+
+	// The framework ships no notes yet (the embed notes/ dir holds only a
+	// .gitkeep), so the manifest's notes map must be present but empty, and the
+	// .gitkeep must never be copied into the workspace as a managed note.
+	if mf.Notes == nil {
+		t.Error("expected a non-nil notes map in the seeded manifest")
+	}
+	if len(mf.Notes) != 0 {
+		t.Errorf("expected zero framework notes registered, got %d: %v", len(mf.Notes), mf.Notes)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "notes", ".gitkeep")); err == nil {
+		t.Error("notes/.gitkeep must not be copied into the workspace")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "notes", "INDEX.md")); err != nil {
+		t.Errorf("expected notes/INDEX.md to exist: %v", err)
+	}
 }
