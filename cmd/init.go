@@ -246,6 +246,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		commands := map[string]string{
 			"embed_templates/commands/match-project.md": filepath.Join(".claude", "commands", "match-project.md"),
 			"embed_templates/commands/cg-init.md":       filepath.Join(".claude", "commands", "cg-init.md"),
+			"embed_templates/commands/cg-sync.md":       filepath.Join(".claude", "commands", "cg-sync.md"),
 		}
 		for src, dst := range commands {
 			c, s := copyEmbeddedFile(dir, src, dst, forceInit)
