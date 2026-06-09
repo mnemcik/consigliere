@@ -52,8 +52,8 @@ func runMatch(cmd *cobra.Command, args []string) error {
 	}
 
 	// Read project index
-	indexPath := "projects/TODO.md"
-	if p, ok := cfg.Indexes["projects"]; ok {
+	indexPath := indexProjectsPath
+	if p, ok := cfg.Indexes[dirProjects]; ok {
 		indexPath = p
 	}
 
