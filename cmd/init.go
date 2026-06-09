@@ -77,11 +77,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Create directories
 	dirs := []string{
-		"projects",
-		"areas",
-		"ideas",
-		"notes",
-		"insights",
+		dirProjects,
+		dirAreas,
+		dirIdeas,
+		dirNotes,
+		dirInsights,
 		"templates",
 		filepath.Join("templates", "project"),
 	}
@@ -118,11 +118,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Create index files
 	indexFiles := map[string]string{
-		filepath.Join("projects", "TODO.md"):   indexProjectsTODO,
-		filepath.Join("areas", "INDEX.md"):     indexAreas,
-		filepath.Join("ideas", "BACKLOG.md"):   indexIdeas,
-		filepath.Join("notes", "INDEX.md"):     indexNotes,
-		filepath.Join("insights", "DRAFTS.md"): indexInsights,
+		filepath.Join(dirProjects, "TODO.md"):   indexProjectsTODO,
+		filepath.Join(dirAreas, "INDEX.md"):     indexAreas,
+		filepath.Join(dirIdeas, "BACKLOG.md"):   indexIdeas,
+		filepath.Join(dirNotes, "INDEX.md"):     indexNotes,
+		filepath.Join(dirInsights, "DRAFTS.md"): indexInsights,
 	}
 	for dst, content := range indexFiles {
 		c, s := writeFileIfNotExists(dir, dst, content)
@@ -135,11 +135,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 		Type:    "consigliere",
 		Version: Version,
 		Indexes: map[string]string{
-			"projects": "projects/TODO.md",
-			"areas":    "areas/INDEX.md",
-			"ideas":    "ideas/BACKLOG.md",
-			"notes":    "notes/INDEX.md",
-			"insights": "insights/DRAFTS.md",
+			dirProjects: indexProjectsPath,
+			dirAreas:    "areas/INDEX.md",
+			dirIdeas:    "ideas/BACKLOG.md",
+			dirNotes:    "notes/INDEX.md",
+			dirInsights: "insights/DRAFTS.md",
 		},
 	}
 	data, _ := json.MarshalIndent(cgJSON, "", "  ")

@@ -40,6 +40,14 @@ linters:
         - G304
         - G306
   exclusions:
+    rules:
+      # goconst on test files flags repeated fixture/table literals (e.g. tag
+      # and slug inputs), which hurts test readability more than it helps. Scope
+      # goconst to non-test code — its useful domain, and the behavior before
+      # golangci-lint v2.12 began scanning _test.go files.
+      - path: _test\.go
+        linters:
+          - goconst
     paths:
       - cmd/embed_templates
 
