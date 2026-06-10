@@ -505,6 +505,8 @@ Session notes, findings, and reference material organized by category.
 
 ## Process
 
+- [Project Structure — File Conventions & Workflow](project-structure.md) — the standard project files, the rules for working with them, the new-project workflow, and the per-session update checklist.
+
 ## Research
 
 ## Reference
