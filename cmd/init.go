@@ -499,6 +499,8 @@ Session notes, findings, and reference material organized by category.
 
 ## Workflow
 
+- [CLAUDE.md Hygiene — Extract vs Inline](claude-md-hygiene.md) — before editing CLAUDE.md, decide whether a rule belongs inline (every session) or extracted to a note (trigger-only).
+
 ## Architecture
 
 ## Process
