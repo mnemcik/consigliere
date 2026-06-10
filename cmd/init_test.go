@@ -171,10 +171,11 @@ func TestInitSeedsManifest(t *testing.T) {
 	if mf.Notes == nil {
 		t.Error("expected a non-nil notes map in the seeded manifest")
 	}
+	// Assert the hygiene note specifically rather than an exact total count:
+	// later load-on-demand PRs ship more framework notes, and a count check
+	// would force a churn edit here on each one. Presence + a matching hash is
+	// the invariant that matters.
 	const hygieneNote = "notes/claude-md-hygiene.md"
-	if len(mf.Notes) != 1 {
-		t.Errorf("expected exactly the framework hygiene note registered, got %d: %v", len(mf.Notes), mf.Notes)
-	}
 	hygieneArt, ok := mf.Notes[hygieneNote]
 	if !ok {
 		t.Fatalf("expected %q in the manifest notes, got %v", hygieneNote, mf.Notes)
