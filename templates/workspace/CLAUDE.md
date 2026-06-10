@@ -30,6 +30,12 @@ Instead, persist all learnings, preferences, references, and feedback **in this 
 If something is worth remembering, it should be committed to the repo where any tool can read it.
 <!-- cg:section:end=memory-policy -->
 
+<!-- cg:section:start=claude-md-hygiene -->
+## Editing CLAUDE.md — Hygiene Trigger
+
+**Before adding or changing anything in this file, load [`notes/claude-md-hygiene.md`](notes/claude-md-hygiene.md) and apply the extract-vs-inline decision.** CLAUDE.md is loaded into context for *every* session, so every line costs tokens on sessions that never need the rule. The test: **does this apply to every session, or only when a specific trigger appears?** Every-session rules stay inline; trigger-only rules extract to a `notes/<topic>.md` file with a ≤3-sentence pointer here (trigger + one-line headline + note path). Treat additions as a last resort, not a first instinct.
+<!-- cg:section:end=claude-md-hygiene -->
+
 <!-- cg:section:start=session-start -->
 ## Session-Start Rule: Identify Project and Area
 

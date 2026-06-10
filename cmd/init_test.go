@@ -60,6 +60,7 @@ func TestInitCreatesWorkspace(t *testing.T) {
 		"areas/INDEX.md",
 		"ideas/BACKLOG.md",
 		"notes/INDEX.md",
+		"notes/claude-md-hygiene.md",
 		"insights/DRAFTS.md",
 		"templates/idea.md",
 		"templates/note.md",
@@ -163,14 +164,28 @@ func TestInitSeedsManifest(t *testing.T) {
 		}
 	}
 
-	// The framework ships no notes yet (the embed notes/ dir holds only a
-	// .gitkeep), so the manifest's notes map must be present but empty, and the
-	// .gitkeep must never be copied into the workspace as a managed note.
+	// PR1 of load-on-demand ships the first framework note (claude-md-hygiene).
+	// It must be copied into the workspace AND registered in the manifest, with
+	// the recorded hash matching the on-disk file (no drift on a fresh init).
+	// The .gitkeep alongside it must never be copied as a managed note.
 	if mf.Notes == nil {
 		t.Error("expected a non-nil notes map in the seeded manifest")
 	}
-	if len(mf.Notes) != 0 {
-		t.Errorf("expected zero framework notes registered, got %d: %v", len(mf.Notes), mf.Notes)
+	// Assert the hygiene note specifically rather than an exact total count:
+	// later load-on-demand PRs ship more framework notes, and a count check
+	// would force a churn edit here on each one. Presence + a matching hash is
+	// the invariant that matters.
+	const hygieneNote = "notes/claude-md-hygiene.md"
+	hygieneArt, ok := mf.Notes[hygieneNote]
+	if !ok {
+		t.Fatalf("expected %q in the manifest notes, got %v", hygieneNote, mf.Notes)
+	}
+	hygieneOnDisk, rerr := os.ReadFile(filepath.Join(dir, filepath.FromSlash(hygieneNote)))
+	if rerr != nil {
+		t.Fatalf("expected %s on disk: %v", hygieneNote, rerr)
+	}
+	if want := manifest.HashContent(string(hygieneOnDisk)); hygieneArt.Hash != want {
+		t.Errorf("note %q: manifest hash %q != on-disk hash %q (fresh init should not show drift)", hygieneNote, hygieneArt.Hash, want)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "notes", ".gitkeep")); err == nil {
 		t.Error("notes/.gitkeep must not be copied into the workspace")
