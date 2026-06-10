@@ -500,6 +500,7 @@ Session notes, findings, and reference material organized by category.
 ## Workflow
 
 - [CLAUDE.md Hygiene — Extract vs Inline](claude-md-hygiene.md) — before editing CLAUDE.md, decide whether a rule belongs inline (every session) or extracted to a note (trigger-only).
+- [Idea → Project — Lifecycle & Status](idea-to-project-workflow.md) — the lifecycle from capturing an idea to turning it into a project (or parking/rejecting it), plus the status vocabulary.
 
 ## Architecture
 

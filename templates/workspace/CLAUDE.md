@@ -144,10 +144,7 @@ For the trigger list, the step-by-step propagation procedure, and the new-inform
 <!-- cg:section:start=idea-workflow -->
 ## Workflow: Idea → Project
 
-1. Capture an idea in `ideas/` using `templates/idea.md`. Add it to `ideas/BACKLOG.md` with status `raw`.
-2. When exploring, update status to `exploring` and flesh out the idea file.
-3. When the idea is mature enough, mark it `ready` and create a project folder in `projects/` using `templates/project/`. Link the idea file as the origin in README.md.
-4. Ideas that won't be pursued get marked `parked` (maybe later) or `rejected` (won't do).
+When an idea is captured, explored, turned into a project, parked, or rejected, load [`notes/idea-to-project-workflow.md`](notes/idea-to-project-workflow.md) for the lifecycle steps and status vocabulary (`raw → exploring → ready → parked | rejected`).
 <!-- cg:section:end=idea-workflow -->
 
 <!-- cg:section:start=session-end -->
