@@ -61,6 +61,7 @@ func TestInitCreatesWorkspace(t *testing.T) {
 		"ideas/BACKLOG.md",
 		"notes/INDEX.md",
 		"notes/claude-md-hygiene.md",
+		"notes/project-structure.md",
 		"insights/DRAFTS.md",
 		"templates/idea.md",
 		"templates/note.md",
