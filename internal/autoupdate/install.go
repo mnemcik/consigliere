@@ -27,6 +27,10 @@ const binaryName = "cg"
 // goosWindows is runtime.GOOS for Windows (archive ext + binary suffix differ).
 const goosWindows = "windows"
 
+// methodInstallSh is the installed.json "method" value install.sh records;
+// it's the one provenance cg will self-replace (DEC-011).
+const methodInstallSh = "install.sh"
+
 // maxDownloadBytes bounds an asset download so a malformed/huge response can't
 // exhaust memory; release archives are a few MB.
 const maxDownloadBytes = 100 << 20 // 100 MiB
@@ -68,12 +72,12 @@ func DetectManagement() Management {
 	}
 
 	st, _ := readInstalledState() // absent/unreadable → zero value, treated as unmanaged
-	if st.Method == "install.sh" {
+	if st.Method == methodInstallSh {
 		binPath := st.Path
 		if binPath == "" {
 			binPath = exe
 		}
-		return Management{SelfManaged: true, Kind: "install.sh", BinaryPath: binPath}
+		return Management{SelfManaged: true, Kind: methodInstallSh, BinaryPath: binPath}
 	}
 
 	// Homebrew: either a binary physically under a brew prefix (the real-world

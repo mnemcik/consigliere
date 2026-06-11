@@ -136,9 +136,9 @@ func writeInstalledState(t *testing.T, method string) {
 }
 
 func TestDetectManagementInstallSh(t *testing.T) {
-	writeInstalledState(t, "install.sh")
+	writeInstalledState(t, methodInstallSh)
 	m := DetectManagement()
-	if !m.SelfManaged || m.Kind != "install.sh" {
+	if !m.SelfManaged || m.Kind != methodInstallSh {
 		t.Errorf("install.sh should be self-managed: %+v", m)
 	}
 	if m.BinaryPath != "/tmp/cg" {
