@@ -10,6 +10,9 @@ import (
 
 func runUpdateCheck(t *testing.T, version string) string {
 	t.Helper()
+	// Isolate auto-update state so the root PersistentPreRunE's updated-notice
+	// read doesn't touch (or print from) the real ~/.config.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	old := Version
 	Version = version
 	t.Cleanup(func() { Version = old })
