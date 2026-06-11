@@ -60,3 +60,45 @@ func TestUpdateCheckReportsUpToDate(t *testing.T) {
 		t.Errorf("expected up-to-date output, got: %q", out)
 	}
 }
+
+func runUpdate(t *testing.T, args ...string) string {
+	t.Helper()
+	old := Version
+	Version = "1.0.0"
+	// Reset flag-bound vars: cobra does not clear them between Execute() calls.
+	snoozeMajor, ignoreMajor = false, false
+	t.Cleanup(func() { Version = old })
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+	rootCmd.SetArgs(args)
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("execute %v: %v", args, err)
+	}
+	return buf.String()
+}
+
+func TestUpdateSnoozeRequiresMajorFlag(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	out := runUpdate(t, "update", "snooze")
+	if !strings.Contains(out, "--major") {
+		t.Errorf("snooze without --major should prompt for it, got: %q", out)
+	}
+}
+
+func TestUpdateSnoozeNoPending(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	out := runUpdate(t, "update", "snooze", "--major")
+	if !strings.Contains(out, "No pending major") {
+		t.Errorf("snooze with no marker should say so, got: %q", out)
+	}
+}
+
+func TestUpdateIgnoreNoPending(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	out := runUpdate(t, "update", "ignore", "--major")
+	if !strings.Contains(out, "No pending major") {
+		t.Errorf("ignore with no marker should say so, got: %q", out)
+	}
+}

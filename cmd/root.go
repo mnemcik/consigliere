@@ -29,6 +29,14 @@ var rootCmd = &cobra.Command{
 		autoupdate.Bootstrap(autoUpdateDisabled(cmd))
 		return nil
 	},
+	// After the command's own output, surface the persistent major-available
+	// nudge (skipped for version/help and the update commands themselves).
+	PersistentPostRunE: func(cmd *cobra.Command, _ []string) error {
+		if !autoUpdateDisabled(cmd) {
+			autoupdate.PrintMajorNoticeIfAny(cmd.ErrOrStderr())
+		}
+		return nil
+	},
 }
 
 func init() {
