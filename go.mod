@@ -2,7 +2,12 @@ module github.com/mnemcik/consigliere
 
 go 1.25.0
 
-require github.com/spf13/cobra v1.10.2
+require (
+	github.com/charmbracelet/huh v1.0.0
+	github.com/spf13/cobra v1.10.2
+	golang.org/x/mod v0.37.0
+	golang.org/x/term v0.42.0
+)
 
 require (
 	github.com/atotto/clipboard v0.1.4 // indirect
@@ -11,7 +16,6 @@ require (
 	github.com/charmbracelet/bubbles v0.21.1-0.20250623103423-23b8fd6302d7 // indirect
 	github.com/charmbracelet/bubbletea v1.3.6 // indirect
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
-	github.com/charmbracelet/huh v1.0.0 // indirect
 	github.com/charmbracelet/lipgloss v1.1.0 // indirect
 	github.com/charmbracelet/x/ansi v0.9.3 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.13 // indirect
@@ -33,6 +37,5 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sync v0.15.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
-	golang.org/x/term v0.42.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 )
