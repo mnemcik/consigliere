@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`cg update check` — binary update discovery (first slice of the auto-update subsystem).** Reports whether a newer `cg` release is available by querying the public GitHub Releases API anonymously (no `gh` or auth token required) and comparing the latest tag to the running version with proper semver ordering. Development builds (`dev`, dirty `git describe`) are detected and skip the check. A failed check (offline, GitHub unreachable) prints a notice and exits zero — it never fails the command. Discovery, semver comparison, and state-file paths live in a new pure, unit-tested `internal/autoupdate` package; the GitHub API base URL and target repo are overridable via `CONSIGLIERE_GITHUB_API_BASE` / `CONSIGLIERE_AUTO_UPDATE_REPO`. Groundwork for `cg update upgrade` (in-place self-replace) and the background freshness check in follow-up PRs.
+
 ## [1.1.0] - 2026-06-11
 
 ### Added
