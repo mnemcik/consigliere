@@ -18,6 +18,8 @@ const DefaultRepo = "mnemcik/consigliere"
 
 const defaultAPIBase = "https://api.github.com"
 
+const defaultDownloadBase = "https://github.com"
+
 // httpClient bounds discovery so a hung connection can't stall a foreground
 // `cg update check` (or the detached worker) indefinitely.
 var httpClient = &http.Client{Timeout: 15 * time.Second}
@@ -39,6 +41,17 @@ func apiBase() string {
 		return strings.TrimRight(b, "/")
 	}
 	return defaultAPIBase
+}
+
+// downloadBase resolves the host serving release assets
+// (github.com/<repo>/releases/download/...). It is overridable via
+// CONSIGLIERE_GITHUB_DOWNLOAD_BASE so tests can point asset downloads at an
+// httptest server (production uses github.com, distinct from the API host).
+func downloadBase() string {
+	if b := strings.TrimSpace(os.Getenv("CONSIGLIERE_GITHUB_DOWNLOAD_BASE")); b != "" {
+		return strings.TrimRight(b, "/")
+	}
+	return defaultDownloadBase
 }
 
 type releaseResponse struct {
