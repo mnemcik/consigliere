@@ -508,6 +508,7 @@ Session notes, findings, and reference material organized by category.
 
 - [Project Structure — File Conventions & Workflow](project-structure.md) — the standard project files, the rules for working with them, the new-project workflow, and the per-session update checklist.
 - [Information Propagation — Procedure & Lookup](information-propagation.md) — when new information surfaces, the step-by-step procedure for updating affected areas/projects/ideas/notes, plus the what-to-update lookup table.
+- [Session-End Capture — Notes & Insights Procedures](session-end-capture.md) — the step-by-step procedures for capturing notes (category + tags + INDEX) and insight drafts at session end, plus the duplicate-check.
 
 ## Research
 
