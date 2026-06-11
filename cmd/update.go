@@ -17,7 +17,7 @@ func init() {
 }
 
 var updateCmd = &cobra.Command{
-	Use:   "update",
+	Use:   cmdUpdate,
 	Short: "Check for and install cg updates",
 	Long: "Manage cg's own binary version.\n\n" +
 		"`cg update check` reports whether a newer release is available; " +

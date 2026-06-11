@@ -6,6 +6,7 @@ import (
 )
 
 func TestVersionSubcommand(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // isolate the root PersistentPreRunE notice read
 	oldVersion := Version
 	oldRootVersion := rootCmd.Version
 	Version = "test-1.2.3"
@@ -31,6 +32,7 @@ func TestVersionSubcommand(t *testing.T) {
 }
 
 func TestVersionFlag(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // isolate the root PersistentPreRunE notice read
 	oldVersion := rootCmd.Version
 	rootCmd.Version = "test-4.5.6"
 	defer func() { rootCmd.Version = oldVersion }()
