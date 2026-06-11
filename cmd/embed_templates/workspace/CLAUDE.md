@@ -108,19 +108,9 @@ Add new tags freely. Run `scripts/area-tags.sh` (if present) to list all tags cu
 <!-- cg:section:start=area-rules -->
 ### Area Rules
 
-1. **Every project, idea, and note MUST have an `Areas:` field** linking to one or more areas. Use the area slug(s).
-2. **Areas are reference hubs, not duplicators.** When a project needs context about a system (contacts, constraints, architecture), link to the area file instead of writing it again. If the context doesn't exist in the area yet, add it there first, then reference it.
-3. **Items can belong to multiple areas.** Use the primary area first, then secondary areas.
-4. **When creating a new area,** use `templates/area.md`, add it to `areas/INDEX.md`, and add any new tags (with short descriptions) to the Area Tags section in CLAUDE.md.
-5. **When reading an area for a project,** check the `Last reviewed` date. If it's older than 2 weeks, verify the content is still accurate before relying on it.
+Every project, idea, and note MUST carry an `Areas:` field linking to one or more areas; areas are reference hubs (link to them, don't duplicate their content). When starting work on a project — or on any external repo — read the matching area file first for its context, constraints, and conventions.
 
-### Linking to Areas from Projects
-
-Every project MUST link to at least one area. When starting work on a project, **read its associated area file(s) first** to understand the current context, constraints, and contacts. This is enforced by the Session-Start Rule above.
-
-### External Repo → Area Lookup
-
-When the user asks to work on a repository outside this knowledge base (e.g., a tool or service), **check `areas/INDEX.md` for a matching area before starting work.** If an area exists, read it — it contains repo conventions (branch naming, PR title format, CI rules), architecture constraints, and context that must be followed. If no area exists, create one before proceeding. This applies whether the user names the repo explicitly or describes the tool/service by function.
+For the full area rules (multi-area items, creating a new area, the `Last reviewed` freshness check), the project-linking rule, and the external-repo → area lookup, load [`notes/area-rules.md`](notes/area-rules.md).
 <!-- cg:section:end=area-rules -->
 
 <!-- cg:section:start=project-structure -->
