@@ -78,7 +78,7 @@ var updateUpgradeCmd = &cobra.Command{
 		// Refuse to self-replace externally-managed installs (DEC-011).
 		if m := autoupdate.DetectManagement(); !m.SelfManaged {
 			switch m.Kind {
-			case "homebrew":
+			case autoupdate.KindHomebrew:
 				fmt.Fprintln(&b, "cg was installed via Homebrew — upgrade it with your package manager:")
 				fmt.Fprintln(&b, "    brew upgrade --cask cg")
 			default:

@@ -27,9 +27,15 @@ const binaryName = "cg"
 // goosWindows is runtime.GOOS for Windows (archive ext + binary suffix differ).
 const goosWindows = "windows"
 
-// methodInstallSh is the installed.json "method" value install.sh records;
-// it's the one provenance cg will self-replace (DEC-011).
-const methodInstallSh = "install.sh"
+// Management.Kind values, describing how cg was installed.
+const (
+	KindInstallSh = "install.sh" // installed by install.sh — the one self-replaceable provenance (DEC-011)
+	KindHomebrew  = "homebrew"   // installed via Homebrew — upgrade with brew
+	KindUnknown   = "unknown"    // go install, manual copy, etc. — left alone
+)
+
+// methodInstallSh is the installed.json "method" value install.sh records.
+const methodInstallSh = KindInstallSh
 
 // maxDownloadBytes bounds an asset download so a malformed/huge response can't
 // exhaust memory; release archives are a few MB.
@@ -71,22 +77,25 @@ func DetectManagement() Management {
 		}
 	}
 
-	st, _ := readInstalledState() // absent/unreadable → zero value, treated as unmanaged
-	if st.Method == methodInstallSh {
-		binPath := st.Path
-		if binPath == "" {
-			binPath = exe
-		}
-		return Management{SelfManaged: true, Kind: methodInstallSh, BinaryPath: binPath}
+	// Strongest signal first: a binary physically under a Homebrew prefix is
+	// brew-managed regardless of any (possibly stale) installed.json — e.g. a
+	// user who installed via install.sh, then later `brew install`ed over it.
+	// Checking the *running* executable before trusting the recorded method
+	// prevents misclassifying a brew binary as self-managed (DEC-011).
+	if exe != "" && underBrewPrefix(exe) {
+		return Management{SelfManaged: false, Kind: KindHomebrew, BinaryPath: exe}
 	}
 
-	// Homebrew: either a binary physically under a brew prefix (the real-world
-	// signal — brew never writes installed.json) or an explicitly recorded
-	// homebrew method.
-	if (exe != "" && underBrewPrefix(exe)) || strings.EqualFold(st.Method, "homebrew") {
-		return Management{SelfManaged: false, Kind: "homebrew", BinaryPath: exe}
+	st, _ := readInstalledState() // absent/unreadable → zero value, treated as unmanaged
+	if st.Method == methodInstallSh {
+		// Always target the running executable, never the recorded st.Path:
+		// a self-replace replaces *this* binary, and st.Path can be stale.
+		return Management{SelfManaged: true, Kind: KindInstallSh, BinaryPath: exe}
 	}
-	return Management{SelfManaged: false, Kind: "unknown", BinaryPath: exe}
+	if strings.EqualFold(st.Method, KindHomebrew) {
+		return Management{SelfManaged: false, Kind: KindHomebrew, BinaryPath: exe}
+	}
+	return Management{SelfManaged: false, Kind: KindUnknown, BinaryPath: exe}
 }
 
 func underBrewPrefix(p string) bool {

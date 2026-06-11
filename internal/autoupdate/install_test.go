@@ -141,19 +141,25 @@ func TestDetectManagementInstallSh(t *testing.T) {
 	if !m.SelfManaged || m.Kind != methodInstallSh {
 		t.Errorf("install.sh should be self-managed: %+v", m)
 	}
-	if m.BinaryPath != "/tmp/cg" {
-		t.Errorf("BinaryPath = %q, want /tmp/cg", m.BinaryPath)
+	// BinaryPath targets the running executable (not the recorded st.Path,
+	// which can be stale) — here that's the test binary.
+	exe, _ := os.Executable()
+	if resolved, e := filepath.EvalSymlinks(exe); e == nil {
+		exe = resolved
+	}
+	if m.BinaryPath != exe {
+		t.Errorf("BinaryPath = %q, want running executable %q", m.BinaryPath, exe)
 	}
 }
 
 func TestDetectManagementHomebrewMethod(t *testing.T) {
-	writeInstalledState(t, "homebrew")
+	writeInstalledState(t, KindHomebrew)
 	m := DetectManagement()
 	if m.SelfManaged {
 		t.Errorf("homebrew method must not be self-managed: %+v", m)
 	}
-	if m.Kind != "homebrew" {
-		t.Errorf("Kind = %q, want homebrew", m.Kind)
+	if m.Kind != KindHomebrew {
+		t.Errorf("Kind = %q, want %q", m.Kind, KindHomebrew)
 	}
 }
 
