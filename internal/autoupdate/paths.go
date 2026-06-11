@@ -25,8 +25,12 @@ func StateDir() string {
 	if base == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			// Best-effort: callers create the dir lazily and tolerate failure.
-			home = "."
+			// UserHomeDir can fail in restricted environments (e.g. $HOME
+			// unset under a daemon). Fall back to the system temp dir rather
+			// than "." so the path stays absolute and cwd-independent — all
+			// auto-update state here is best-effort, so a volatile temp
+			// location only costs an extra update check after a reboot.
+			home = os.TempDir()
 		}
 		base = filepath.Join(home, ".config")
 	}
