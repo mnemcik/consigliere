@@ -7,6 +7,7 @@
 <p align="center">
   <a href="https://github.com/mnemcik/consigliere/releases"><img src="https://img.shields.io/github/v/release/mnemcik/consigliere?style=flat-square&color=e2b714" alt="Release"></a>
   <a href="https://github.com/mnemcik/consigliere/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/mnemcik/consigliere/ci.yml?style=flat-square&label=CI" alt="CI"></a>
+  <a href="https://goreportcard.com/report/github.com/mnemcik/consigliere"><img src="https://goreportcard.com/badge/github.com/mnemcik/consigliere?style=flat-square" alt="Go Report Card"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License"></a>
   <a href="https://go.dev"><img src="https://img.shields.io/badge/built%20with-Go-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go"></a>
 </p>
@@ -128,6 +129,8 @@ The CLAUDE.md rules instruct AI assistants to:
 | `cg match <prompt>` | 🔍 Find a project matching your description |
 | `cg status` | 📊 Workspace overview |
 | `cg version` | ℹ️ Print installed version |
+| `cg update check` | 🔎 Check whether a newer `cg` release is available |
+| `cg update upgrade` | ⬆️ Download, verify, and install the latest release in place |
 
 ### Examples
 
@@ -148,6 +151,21 @@ Areas:    10
 Ideas:    4
 Notes:    12
 ```
+
+## 🔄 Staying up to date
+
+`cg` keeps itself current. Run `cg update check` any time, or `cg update upgrade`
+to install the latest release in place (the binary is downloaded from GitHub and
+SHA-256-verified before it replaces itself). Installs done via `install.sh` also
+**auto-update in the background** — a detached, debounced check that installs new
+minor/patch releases and prints `✅ cg updated to vX` on your next run. Major
+(breaking) releases are never auto-installed; you get a heads-up and choose when.
+
+Homebrew installs aren't self-replaced — `cg` points you at `brew upgrade --cask cg`.
+
+Opt out with `--no-auto-update` (one run), `CONSIGLIERE_AUTO_UPDATE=0` (disable the
+background check), or `CONSIGLIERE_NO_UPDATE_NOTICE=1` (silence notices). Full
+design + state-file reference: **[docs/auto-update.md](docs/auto-update.md)**.
 
 ## 📚 Core Concepts
 
@@ -202,10 +220,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development details.
 
 ## 📊 Status
 
-**Beta — v1.0.0 shipped, small user base.** The CLI surface (`init`, `match`, `status`, `version`) is stable and covered by tests. Framework conventions (sentinel-delimited sections, `.cg.json`, template set) are in active evolution and may change between minor releases; migrations will be documented in `CHANGELOG.md`.
+**Beta — small user base.** The CLI surface (`init`, `match`, `status`, `version`, `update`) is stable and covered by tests. Framework conventions (sentinel-delimited sections, `.cg.json`, template set) are in active evolution and may change between minor releases; migrations will be documented in `CHANGELOG.md`.
 
 ## 📖 Project docs
 
+- [Auto-update](docs/auto-update.md) — `cg update`, the background worker, the major-version gate, and every state file
+- [Workspace sync](docs/workspace-sync.md) — how `cg sync` reconciles a workspace's content with the framework
 - [Contributing](CONTRIBUTING.md) — setup, common tasks, release process, commit conventions
 - [Security policy](SECURITY.md) — how to report vulnerabilities privately
 - [Code of conduct](CODE_OF_CONDUCT.md) — Contributor Covenant 2.1
