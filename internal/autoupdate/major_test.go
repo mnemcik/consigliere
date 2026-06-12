@@ -93,10 +93,14 @@ func TestClearStaleMajorMarker(t *testing.T) {
 
 func TestSnoozeAndIgnoreNoPending(t *testing.T) {
 	isolatedState(t)
-	if _, pending, _ := SnoozeMajor(MajorSnoozeDuration); pending {
+	if _, pending, err := SnoozeMajor(MajorSnoozeDuration); err != nil {
+		t.Fatalf("SnoozeMajor: %v", err)
+	} else if pending {
 		t.Error("SnoozeMajor should report not-pending with no marker")
 	}
-	if _, pending, _ := IgnoreMajor(); pending {
+	if _, pending, err := IgnoreMajor(); err != nil {
+		t.Fatalf("IgnoreMajor: %v", err)
+	} else if pending {
 		t.Error("IgnoreMajor should report not-pending with no marker")
 	}
 }

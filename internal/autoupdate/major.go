@@ -93,6 +93,7 @@ func changelogURL(repo, version string) string {
 // versions the user permanently ignored and preserves an existing snooze for
 // the same target so a background re-check doesn't reset it.
 func handleMajorAvailable(repo, from, to string) error {
+	to = Normalize(to) // keep the ignore list + marker in one consistent format
 	if isIgnored(to) {
 		return nil
 	}
