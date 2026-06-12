@@ -25,8 +25,8 @@ func TestDetectValidWorkspace(t *testing.T) {
 	if cfg == nil {
 		t.Fatal("expected config, got nil")
 	}
-	if cfg.Type != "consigliere" {
-		t.Errorf("expected type 'consigliere', got '%s'", cfg.Type)
+	if cfg.Type != TypeConsigliere {
+		t.Errorf("expected type %q, got %q", TypeConsigliere, cfg.Type)
 	}
 	if cfg.Version != "1.0.0" {
 		t.Errorf("expected version '1.0.0', got '%s'", cfg.Version)
@@ -72,8 +72,8 @@ func TestWorktreeSettingsDefaults(t *testing.T) {
 	// nil config and config without a worktree block both yield all-defaults.
 	for name, cfg := range map[string]*Config{
 		"nil":       nil,
-		"no-block":  {Type: "consigliere"},
-		"empty-blk": {Type: "consigliere", Worktree: &WorktreeConfig{}},
+		"no-block":  {Type: TypeConsigliere},
+		"empty-blk": {Type: TypeConsigliere, Worktree: &WorktreeConfig{}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			w := cfg.WorktreeSettings()
@@ -92,7 +92,7 @@ func TestWorktreeSettingsDefaults(t *testing.T) {
 
 func TestWorktreeSettingsOverrides(t *testing.T) {
 	cfg := &Config{
-		Type: "consigliere",
+		Type: TypeConsigliere,
 		Worktree: &WorktreeConfig{
 			Root:            "/custom/prefix",
 			BranchPrefix:    "wt/",

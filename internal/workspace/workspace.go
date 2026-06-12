@@ -9,6 +9,10 @@ import (
 
 const ConfigFile = ".cg.json"
 
+// TypeConsigliere is the value of the .cg.json "type" field that marks a
+// directory as a Consigliere workspace.
+const TypeConsigliere = "consigliere"
+
 // Default values for the optional v1.1 config blocks. They are baked into the
 // binary so an absent or pre-1.1 .cg.json behaves exactly as before: the
 // *Settings() accessors fill any zero field with these.
@@ -136,7 +140,7 @@ func Detect(dir string) (*Config, error) {
 		return nil, err
 	}
 
-	if cfg.Type != "consigliere" {
+	if cfg.Type != TypeConsigliere {
 		return nil, nil
 	}
 

@@ -135,7 +135,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Create .cg.json
 	cgJSON := workspace.Config{
-		Type:    "consigliere",
+		Type:    workspace.TypeConsigliere,
 		Version: Version,
 		Indexes: map[string]string{
 			dirProjects: indexProjectsPath,
