@@ -61,7 +61,7 @@ func TestUpdateCheckReportsUpToDate(t *testing.T) {
 	}
 }
 
-func runUpdate(t *testing.T, args ...string) string {
+func runUpdate(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	old := Version
 	Version = "1.0.0"
@@ -73,23 +73,24 @@ func runUpdate(t *testing.T, args ...string) string {
 	rootCmd.SetOut(buf)
 	rootCmd.SetErr(buf)
 	rootCmd.SetArgs(args)
-	if err := rootCmd.Execute(); err != nil {
-		t.Fatalf("execute %v: %v", args, err)
-	}
-	return buf.String()
+	err := rootCmd.Execute()
+	return buf.String(), err
 }
 
 func TestUpdateSnoozeRequiresMajorFlag(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	out := runUpdate(t, "update", "snooze")
-	if !strings.Contains(out, "--major") {
-		t.Errorf("snooze without --major should prompt for it, got: %q", out)
+	_, err := runUpdate(t, "update", "snooze")
+	if err == nil || !strings.Contains(err.Error(), "--major") {
+		t.Errorf("snooze without --major should error mentioning --major, got: %v", err)
 	}
 }
 
 func TestUpdateSnoozeNoPending(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	out := runUpdate(t, "update", "snooze", "--major")
+	out, err := runUpdate(t, "update", "snooze", "--major")
+	if err != nil {
+		t.Fatalf("snooze --major (no marker) should not error: %v", err)
+	}
 	if !strings.Contains(out, "No pending major") {
 		t.Errorf("snooze with no marker should say so, got: %q", out)
 	}
@@ -97,7 +98,10 @@ func TestUpdateSnoozeNoPending(t *testing.T) {
 
 func TestUpdateIgnoreNoPending(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	out := runUpdate(t, "update", "ignore", "--major")
+	out, err := runUpdate(t, "update", "ignore", "--major")
+	if err != nil {
+		t.Fatalf("ignore --major (no marker) should not error: %v", err)
+	}
 	if !strings.Contains(out, "No pending major") {
 		t.Errorf("ignore with no marker should say so, got: %q", out)
 	}

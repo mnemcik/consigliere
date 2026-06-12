@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -142,8 +143,7 @@ var updateSnoozeCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		out := cmd.OutOrStdout()
 		if !snoozeMajor {
-			_, err := fmt.Fprintln(out, "Pass --major to snooze the major-release notice (the only snoozeable notice).")
-			return err
+			return errors.New("pass --major to snooze the major-release notice (the only snoozeable notice)")
 		}
 		to, pending, err := autoupdate.SnoozeMajor(autoupdate.MajorSnoozeDuration)
 		if err != nil {
@@ -165,8 +165,7 @@ var updateIgnoreCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		out := cmd.OutOrStdout()
 		if !ignoreMajor {
-			_, err := fmt.Fprintln(out, "Pass --major to dismiss the pending major release.")
-			return err
+			return errors.New("pass --major to dismiss the pending major release")
 		}
 		to, pending, err := autoupdate.IgnoreMajor()
 		if err != nil {
