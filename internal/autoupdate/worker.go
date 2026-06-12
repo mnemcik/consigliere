@@ -71,14 +71,24 @@ func doCheckAndInstall(currentVersion string) {
 		return
 	}
 	if !IsNewer(currentVersion, latest) {
+		ClearStaleMajorMarker(currentVersion)
 		return
 	}
 
 	// Only install.sh-managed binaries are self-replaced; brew/unknown installs
-	// are left to their package manager (DEC-011). (The warn-only major gate is
-	// layered on in a follow-up.)
+	// are left to their package manager (DEC-011).
 	m := DetectManagement()
 	if !m.SelfManaged {
+		return
+	}
+
+	// Major (breaking) bumps are never auto-installed: record a warn-only
+	// marker instead, so the next cg run nudges the user to upgrade explicitly
+	// via `cg update upgrade` (DEC — major gate).
+	if IsMajorBump(currentVersion, latest) {
+		if err := handleMajorAvailable(repo, Normalize(currentVersion), latest); err != nil {
+			logError("write major-available marker", err)
+		}
 		return
 	}
 
@@ -89,6 +99,8 @@ func doCheckAndInstall(currentVersion string) {
 	if err := RefreshInstalledState(latest, nowISO()); err != nil {
 		logError("refresh installed.json", err)
 	}
+	// A minor/patch that moved past a previously-flagged major clears the marker.
+	ClearStaleMajorMarker(latest)
 	writeUpdatedMarker(Normalize(currentVersion), latest)
 }
 

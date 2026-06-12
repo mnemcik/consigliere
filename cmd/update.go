@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,9 +11,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// snoozeMajor / ignoreMajor are bound to the --major flags on the
+// snooze/ignore subcommands.
+var (
+	snoozeMajor bool
+	ignoreMajor bool
+)
+
 func init() {
 	updateCmd.AddCommand(updateCheckCmd)
 	updateCmd.AddCommand(updateUpgradeCmd)
+	updateCmd.AddCommand(updateSnoozeCmd)
+	updateCmd.AddCommand(updateIgnoreCmd)
+	updateSnoozeCmd.Flags().BoolVar(&snoozeMajor, "major", false, "snooze the pending major-release notice")
+	updateIgnoreCmd.Flags().BoolVar(&ignoreMajor, "major", false, "permanently dismiss the pending major release")
 	rootCmd.AddCommand(updateCmd)
 }
 
@@ -116,8 +128,54 @@ var updateUpgradeCmd = &cobra.Command{
 			// file failed to refresh.
 			fmt.Fprintf(&tail, "⚠️  upgraded, but could not refresh installed.json: %v\n", err)
 		}
+		// An explicit upgrade clears any pending major-available notice it satisfied.
+		autoupdate.ClearStaleMajorMarker(res.Latest)
 		fmt.Fprintf(&tail, "✅ Upgraded to %s.\n", res.Latest)
 		_, werr := fmt.Fprint(out, tail.String())
+		return werr
+	},
+}
+
+var updateSnoozeCmd = &cobra.Command{
+	Use:   "snooze",
+	Short: "Silence the pending major-release notice for 7 days",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		out := cmd.OutOrStdout()
+		if !snoozeMajor {
+			return errors.New("pass --major to snooze the major-release notice (the only snoozeable notice)")
+		}
+		to, pending, err := autoupdate.SnoozeMajor(autoupdate.MajorSnoozeDuration)
+		if err != nil {
+			return fmt.Errorf("snooze: %w", err)
+		}
+		if !pending {
+			_, werr := fmt.Fprintln(out, "No pending major release to snooze.")
+			return werr
+		}
+		_, werr := fmt.Fprintf(out, "Snoozed the %s major-release notice for 7 days.\n", to)
+		return werr
+	},
+}
+
+var updateIgnoreCmd = &cobra.Command{
+	Use:   "ignore",
+	Short: "Permanently dismiss the pending major release",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		out := cmd.OutOrStdout()
+		if !ignoreMajor {
+			return errors.New("pass --major to dismiss the pending major release")
+		}
+		to, pending, err := autoupdate.IgnoreMajor()
+		if err != nil {
+			return fmt.Errorf("ignore: %w", err)
+		}
+		if !pending {
+			_, werr := fmt.Fprintln(out, "No pending major release to ignore.")
+			return werr
+		}
+		_, werr := fmt.Fprintf(out, "Ignored %s permanently — the notice will re-arm on a later major.\n", to)
 		return werr
 	},
 }
