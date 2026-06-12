@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **`cg worktree create <slug>` — per-session git worktrees (first slice of the bash-helper promotion).** Creates or idempotently reuses an ephemeral worktree for a session: a branch `<branchPrefix><slug>` (default prefix `session/`) in a sibling directory `<workspace-root>--<slug>`, branched off the landing ref `origin/<landingBranch>` (default `main`). Prints the worktree path to stdout so callers can `path=$(cg worktree create x) && cd "$path"`. Mirrors the four scenarios of the personal-workspace `create-session-worktree.sh` (fresh / reuse-clean / unlanded-blocks / orphan-branch-attach) and exits **2** when the branch or worktree has unlanded commits unless `--force` is given. A new `internal/gitx` package wraps the git CLI cross-platform (replacing the shell helpers' `git -C` + awk/grep parsing), and `main.go` now honors an exit-code contract carried on returned errors (`internal/cgerr`).
+- **`.cg.json` v1.1 — optional `worktree`, `session`, and `pushPolicy` blocks.** Additive and fully backward-compatible: an absent or pre-1.1 `.cg.json` behaves exactly as before, since every field falls back to a binary-baked default. Documents the worktree settings consumed by `cg worktree`. Schema reference: [`docs/cg-subcommands.md`](docs/cg-subcommands.md).
+
 ## [1.2.0] - 2026-06-12
 
 Binary auto-update. `cg` can now keep itself current — manual `cg update check` /
