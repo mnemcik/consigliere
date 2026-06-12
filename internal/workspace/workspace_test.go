@@ -164,7 +164,7 @@ func sameDir(t *testing.T, a, b string) bool {
 	}
 	rb, err := filepath.EvalSymlinks(b)
 	if err != nil {
-		return a == b
+		return ra == b
 	}
 	return ra == rb
 }

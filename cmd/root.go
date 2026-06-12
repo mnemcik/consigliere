@@ -22,9 +22,6 @@ var rootCmd = &cobra.Command{
 	Short:   "Consigliere — personal workspace management",
 	Long:    "Consigliere (cg) is a personal workspace management framework.\nIt provides structure, templates, and conventions for organizing projects, ideas, notes, areas, and insights.",
 	Version: Version,
-	// Don't print usage on operational (non-usage) errors — a failed
-	// `cg worktree ...` should report its error, not dump the command's help.
-	SilenceUsage: true,
 	// Runs before every subcommand: surface a one-shot "updated" notice from a
 	// prior background install, then fire off the detached freshness check.
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {

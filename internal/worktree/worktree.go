@@ -40,8 +40,13 @@ type Options struct {
 
 func (o Options) worktreePath(slug string) string {
 	prefix := o.Prefix
-	if prefix == "" {
+	switch {
+	case prefix == "":
 		prefix = o.Root
+	case !filepath.IsAbs(prefix):
+		// A relative configured prefix is resolved against the workspace root, so
+		// the worktree path stays absolute and matches the paths git reports.
+		prefix = filepath.Join(o.Root, prefix)
 	}
 	return prefix + "--" + slug
 }
@@ -81,7 +86,12 @@ func Create(ctx context.Context, slug string, opt Options, logw io.Writer) (stri
 		return "", err
 	}
 	if containsPath(paths, worktreePath) {
-		unlanded, _ := gitx.LogOneline(ctx, worktreePath, landing+"..HEAD")
+		// A failed rev-walk must not be misread as "clean" — that would bypass
+		// the unlanded-commit guard. Surface the error instead.
+		unlanded, err := gitx.LogOneline(ctx, worktreePath, landing+"..HEAD")
+		if err != nil {
+			return "", err
+		}
 		if unlanded != "" && !opt.Force {
 			logf("worktree exists at %s with unlanded commits:\n%s\n", worktreePath, unlanded)
 			logf("land them (cd %s && cg worktree land) or re-run with --force to reuse as-is\n", worktreePath)
@@ -96,7 +106,10 @@ func Create(ctx context.Context, slug string, opt Options, logw io.Writer) (stri
 	if gitx.RefExists(ctx, opt.Root, branchRef) {
 		if !gitx.IsAncestor(ctx, opt.Root, branchRef, landing) {
 			if !opt.Force {
-				unlanded, _ := gitx.LogOneline(ctx, opt.Root, landing+".."+branchRef)
+				unlanded, err := gitx.LogOneline(ctx, opt.Root, landing+".."+branchRef)
+				if err != nil {
+					return "", err
+				}
 				logf("orphan branch %s has unlanded commits:\n%s\n", branch, unlanded)
 				logf("delete the branch (git branch -D %s) or re-run with --force to attach anyway\n", branch)
 				return "", cgerr.New(cgerr.ExitDirty, "unlanded commits on orphan branch %s", branch)

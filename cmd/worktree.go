@@ -47,6 +47,11 @@ Exits 2 when the target branch or worktree has unlanded commits; re-run with
 }
 
 func runWorktreeCreate(cmd *cobra.Command, args []string) error {
+	// Past argument validation, errors are operational (git/workspace failures),
+	// not usage mistakes — report them without dumping the command's help. Arg
+	// validation runs before RunE, so `cobra.ExactArgs` errors still print usage.
+	cmd.SilenceUsage = true
+
 	ctx := cmd.Context()
 
 	cwd, err := os.Getwd()

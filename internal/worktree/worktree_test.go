@@ -28,6 +28,26 @@ func TestValidSlug(t *testing.T) {
 	}
 }
 
+func TestWorktreePath(t *testing.T) {
+	tests := []struct {
+		name string
+		opt  Options
+		slug string
+		want string
+	}{
+		{"default prefix = root", Options{Root: "/ws"}, "x", "/ws--x"},
+		{"absolute prefix", Options{Root: "/ws", Prefix: "/other"}, "x", "/other--x"},
+		{"relative prefix resolved against root", Options{Root: "/ws", Prefix: "wt"}, "x", "/ws/wt--x"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.opt.worktreePath(tc.slug); got != tc.want {
+				t.Errorf("worktreePath = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestCreateInvalidSlug(t *testing.T) {
 	// No git needed: validation happens before any git call.
 	_, err := Create(context.Background(), "Bad Slug", Options{}, &bytes.Buffer{})
