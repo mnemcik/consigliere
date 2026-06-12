@@ -106,6 +106,57 @@ func WorktreeAddNew(ctx context.Context, dir, path, branch, startPoint string) e
 	return err
 }
 
+// SymbolicRefShort returns the short symbolic ref of HEAD (the current branch
+// name). It errors when HEAD is detached.
+func SymbolicRefShort(ctx context.Context, dir string) (string, error) {
+	return Run(ctx, dir, "symbolic-ref", "--short", "HEAD")
+}
+
+// IsDetached reports whether HEAD is detached (not on a branch) in dir.
+func IsDetached(ctx context.Context, dir string) bool {
+	return !ok(ctx, dir, "symbolic-ref", "-q", "HEAD")
+}
+
+// CheckoutNewBranch creates branch at HEAD and checks it out.
+func CheckoutNewBranch(ctx context.Context, dir, branch string) error {
+	_, err := Run(ctx, dir, "checkout", "-b", branch)
+	return err
+}
+
+// CommitishExists reports whether rev resolves to a commit object in dir.
+func CommitishExists(ctx context.Context, dir, rev string) bool {
+	return ok(ctx, dir, "cat-file", "-e", rev+"^{commit}")
+}
+
+// Push runs `git push <remote> <refspec> --quiet` in dir.
+func Push(ctx context.Context, dir, remote, refspec string) error {
+	_, err := Run(ctx, dir, "push", remote, refspec, "--quiet")
+	return err
+}
+
+// Rebase runs `git rebase <onto>` in dir.
+func Rebase(ctx context.Context, dir, onto string) error {
+	_, err := Run(ctx, dir, "rebase", onto)
+	return err
+}
+
+// ConflictedFiles returns the paths with unresolved merge conflicts in dir.
+func ConflictedFiles(ctx context.Context, dir string) ([]string, error) {
+	out, err := Run(ctx, dir, "diff", "--name-only", "--diff-filter=U")
+	if err != nil {
+		return nil, err
+	}
+	if out == "" {
+		return nil, nil
+	}
+	return strings.Split(out, "\n"), nil
+}
+
+// RevParse returns the resolved object id of rev in dir.
+func RevParse(ctx context.Context, dir, rev string) (string, error) {
+	return Run(ctx, dir, "rev-parse", rev)
+}
+
 // CommonRoot returns the main worktree's root directory for the repository
 // containing dir — i.e. the parent of the shared git common directory. This is
 // the directory the shell helpers referred to as WORKSPACE_ROOT, resolved from
