@@ -2,6 +2,7 @@ package worktree
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -220,15 +221,32 @@ func ghPRCreateOrView(ctx context.Context, dir, branch, landingBranch string) (s
 	create := exec.CommandContext(ctx, "gh", "pr", "create",
 		"--base", landingBranch, "--head", branch, "--fill")
 	create.Dir = dir
-	if out, err := create.Output(); err == nil {
+	out, createErr := create.Output()
+	if createErr == nil {
 		return strings.TrimSpace(string(out)), nil
 	}
+	// create failed — most often because a PR already exists for this head, but
+	// possibly auth/network/rate-limit. Try to surface the existing PR; if that
+	// also fails, report gh's own stderr from create so the cause isn't lost.
 	// #nosec G204 -- see above.
 	view := exec.CommandContext(ctx, "gh", "pr", "view", branch, "--json", "url", "-q", ".url")
 	view.Dir = dir
-	out, err := view.Output()
-	if err != nil {
-		return "", err
+	viewOut, viewErr := view.Output()
+	if viewErr != nil {
+		return "", fmt.Errorf("gh pr create failed: %s; no existing PR for %s: %w",
+			ghStderr(createErr), branch, viewErr)
 	}
-	return strings.TrimSpace(string(out)), nil
+	return strings.TrimSpace(string(viewOut)), nil
+}
+
+// ghStderr extracts the captured stderr from an exec failure (gh writes its
+// human-readable error there), falling back to the error's own string.
+func ghStderr(err error) string {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		if msg := strings.TrimSpace(string(ee.Stderr)); msg != "" {
+			return msg
+		}
+	}
+	return err.Error()
 }
