@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-06-12
+
+Binary auto-update. `cg` can now keep itself current — manual `cg update check` /
+`upgrade`, a detached background freshness check, and a warn-only gate for major
+(breaking) releases. Auto-update activates for installs running **v1.2.0 or
+later** (it ships *in* this release, so it can't pull this release onto an older
+binary — upgrade once via `install.sh` / `brew` / `cg update upgrade`, and it's
+automatic from here on). Distinct from `cg sync`, which reconciles workspace
+*content*; `cg update` replaces the *binary*.
+
 ### Added
 
 - **`cg update check` — binary update discovery (first slice of the auto-update subsystem).** Reports whether a newer `cg` release is available by querying the public GitHub Releases API anonymously (no `gh` or auth token required) and comparing the latest tag to the running version with proper semver ordering. Development builds (`dev`, dirty `git describe`) are detected and skip the check. A failed check (offline, GitHub unreachable) prints a notice and exits zero — it never fails the command. Discovery, semver comparison, and state-file paths live in a new pure, unit-tested `internal/autoupdate` package; the GitHub API base URL and target repo are overridable via `CONSIGLIERE_GITHUB_API_BASE` / `CONSIGLIERE_AUTO_UPDATE_REPO`. Groundwork for `cg update upgrade` (in-place self-replace) and the background freshness check in follow-up PRs.
