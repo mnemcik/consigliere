@@ -26,7 +26,13 @@ make test       # Run tests with race detector
 make lint       # Run linters
 make check      # Run everything (fmt, tidy, lint, test)
 make clean      # Remove build artifacts
+
+make e2e-autoupdate   # End-to-end test of the auto-update subsystem (needs python3)
 ```
+
+`make e2e-autoupdate` exercises the real `cg update` / background-worker / major-gate
+code paths against a throwaway local server standing in for GitHub Releases — no network
+and no release required. See [`docs/auto-update.md`](docs/auto-update.md) for the design.
 
 ### Project structure
 
