@@ -21,8 +21,8 @@ without clobbering a user's `settings.json`.
 | `cg worktree remove <slug> [--force]` | `remove-session-worktree.sh` | **shipped** |
 | `cg worktree list` | `git worktree list` parsing | **shipped** |
 | `cg session start-gate` | `session-start-gate.sh` | planned |
-| `cg session mark-dirty` | `mark-session-dirty.sh` | planned |
-| `cg session pull-latest` | `pull-latest-main.sh` | planned |
+| `cg session mark-dirty` | `mark-session-dirty.sh` | **shipped** |
+| `cg session pull-latest` | `pull-latest-main.sh` | **shipped** |
 | `cg session statusline` | `statusline.sh` | planned |
 | `cg push-policy lookup <owner/repo>` | `lookup-push-policy.sh` | planned |
 | `cg push-policy gate` | `external-repo-push-policy.sh` | planned |
