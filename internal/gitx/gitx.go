@@ -190,6 +190,21 @@ func IsDetached(ctx context.Context, dir string) bool {
 	return !ok(ctx, dir, "symbolic-ref", "-q", "HEAD")
 }
 
+// RemoteURL returns the configured URL of the named remote in dir.
+func RemoteURL(ctx context.Context, dir, remote string) (string, error) {
+	return Run(ctx, dir, "remote", "get-url", remote)
+}
+
+// DefaultBranch returns the remote's default branch (origin/HEAD with the
+// "origin/" prefix stripped), falling back to "main" when it can't be resolved.
+func DefaultBranch(ctx context.Context, dir string) string {
+	out, err := Run(ctx, dir, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+	if err != nil || out == "" {
+		return "main"
+	}
+	return strings.TrimPrefix(out, "origin/")
+}
+
 // CheckoutNewBranch creates branch at HEAD and checks it out.
 func CheckoutNewBranch(ctx context.Context, dir, branch string) error {
 	_, err := Run(ctx, dir, "checkout", "-b", branch)
