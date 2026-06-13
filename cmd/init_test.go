@@ -16,6 +16,98 @@ func chdir(t *testing.T, dir string) {
 	}
 }
 
+func TestInitInstallsClaudeIntegration(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer chdir(t, origDir)
+	chdir(t, dir)
+	forceInit = false
+
+	if err := runInit(nil, nil); err != nil {
+		t.Fatalf("init failed: %v", err)
+	}
+
+	// Hook wrappers + statusline exist and are executable.
+	execFiles := []string{
+		".claude/hooks/session-start-gate.sh",
+		".claude/hooks/mark-session-dirty.sh",
+		".claude/hooks/pull-latest-main.sh",
+		".claude/hooks/external-repo-push-policy.sh",
+		".claude/statusline.sh",
+	}
+	for _, f := range execFiles {
+		fi, err := os.Stat(filepath.Join(dir, f))
+		if err != nil {
+			t.Errorf("expected %s to exist: %v", f, err)
+			continue
+		}
+		if fi.Mode()&0o100 == 0 {
+			t.Errorf("%s should be executable, mode=%v", f, fi.Mode())
+		}
+	}
+
+	// settings.json + gate template exist.
+	for _, f := range []string{".claude/settings.json", ".claude/cg/session-gate.md"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+			t.Errorf("expected %s to exist: %v", f, err)
+		}
+	}
+
+	// .cg.json wires the gate template.
+	data, _ := os.ReadFile(filepath.Join(dir, ".cg.json"))
+	var cfg map[string]any
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	sess, _ := cfg["session"].(map[string]any)
+	if sess == nil || sess["gateTemplate"] != gateTemplateRel {
+		t.Errorf("expected session.gateTemplate wired in .cg.json, got %v", cfg["session"])
+	}
+}
+
+func TestInitForcePreservesUserOwnedClaudeFiles(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer chdir(t, origDir)
+	chdir(t, dir)
+	forceInit = false
+	if err := runInit(nil, nil); err != nil {
+		t.Fatalf("init failed: %v", err)
+	}
+
+	// User edits settings.json + gate template, and a hook wrapper.
+	settingsPath := filepath.Join(dir, ".claude", "settings.json")
+	gatePath := filepath.Join(dir, ".claude", "cg", "session-gate.md")
+	wrapperPath := filepath.Join(dir, ".claude", "hooks", "session-start-gate.sh")
+	if err := os.WriteFile(settingsPath, []byte(`{"custom":true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(gatePath, []byte("MY custom gate"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(wrapperPath, []byte("# clobber me\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	forceInit = true
+	defer func() { forceInit = false }()
+	if err := runInit(nil, nil); err != nil {
+		t.Fatalf("re-init failed: %v", err)
+	}
+
+	// User-owned files preserved.
+	if b, _ := os.ReadFile(settingsPath); string(b) != `{"custom":true}` {
+		t.Errorf("settings.json should be preserved on --force, got %q", b)
+	}
+	if b, _ := os.ReadFile(gatePath); string(b) != "MY custom gate" {
+		t.Errorf("gate template should be preserved on --force, got %q", b)
+	}
+	// Framework-owned wrapper rewritten.
+	if b, _ := os.ReadFile(wrapperPath); string(b) == "# clobber me\n" {
+		t.Error("hook wrapper should be rewritten on --force")
+	}
+}
+
 func TestInitCreatesWorkspace(t *testing.T) {
 	dir := t.TempDir()
 	origDir, _ := os.Getwd()

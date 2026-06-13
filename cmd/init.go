@@ -28,6 +28,10 @@ var validSlug = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 //go:embed all:embed_templates
 var embeddedFS embed.FS
 
+// gateTemplateRel is the workspace-relative path of the editable session-gate
+// template; the generated .cg.json points session.gateTemplate at it.
+const gateTemplateRel = ".claude/cg/session-gate.md"
+
 var (
 	forceInit  bool
 	wizardInit bool
@@ -144,6 +148,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 			dirNotes:    "notes/INDEX.md",
 			dirInsights: "insights/DRAFTS.md",
 		},
+		// Point the session-start gate at the editable template shipped under
+		// .claude/cg/ so customizing the wording needs no binary rebuild.
+		Session: &workspace.SessionConfig{
+			GateTemplate: gateTemplateRel,
+		},
 	}
 	data, _ := json.MarshalIndent(cgJSON, "", "  ")
 	data = append(data, '\n')
@@ -250,6 +259,34 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 		for src, dst := range commands {
 			c, s := copyEmbeddedFile(dir, src, dst, forceInit)
+			created = append(created, c...)
+			skipped = append(skipped, s...)
+		}
+
+		// Claude Code hook wrappers + status line: framework-owned, so --force
+		// rewrites them (and they carry the executable bit). They delegate to the
+		// cg binary (DEC-004); a missing cg degrades to a no-op, not a hook error.
+		wrappers := map[string]string{
+			"embed_templates/workspace/.claude/hooks/session-start-gate.sh":        filepath.Join(".claude", "hooks", "session-start-gate.sh"),
+			"embed_templates/workspace/.claude/hooks/mark-session-dirty.sh":        filepath.Join(".claude", "hooks", "mark-session-dirty.sh"),
+			"embed_templates/workspace/.claude/hooks/pull-latest-main.sh":          filepath.Join(".claude", "hooks", "pull-latest-main.sh"),
+			"embed_templates/workspace/.claude/hooks/external-repo-push-policy.sh": filepath.Join(".claude", "hooks", "external-repo-push-policy.sh"),
+			"embed_templates/workspace/.claude/statusline.sh":                      filepath.Join(".claude", "statusline.sh"),
+		}
+		for src, dst := range wrappers {
+			c, s := copyEmbeddedExecutable(dir, src, dst, forceInit)
+			created = append(created, c...)
+			skipped = append(skipped, s...)
+		}
+
+		// settings.json (hook/statusLine wiring) and the gate template are
+		// user-customizable, so they are never clobbered — even on --force.
+		userOwned := map[string]string{
+			"embed_templates/workspace/.claude/settings.json":      filepath.Join(".claude", "settings.json"),
+			"embed_templates/workspace/.claude/cg/session-gate.md": filepath.Join(".claude", "cg", "session-gate.md"),
+		}
+		for src, dst := range userOwned {
+			c, s := copyEmbeddedFile(dir, src, dst, false)
 			created = append(created, c...)
 			skipped = append(skipped, s...)
 		}
@@ -360,6 +397,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 }
 
 func copyEmbeddedFile(dir, src, dst string, overwrite bool) (created, skipped []string) {
+	return copyEmbeddedFileMode(dir, src, dst, overwrite, 0o644)
+}
+
+// copyEmbeddedExecutable is copyEmbeddedFile with the executable bit set — used
+// for the hook/statusline wrappers Claude Code invokes.
+func copyEmbeddedExecutable(dir, src, dst string, overwrite bool) (created, skipped []string) {
+	return copyEmbeddedFileMode(dir, src, dst, overwrite, 0o755)
+}
+
+func copyEmbeddedFileMode(dir, src, dst string, overwrite bool, mode os.FileMode) (created, skipped []string) {
 	destPath := filepath.Join(dir, dst)
 	if !overwrite && fileExists(destPath) {
 		return nil, []string{dst}
@@ -379,9 +426,13 @@ func copyEmbeddedFile(dir, src, dst string, overwrite bool) (created, skipped []
 		}
 	}
 
-	if err := os.WriteFile(destPath, data, 0o644); err != nil {
+	if err := os.WriteFile(destPath, data, mode); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: cannot write %s: %v\n", dst, err)
 		return nil, nil
+	}
+	// WriteFile only applies mode on create; ensure the bit sticks on overwrite.
+	if mode&0o111 != 0 {
+		_ = os.Chmod(destPath, mode)
 	}
 
 	return []string{dst}, nil

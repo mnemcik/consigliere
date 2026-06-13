@@ -27,7 +27,14 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-latest
+    # Run on Linux and macOS so the git-integration tests (worktree/session)
+    # exercise both filesystems — notably macOS's /var → /private/var symlinks,
+    # which the worktree path matching has to canonicalize.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v6
 
@@ -41,7 +48,7 @@ jobs:
       - name: Upload coverage
         uses: actions/upload-artifact@v7
         with:
-          name: coverage
+          name: coverage-${{ matrix.os }}
           path: coverage.out
 
   build:

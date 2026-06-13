@@ -7,10 +7,14 @@ Go removes the Bash 3.2 portability constraint, drops the hardcoded
 `~/source/personal-workspace` assumptions, and makes the mechanics work on
 Windows.
 
-Hooks themselves continue to ship as tiny bash **wrappers** that `exec cg …`
-(see the project decision log): the wrapper is user-readable and editable, can
-emit a clear error if `cg` is missing, and survives `cg init --force` rewrites
-without clobbering a user's `settings.json`.
+Hooks themselves ship as tiny bash **wrappers** that `exec cg …` (see the
+project decision log): the wrapper is user-readable and editable, degrades to a
+no-op when `cg` is missing, and survives `cg init --force` rewrites without
+clobbering a user's `settings.json`. `cg init` installs the whole `.claude/`
+tree — `hooks/*.sh` + `statusline.sh` (framework-owned, rewritten on `--force`,
+executable), `settings.json` and `cg/session-gate.md` (user-owned, never
+clobbered) — and points `.cg.json`'s `session.gateTemplate` at the gate
+template.
 
 ## Subcommand surface
 
