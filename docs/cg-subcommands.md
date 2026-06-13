@@ -18,8 +18,8 @@ without clobbering a user's `settings.json`.
 |------------|----------|--------|
 | `cg worktree create <slug> [--force]` | `create-session-worktree.sh` | **shipped** |
 | `cg worktree land [<sha>] [--strategy …]` | `land-worktree-commit.sh` | **shipped** |
-| `cg worktree remove <slug> [--force]` | `remove-session-worktree.sh` | planned |
-| `cg worktree list` | `git worktree list` parsing | planned |
+| `cg worktree remove <slug> [--force]` | `remove-session-worktree.sh` | **shipped** |
+| `cg worktree list` | `git worktree list` parsing | **shipped** |
 | `cg session start-gate` | `session-start-gate.sh` | planned |
 | `cg session mark-dirty` | `mark-session-dirty.sh` | planned |
 | `cg session pull-latest` | `pull-latest-main.sh` | planned |

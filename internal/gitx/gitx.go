@@ -94,6 +94,79 @@ func WorktreePaths(ctx context.Context, dir string) ([]string, error) {
 	return paths, nil
 }
 
+// Worktree is one entry from `git worktree list --porcelain`.
+type Worktree struct {
+	Path     string
+	Branch   string // short branch name; empty when detached
+	Head     string // commit object id
+	Detached bool
+}
+
+// WorktreeList returns every worktree registered for the repository containing
+// dir, with its checked-out branch (or detached HEAD), parsed from
+// `git worktree list --porcelain`.
+func WorktreeList(ctx context.Context, dir string) ([]Worktree, error) {
+	out, err := Run(ctx, dir, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+	var (
+		list []Worktree
+		cur  *Worktree
+	)
+	flush := func() {
+		if cur != nil {
+			list = append(list, *cur)
+			cur = nil
+		}
+	}
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			flush()
+			cur = &Worktree{Path: strings.TrimSpace(strings.TrimPrefix(line, "worktree "))}
+		case cur == nil:
+			// ignore lines before the first worktree block
+		case strings.HasPrefix(line, "HEAD "):
+			cur.Head = strings.TrimSpace(strings.TrimPrefix(line, "HEAD "))
+		case strings.HasPrefix(line, "branch "):
+			ref := strings.TrimSpace(strings.TrimPrefix(line, "branch "))
+			cur.Branch = strings.TrimPrefix(ref, "refs/heads/")
+		case line == "detached":
+			cur.Detached = true
+		}
+	}
+	flush()
+	return list, nil
+}
+
+// WorktreeRemove removes the worktree at path (with --force when force is set).
+func WorktreeRemove(ctx context.Context, dir, path string, force bool) error {
+	args := []string{"worktree", "remove"}
+	if force {
+		args = append(args, "--force")
+	}
+	args = append(args, path)
+	_, err := Run(ctx, dir, args...)
+	return err
+}
+
+// BranchDelete force-deletes the local branch (git branch -D).
+func BranchDelete(ctx context.Context, dir, branch string) error {
+	_, err := Run(ctx, dir, "branch", "-D", branch)
+	return err
+}
+
+// ShowToplevel returns the top-level directory of the working tree containing
+// dir, or "" when dir is not inside a git repository.
+func ShowToplevel(ctx context.Context, dir string) string {
+	out, err := Run(ctx, dir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return ""
+	}
+	return out
+}
+
 // WorktreeAdd attaches a new worktree at path checked out to an existing branch.
 func WorktreeAdd(ctx context.Context, dir, path, branch string) error {
 	_, err := Run(ctx, dir, "worktree", "add", path, branch)
