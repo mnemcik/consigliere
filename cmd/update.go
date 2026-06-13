@@ -39,7 +39,7 @@ var updateCmd = &cobra.Command{
 }
 
 var updateCheckCmd = &cobra.Command{
-	Use:   "check",
+	Use:   cmdCheck,
 	Short: "Check whether a newer cg release is available",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {

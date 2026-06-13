@@ -12,6 +12,7 @@ var Version = "dev"
 const (
 	cmdUpdate  = "update"
 	cmdVersion = "version"
+	cmdCheck   = "check"
 )
 
 // noAutoUpdate is bound to the persistent --no-auto-update flag.
