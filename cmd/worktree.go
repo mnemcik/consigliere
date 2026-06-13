@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
@@ -14,6 +16,7 @@ import (
 var (
 	worktreeCreateForce  bool
 	worktreeLandStrategy string
+	worktreeRemoveForce  bool
 )
 
 func init() {
@@ -21,9 +24,31 @@ func init() {
 		"reuse or attach even when the branch has unlanded commits")
 	worktreeLandCmd.Flags().StringVar(&worktreeLandStrategy, "strategy", "",
 		"landing strategy: direct-to-main or pr (default: from .cg.json, else direct-to-main)")
+	worktreeRemoveCmd.Flags().BoolVar(&worktreeRemoveForce, "force", false,
+		"remove even when the branch has unlanded commits (discards them)")
 	worktreeCmd.AddCommand(worktreeCreateCmd)
 	worktreeCmd.AddCommand(worktreeLandCmd)
+	worktreeCmd.AddCommand(worktreeRemoveCmd)
+	worktreeCmd.AddCommand(worktreeListCmd)
 	rootCmd.AddCommand(worktreeCmd)
+}
+
+// worktreeRootConfig resolves the caller's cwd, the main workspace root, and the
+// effective worktree settings from the workspace's .cg.json.
+func worktreeRootConfig(ctx context.Context) (cwd, root string, w workspace.WorktreeConfig, err error) {
+	cwd, err = os.Getwd()
+	if err != nil {
+		return "", "", workspace.WorktreeConfig{}, err
+	}
+	root, err = gitx.CommonRoot(ctx, cwd)
+	if err != nil {
+		return "", "", workspace.WorktreeConfig{}, fmt.Errorf("not inside a git repository: %w", err)
+	}
+	cfg, err := workspace.Detect(root)
+	if err != nil {
+		return "", "", workspace.WorktreeConfig{}, fmt.Errorf("error reading %s: %w", workspace.ConfigFile, err)
+	}
+	return cwd, root, cfg.WorktreeSettings(), nil
 }
 
 var worktreeCmd = &cobra.Command{
@@ -59,21 +84,10 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 	cmd.SilenceUsage = true
 
 	ctx := cmd.Context()
-
-	cwd, err := os.Getwd()
+	_, root, w, err := worktreeRootConfig(ctx)
 	if err != nil {
 		return err
 	}
-	root, err := gitx.CommonRoot(ctx, cwd)
-	if err != nil {
-		return fmt.Errorf("not inside a git repository: %w", err)
-	}
-
-	cfg, err := workspace.Detect(root)
-	if err != nil {
-		return fmt.Errorf("error reading %s: %w", workspace.ConfigFile, err)
-	}
-	w := cfg.WorktreeSettings()
 
 	path, err := worktree.Create(ctx, args[0], worktree.Options{
 		Root:          root,
@@ -115,22 +129,12 @@ func runWorktreeLand(cmd *cobra.Command, args []string) error {
 	cmd.SilenceUsage = true
 
 	ctx := cmd.Context()
-
-	cwd, err := os.Getwd()
+	// The land runs from inside the session worktree (cwd); config lives in the
+	// main workspace root (the shared common dir's parent).
+	cwd, _, w, err := worktreeRootConfig(ctx)
 	if err != nil {
 		return err
 	}
-	// The land runs from inside the session worktree; config lives in the main
-	// workspace root (the shared common dir's parent).
-	root, err := gitx.CommonRoot(ctx, cwd)
-	if err != nil {
-		return fmt.Errorf("not inside a git repository: %w", err)
-	}
-	cfg, err := workspace.Detect(root)
-	if err != nil {
-		return fmt.Errorf("error reading %s: %w", workspace.ConfigFile, err)
-	}
-	w := cfg.WorktreeSettings()
 
 	strategy := w.LandingStrategy
 	if worktreeLandStrategy != "" {
@@ -158,4 +162,87 @@ func runWorktreeLand(cmd *cobra.Command, args []string) error {
 	}
 	_, _ = fmt.Fprintln(cmd.OutOrStdout(), out)
 	return nil
+}
+
+var worktreeRemoveCmd = &cobra.Command{
+	Use:   "remove <slug>",
+	Short: "Remove a session worktree and delete its branch",
+	Long: `Remove the worktree for <slug> and delete its local branch.
+
+Refuses (exit 2) when the branch has commits not yet landed on the landing
+branch; re-run with --force to remove anyway (discarding the unlanded work).
+Will not run from inside the worktree being removed.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runWorktreeRemove,
+}
+
+func runWorktreeRemove(cmd *cobra.Command, args []string) error {
+	cmd.SilenceUsage = true
+
+	ctx := cmd.Context()
+	_, root, w, err := worktreeRootConfig(ctx)
+	if err != nil {
+		return err
+	}
+
+	return worktree.Remove(ctx, args[0], worktree.Options{
+		Root:          root,
+		Prefix:        w.Root,
+		BranchPrefix:  w.BranchPrefix,
+		LandingBranch: w.LandingBranch,
+		Force:         worktreeRemoveForce,
+	}, cmd.ErrOrStderr())
+}
+
+var worktreeListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List worktrees, annotating session worktrees",
+	Long: `List every worktree of the repository. Session worktrees (branch with the
+configured prefix) are annotated with their slug and how many commits they are
+ahead of the local landing ref (no network access; "?" when unknown).`,
+	Args: cobra.NoArgs,
+	RunE: runWorktreeList,
+}
+
+func runWorktreeList(cmd *cobra.Command, args []string) error {
+	cmd.SilenceUsage = true
+
+	ctx := cmd.Context()
+	_, root, w, err := worktreeRootConfig(ctx)
+	if err != nil {
+		return err
+	}
+
+	entries, err := worktree.List(ctx, worktree.Options{
+		Root:          root,
+		Prefix:        w.Root,
+		BranchPrefix:  w.BranchPrefix,
+		LandingBranch: w.LandingBranch,
+	})
+	if err != nil {
+		return err
+	}
+
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 2, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "SLUG\tAHEAD\tBRANCH\tPATH")
+	for _, e := range entries {
+		slug := e.Slug
+		if slug == "" {
+			slug = "-"
+		}
+		branch := e.Branch
+		if e.Detached {
+			branch = "(detached)"
+		}
+		ahead := "-"
+		if e.IsSession() {
+			if e.Ahead < 0 {
+				ahead = "?"
+			} else {
+				ahead = fmt.Sprintf("%d", e.Ahead)
+			}
+		}
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", slug, ahead, branch, e.Path)
+	}
+	return tw.Flush()
 }
