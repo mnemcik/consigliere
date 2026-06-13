@@ -26,9 +26,9 @@ without clobbering a user's `settings.json`.
 | `cg session statusline` | `statusline.sh` | **shipped** |
 | `cg push-policy lookup <owner/repo>` | `lookup-push-policy.sh` | planned |
 | `cg push-policy gate` | `external-repo-push-policy.sh` | planned |
-| `cg active [--slugs\|--json]` | `active-projects.sh` | planned |
-| `cg tags` | `area-tags.sh` | planned |
-| `cg colors check [<color>…]` | `colors-check.sh` | planned |
+| `cg active [--slugs\|--json]` | `active-projects.sh` | **shipped** |
+| `cg tags` | `area-tags.sh` | **shipped** |
+| `cg colors check` | `colors-check.sh` | **shipped** |
 
 ## Exit-code contract
 
