@@ -20,10 +20,10 @@ without clobbering a user's `settings.json`.
 | `cg worktree land [<sha>] [--strategy …]` | `land-worktree-commit.sh` | **shipped** |
 | `cg worktree remove <slug> [--force]` | `remove-session-worktree.sh` | **shipped** |
 | `cg worktree list` | `git worktree list` parsing | **shipped** |
-| `cg session start-gate` | `session-start-gate.sh` | planned |
+| `cg session start-gate` | `session-start-gate.sh` | **shipped** |
 | `cg session mark-dirty` | `mark-session-dirty.sh` | **shipped** |
 | `cg session pull-latest` | `pull-latest-main.sh` | **shipped** |
-| `cg session statusline` | `statusline.sh` | planned |
+| `cg session statusline` | `statusline.sh` | **shipped** |
 | `cg push-policy lookup <owner/repo>` | `lookup-push-policy.sh` | planned |
 | `cg push-policy gate` | `external-repo-push-policy.sh` | planned |
 | `cg active [--slugs\|--json]` | `active-projects.sh` | planned |

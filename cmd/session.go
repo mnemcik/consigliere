@@ -16,6 +16,8 @@ import (
 func init() {
 	sessionCmd.AddCommand(sessionMarkDirtyCmd)
 	sessionCmd.AddCommand(sessionPullLatestCmd)
+	sessionCmd.AddCommand(sessionStartGateCmd)
+	sessionCmd.AddCommand(sessionStatuslineCmd)
 	rootCmd.AddCommand(sessionCmd)
 }
 
@@ -107,6 +109,92 @@ func runSessionPullLatest(cmd *cobra.Command, _ []string) error {
 	if res.SystemMessage != "" {
 		emitSystemMessage(cmd.OutOrStdout(), res.SystemMessage)
 	}
+	return nil
+}
+
+// startGateInput is the UserPromptSubmit hook payload the gate consumes.
+type startGateInput struct {
+	Prompt    string `json:"prompt"`
+	SessionID string `json:"session_id"`
+	CWD       string `json:"cwd"`
+}
+
+var sessionStartGateCmd = &cobra.Command{
+	Use:    "start-gate",
+	Short:  "UserPromptSubmit hook: emit the session-start gate reminder",
+	Args:   cobra.NoArgs,
+	RunE:   runSessionStartGate,
+	Hidden: true,
+}
+
+func runSessionStartGate(cmd *cobra.Command, _ []string) error {
+	cmd.SilenceUsage = true
+
+	var in startGateInput
+	if err := decodeStdin(cmd.InOrStdin(), &in); err != nil {
+		return nil
+	}
+	cwd := in.CWD
+	if cwd == "" {
+		cwd, _ = os.Getwd()
+	}
+
+	// Badge files live at the main worktree root; fall back to the walk-up root.
+	root, err := gitx.CommonRoot(cmd.Context(), cwd)
+	if err != nil {
+		root, _, _ = workspace.FindRoot(cwd)
+	}
+	cfg, _ := workspace.Detect(root)
+	s := cfg.SessionSettings()
+
+	text, emit := session.Gate(cmd.Context(), root, session.GateInput{
+		Prompt:    in.Prompt,
+		SessionID: in.SessionID,
+		CWD:       cwd,
+	}, s.GateTemplate, s.PruneDays)
+	if emit {
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), text)
+	}
+	return nil
+}
+
+// statuslineInput is the statusLine hook payload the renderer consumes.
+type statuslineInput struct {
+	CWD       string `json:"cwd"`
+	SessionID string `json:"session_id"`
+}
+
+var sessionStatuslineCmd = &cobra.Command{
+	Use:    "statusline",
+	Short:  "statusLine hook: render the area/project badge",
+	Args:   cobra.NoArgs,
+	RunE:   runSessionStatusline,
+	Hidden: true,
+}
+
+func runSessionStatusline(cmd *cobra.Command, _ []string) error {
+	cmd.SilenceUsage = true
+
+	raw, _ := io.ReadAll(cmd.InOrStdin())
+	var in statuslineInput
+	_ = json.Unmarshal(raw, &in)
+	cwd := in.CWD
+	if cwd == "" {
+		cwd, _ = os.Getwd()
+	}
+
+	// The status line resolves its workspace by walking up from cwd (matching the
+	// shell hook), so the badge renders against whichever root holds the file.
+	root, _, _ := workspace.FindRoot(cwd)
+	cfg, _ := workspace.Detect(root)
+	s := cfg.SessionSettings()
+
+	out := session.Statusline(cmd.Context(), root, session.StatuslineInput{
+		CWD:       cwd,
+		SessionID: in.SessionID,
+		Raw:       raw,
+	}, s.StatuslineUpstream, s.BadgeFormat)
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), out)
 	return nil
 }
 
