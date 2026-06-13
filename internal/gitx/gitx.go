@@ -196,6 +196,18 @@ func CheckoutNewBranch(ctx context.Context, dir, branch string) error {
 	return err
 }
 
+// IsClean reports whether dir's working tree has no unstaged or staged changes.
+func IsClean(ctx context.Context, dir string) bool {
+	return ok(ctx, dir, "diff", "--quiet") && ok(ctx, dir, "diff", "--cached", "--quiet")
+}
+
+// MergeFFOnly fast-forward-merges ref into the current branch of dir, failing
+// (rather than creating a merge commit) when a fast-forward isn't possible.
+func MergeFFOnly(ctx context.Context, dir, ref string) error {
+	_, err := Run(ctx, dir, "merge", "--ff-only", "--quiet", ref)
+	return err
+}
+
 // CommitishExists reports whether rev resolves to a commit object in dir.
 func CommitishExists(ctx context.Context, dir, rev string) bool {
 	return ok(ctx, dir, "cat-file", "-e", rev+"^{commit}")
