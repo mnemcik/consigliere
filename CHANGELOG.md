@@ -6,13 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-06-13
+
+Native workspace mechanics. The `cg` binary absorbs the worktree, session-hook,
+push-policy, and audit helpers that consumer workspaces previously shipped as
+bash scripts and Claude Code hooks — reimplemented in cross-platform Go (no
+`jq`/`awk`/`stat`/`timeout`/`cksum`) — and `cg init` now wires them into Claude
+Code via thin hook wrappers. Adds the additive `.cg.json` v1.1 config blocks.
+Distinct from `cg sync` (workspace *content*) and `cg update` (the *binary*).
+
 ### Added
 
 - **`cg init` installs the Claude Code hook integration.** A new `.claude/` tree ships with the framework and is installed on `cg init`: bash **wrappers** for the four hooks (`session-start-gate`, `mark-session-dirty`, `pull-latest-main`, `external-repo-push-policy`) and the status line, each delegating to the `cg` binary (DEC-004) and degrading to a no-op when `cg` isn't on `PATH`; a `settings.json` wiring them into `SessionStart`/`UserPromptSubmit`/`PostToolUse`/`PreToolUse` + `statusLine`; and an editable session-gate template under `.claude/cg/session-gate.md` that the generated `.cg.json` points `session.gateTemplate` at. **`cg init --force` rewrites the framework-owned wrappers and status line (with the executable bit) but never clobbers the user-owned `settings.json` or gate template.** This connects the worktree/session/push-policy subcommands to Claude Code, completing the bash-helper promotion.
-
-### Changed
-
-- CI now runs the test suite on **macOS as well as Linux**, so the git-integration tests exercise macOS's `/var → /private/var` symlinks (which the worktree path matching canonicalizes).
 
 - **`cg push-policy lookup` & `cg push-policy gate` — external-repo push-policy enforcement.** A new `internal/pushpolicy` package ports `lookup-push-policy.sh` and `external-repo-push-policy.sh`, split into a pure lookup and the hook body (consigliere-cg-subcommands DEC-002). `cg push-policy lookup <owner/repo>` prints the policy declared in the workspace's area "External Repos" tables — `direct`, `pr`, or `unknown` (undeclared, or conflicting declarations → fail closed). `cg push-policy gate` (PreToolUse) parses a Bash `git push` command, resolves the target repo's origin slug, and emits a Claude Code `permissionDecision`: `allow` for direct-push repos; for PR-only repos it denies broad pushes (`--all`/`--mirror`) and direct pushes to the default branch while allowing feature-branch pushes. Cross-platform Go (no `jq`/`awk`/`sed` command surgery). Lookup output verified against the shell original on the reference workspace.
 
@@ -26,6 +31,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **`cg worktree land [<sha>] [--strategy …]` — land a session worktree's commits.** Ports `land-worktree-commit.sh`, run from inside the worktree. The default **`direct-to-main`** strategy pushes HEAD → `origin/<landingBranch>`; on a non-fast-forward rejection it fetches, rebases onto the landing branch, and retries (bounded), then asserts HEAD actually landed and prints the landed SHA. A rebase conflict leaves the rebase in progress and exits **3**. A detached HEAD is lazy-converted to `<branchPrefix><slug>` first; landing from a non-session branch is refused. The optional `<sha>` asserts that commit is reachable from HEAD before landing. The **`pr`** strategy (opt-in via `--strategy pr` or `.cg.json` `worktree.landingStrategy`) instead pushes the session branch and opens a pull request via `gh`, printing the PR URL. Preserves the shell helper's exit-code contract (1 usage, 3 conflict, 4 push-failed, 5 assertion-failed).
 - **`cg worktree create <slug>` — per-session git worktrees (first slice of the bash-helper promotion).** Creates or idempotently reuses an ephemeral worktree for a session: a branch `<branchPrefix><slug>` (default prefix `session/`) in a sibling directory `<workspace-root>--<slug>`, branched off the landing ref `origin/<landingBranch>` (default `main`). Prints the worktree path to stdout so callers can `path=$(cg worktree create x) && cd "$path"`. Mirrors the four scenarios of the personal-workspace `create-session-worktree.sh` (fresh / reuse-clean / unlanded-blocks / orphan-branch-attach) and exits **2** when the branch or worktree has unlanded commits unless `--force` is given. A new `internal/gitx` package wraps the git CLI cross-platform (replacing the shell helpers' `git -C` + awk/grep parsing), and `main.go` now honors an exit-code contract carried on returned errors (`internal/cgerr`).
 - **`.cg.json` v1.1 — optional `worktree`, `session`, and `pushPolicy` blocks.** Additive and fully backward-compatible: an absent or pre-1.1 `.cg.json` behaves exactly as before, since every field falls back to a binary-baked default. Documents the worktree settings consumed by `cg worktree`. Schema reference: [`docs/cg-subcommands.md`](docs/cg-subcommands.md).
+
+### Changed
+
+- CI now runs the test suite on **macOS as well as Linux**, so the git-integration tests exercise macOS's `/var → /private/var` symlinks (which the worktree path matching canonicalizes).
 
 ## [1.2.0] - 2026-06-12
 
