@@ -17,7 +17,7 @@ without clobbering a user's `settings.json`.
 | Subcommand | Promotes | Status |
 |------------|----------|--------|
 | `cg worktree create <slug> [--force]` | `create-session-worktree.sh` | **shipped** |
-| `cg worktree land [<sha>] [--strategy …]` | `land-worktree-commit.sh` | planned |
+| `cg worktree land [<sha>] [--strategy …]` | `land-worktree-commit.sh` | **shipped** |
 | `cg worktree remove <slug> [--force]` | `remove-session-worktree.sh` | planned |
 | `cg worktree list` | `git worktree list` parsing | planned |
 | `cg session start-gate` | `session-start-gate.sh` | planned |
