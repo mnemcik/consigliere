@@ -137,7 +137,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 		skipped = append(skipped, s...)
 	}
 
-	// Create .cg.json
+	// Create .cg.json. On re-init (--force) preserve the installed extensions
+	// list so the rewrite doesn't drop it; re-cloned workspaces re-install them
+	// below.
+	var priorExtensions []workspace.ExtensionRef
+	if cfg != nil {
+		priorExtensions = cfg.Extensions
+	}
 	cgJSON := workspace.Config{
 		Type:    workspace.TypeConsigliere,
 		Version: Version,
@@ -153,6 +159,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		Session: &workspace.SessionConfig{
 			GateTemplate: gateTemplateRel,
 		},
+		Extensions: priorExtensions,
 	}
 	data, _ := json.MarshalIndent(cgJSON, "", "  ")
 	data = append(data, '\n')
@@ -346,6 +353,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(os.Stderr, "warning: cannot stat .git: %v\n", statErr)
 		}
 	}
+
+	// Re-install any extensions recorded in .cg.json whose machine-shared clone
+	// is missing (the re-cloned-workspace scenario). Present clones are left as-is.
+	reinstalled, rerr := reinstallMissingExtensions(cmd, dir, priorExtensions)
+	if rerr != nil {
+		return rerr
+	}
+	created = append(created, reinstalled...)
 
 	// Summary
 	fmt.Println()

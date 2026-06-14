@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+
 	"github.com/mnemcik/consigliere/internal/autoupdate"
 	"github.com/spf13/cobra"
 )
@@ -73,6 +75,12 @@ func Execute() error {
 	if autoupdate.IsWorkerInvocation() {
 		autoupdate.RunWorker(Version)
 		return nil
+	}
+	// External-subcommand dispatch (git's `git foo` → `git-foo` pattern): if the
+	// first arg isn't a built-in cg command but an installed extension or $PATH
+	// provides cg-<verb>, exec it. Built-ins always take precedence.
+	if path, rest, ok := externalDispatch(os.Args[1:]); ok {
+		return runExternal(path, rest)
 	}
 	return rootCmd.Execute()
 }

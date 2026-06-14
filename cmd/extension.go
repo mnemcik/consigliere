@@ -143,6 +143,31 @@ func reapply(root, cloneDir string, m *extension.Manifest) error {
 	return nil
 }
 
+// reinstallMissingExtensions re-clones and re-applies any extension recorded in
+// .cg.json whose machine-shared clone is absent (the re-cloned-workspace case),
+// leaving present clones untouched. Returns short descriptions for the init
+// summary.
+func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspace.ExtensionRef) ([]string, error) {
+	var done []string
+	for _, e := range exts {
+		if _, err := os.Stat(extension.CloneDir(e.Name)); err == nil {
+			continue // clone present; nothing to re-clone
+		}
+		if !gitx.Available() {
+			return done, cgerr.New(cgerr.ExitUsage, "git is required to re-install extension %q", e.Name)
+		}
+		m, dest, err := installFrom(cmd.Context(), e.Repo, "")
+		if err != nil {
+			return done, err
+		}
+		if err := reapply(root, dest, m); err != nil {
+			return done, err
+		}
+		done = append(done, fmt.Sprintf("extension %q v%s (re-installed)", m.Name, m.Version))
+	}
+	return done, nil
+}
+
 // installFrom clones repo (at ref, if non-empty) into a staging dir, validates
 // its manifest, and atomically renames it into the machine-shared install
 // location. It returns the validated manifest and the install path. It does not
