@@ -371,14 +371,16 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 		ref := targets[i]
 		ref.Version = newVer
 		cfg.UpsertExtension(&ref)
+		// Persist after each target so a later target's failure can't leave an
+		// already-applied update unrecorded in .cg.json.
+		if err := cfg.Save(root); err != nil {
+			return fmt.Errorf("updating %s: %w", workspace.ConfigFile, err)
+		}
 		if old == newVer {
 			_, _ = fmt.Fprintf(out, "%s: already at v%s\n", ref.Name, newVer)
 		} else {
 			_, _ = fmt.Fprintf(out, "%s: v%s → v%s\n", ref.Name, old, newVer)
 		}
-	}
-	if err := cfg.Save(root); err != nil {
-		return fmt.Errorf("updating %s: %w", workspace.ConfigFile, err)
 	}
 	return nil
 }
