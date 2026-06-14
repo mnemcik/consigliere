@@ -88,14 +88,17 @@ func Checkout(ctx context.Context, dir, ref string) error {
 	return err
 }
 
-// LatestTag returns the most recent tag reachable in dir, or "" if there are no
-// tags (a clean state, not an error).
+// LatestTag returns the highest-versioned tag in dir, or "" if there are no tags
+// (a clean state, not an error). It sorts by version (so v2.0.0 > v1.10.0 >
+// v1.9.0) across all tags in the repo — not just those reachable from HEAD — so
+// `cg extension update` finds a newer tag even when the current checkout is
+// behind it.
 func LatestTag(ctx context.Context, dir string) string {
-	out, err := Run(ctx, dir, "describe", "--tags", "--abbrev=0")
-	if err != nil {
+	out, err := Run(ctx, dir, "tag", "--sort=-v:refname")
+	if err != nil || out == "" {
 		return ""
 	}
-	return out
+	return strings.SplitN(out, "\n", 2)[0]
 }
 
 // IsAncestor reports whether commit a is an ancestor of commit b in dir.
