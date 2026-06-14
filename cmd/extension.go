@@ -100,6 +100,22 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	// If this name is already installed, reverse its prior contributions first so
+	// a reinstall of a changed manifest can't orphan a dropped contribution.
+	if old, lerr := extension.LoadLedger(root, m.Name); lerr != nil {
+		return fmt.Errorf("reading ledger for %q: %w", m.Name, lerr)
+	} else if old != nil {
+		if rerr := extension.Reverse(root, old); rerr != nil {
+			return fmt.Errorf("reversing prior contributions for %q: %w", m.Name, rerr)
+		}
+	}
+	ledger, err := extension.Apply(root, dest, m)
+	if err != nil {
+		return cgerr.New(cgerr.ExitUsage, "applying contributions for %q: %v", m.Name, err)
+	}
+	if err := ledger.Save(root); err != nil {
+		return fmt.Errorf("writing ledger for %q: %w", m.Name, err)
+	}
 	cfg.UpsertExtension(&workspace.ExtensionRef{
 		Name:      m.Name,
 		Version:   m.Version,
@@ -118,8 +134,7 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 // installFrom clones repo (at ref, if non-empty) into a staging dir, validates
 // its manifest, and atomically renames it into the machine-shared install
 // location. It returns the validated manifest and the install path. It does not
-// touch .cg.json — callers record the workspace entry. Contribution application
-// to the workspace lands in M4.
+// touch the workspace — callers Apply contributions and record the .cg.json entry.
 func installFrom(ctx context.Context, repo, ref string) (*extension.Manifest, string, error) {
 	staging := extension.StagingDir()
 	if err := os.RemoveAll(staging); err != nil {
@@ -257,10 +272,10 @@ func printInstallSummary(cmd *cobra.Command, m *extension.Manifest, dest, source
 	add(len(c.Subcommands), "subcommand(s)")
 	add(len(c.Templates), "template(s)")
 	if len(declared) == 0 {
-		_, _ = fmt.Fprintln(out, "  declares no contributions")
+		_, _ = fmt.Fprintln(out, "  no contributions")
 		return
 	}
-	_, _ = fmt.Fprintf(out, "  declares: %s\n", strings.Join(declared, ", "))
+	_, _ = fmt.Fprintf(out, "  applied: %s\n", strings.Join(declared, ", "))
 }
 
 func runExtRemove(cmd *cobra.Command, args []string) error {
@@ -275,15 +290,16 @@ func runExtRemove(cmd *cobra.Command, args []string) error {
 		return cgerr.New(cgerr.ExitUsage, "extension %q is not installed in this workspace", name)
 	}
 
-	// Reverse what the install applied to this workspace, recorded in the ledger.
-	// Contribution application (and thus a populated ledger) lands in M4; until
-	// then there is nothing to reverse and the ledger file is absent.
+	// Reverse what the install applied to this workspace, recorded in the ledger,
+	// then drop the ledger file.
 	ledger, err := extension.LoadLedger(root, name)
 	if err != nil {
 		return fmt.Errorf("reading ledger for %q: %w", name, err)
 	}
 	if ledger != nil {
-		// M4: reverse ledger.ClaudeMDSections / Notes / Hooks / Templates / IndexRows here.
+		if rerr := extension.Reverse(root, ledger); rerr != nil {
+			return fmt.Errorf("reversing contributions for %q: %w", name, rerr)
+		}
 		if rmErr := os.Remove(extension.LedgerPath(root, name)); rmErr != nil && !os.IsNotExist(rmErr) {
 			return fmt.Errorf("removing ledger for %q: %w", name, rmErr)
 		}
@@ -335,11 +351,11 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 
 	out := cmd.OutOrStdout()
 	for i := range targets {
-		newVer, err := updateOne(cmd.Context(), targets[i].Name)
+		old := targets[i].Version
+		newVer, err := updateOne(cmd.Context(), root, targets[i].Name)
 		if err != nil {
 			return err
 		}
-		old := targets[i].Version
 		ref := targets[i]
 		ref.Version = newVer
 		cfg.UpsertExtension(&ref)
@@ -356,9 +372,10 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 }
 
 // updateOne fetches the clone of name, checks out its latest tag (or default
-// branch when untagged), re-reads + validates the manifest, and returns the new
-// version. Re-applying contributions to the workspace lands in M4.
-func updateOne(ctx context.Context, name string) (string, error) {
+// branch when untagged), re-validates the manifest, re-applies its contributions
+// to the workspace (reverse the prior ledger, then apply the new manifest), and
+// returns the new version.
+func updateOne(ctx context.Context, root, name string) (string, error) {
 	clone := extension.CloneDir(name)
 	if _, err := os.Stat(clone); err != nil {
 		return "", cgerr.New(cgerr.ExitUsage,
@@ -386,6 +403,22 @@ func updateOne(ctx context.Context, name string) (string, error) {
 	}
 	if err := m.Validate(); err != nil {
 		return "", cgerr.New(cgerr.ExitUsage, "invalid %s for %q: %v", extension.ManifestFile, name, err)
+	}
+
+	// Re-apply: reverse the previous contributions, then apply the new manifest.
+	if old, lerr := extension.LoadLedger(root, name); lerr != nil {
+		return "", fmt.Errorf("reading ledger for %q: %w", name, lerr)
+	} else if old != nil {
+		if rerr := extension.Reverse(root, old); rerr != nil {
+			return "", fmt.Errorf("reversing prior contributions for %q: %w", name, rerr)
+		}
+	}
+	ledger, err := extension.Apply(root, clone, m)
+	if err != nil {
+		return "", cgerr.New(cgerr.ExitUsage, "applying contributions for %q: %v", name, err)
+	}
+	if err := ledger.Save(root); err != nil {
+		return "", fmt.Errorf("writing ledger for %q: %w", name, err)
 	}
 	return m.Version, nil
 }

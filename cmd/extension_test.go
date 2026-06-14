@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mnemcik/consigliere/internal/extension"
 	"github.com/mnemcik/consigliere/internal/gitx"
 	"github.com/mnemcik/consigliere/internal/workspace"
 )
@@ -76,8 +77,9 @@ func newWorkspace(t *testing.T) string {
 	return dir
 }
 
-// makeExtRepo creates a git repo at a temp path containing manifest plus any
-// extra files, commits it, and returns the path (usable as a clone source).
+// makeExtRepo creates a git repo at a temp path containing manifest plus a stub
+// file for every contribution path the manifest references (so Apply can read
+// them), commits it, and returns the path (usable as a clone source).
 func makeExtRepo(t *testing.T, manifest string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -94,6 +96,7 @@ func makeExtRepo(t *testing.T, manifest string) string {
 	if err := os.WriteFile(filepath.Join(dir, "cg-extension.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	writeReferencedStubs(t, dir, manifest)
 	if _, err := gitx.Run(ctx, dir, "add", "-A"); err != nil {
 		t.Fatal(err)
 	}
@@ -101,6 +104,37 @@ func makeExtRepo(t *testing.T, manifest string) string {
 		t.Fatal(err)
 	}
 	return dir
+}
+
+// writeReferencedStubs creates a placeholder file for each path the manifest's
+// contributions point at, so Apply has something to read/copy.
+func writeReferencedStubs(t *testing.T, dir, manifest string) {
+	t.Helper()
+	m, err := extension.ParseManifest([]byte(manifest))
+	if err != nil {
+		return // invalid-manifest fixtures intentionally skip stubbing
+	}
+	write := func(rel, body string) {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, s := range m.Contributes.ClaudeMDSections {
+		write(s.Path, "rules for "+s.ID)
+	}
+	for _, n := range m.Contributes.Notes {
+		write(n.Src, "note "+n.Src)
+	}
+	for _, tp := range m.Contributes.Templates {
+		write(tp.Src, "template "+tp.Src)
+	}
+	for _, h := range m.Contributes.Hooks {
+		write(h.Wrapper, "#!/usr/bin/env bash\nexec "+h.Command+" \"$@\"\n")
+	}
 }
 
 const testManifest = `{
@@ -364,5 +398,97 @@ func TestExtInstallOutsideWorkspaceFails(t *testing.T) {
 	_, err := runExt(t, t.TempDir(), "install", repo)
 	if err == nil {
 		t.Fatal("expected failure when not inside a workspace")
+	}
+}
+
+const allContribManifest = `{
+  "manifest": 1,
+  "name": "full",
+  "version": "1.0.0",
+  "description": "every contribution type",
+  "contributes": {
+    "claude-md-sections": [{ "id": "full-rules", "path": "fragments/rules.md" }],
+    "notes": [{ "src": "notes/guide.md", "dest": "notes/full-guide.md" }],
+    "templates": [{ "src": "tpl/t.md", "dest": "templates/full.md" }],
+    "hooks": [{ "event": "SessionStart", "wrapper": "hooks/gate.sh", "command": "cg-full gate" }],
+    "subcommands": [{ "namespace": "full", "binary": "cg-full" }]
+  }
+}`
+
+// TestExtLifecycleAllContributions is the end-to-end fixture test: install an
+// extension exercising all five contribution types, verify each landed in the
+// workspace, then remove and verify each was reversed.
+func TestExtLifecycleAllContributions(t *testing.T) {
+	if !gitx.Available() {
+		t.Skip("git not available")
+	}
+	cfgHome := t.TempDir()
+	ws := newWorkspace(t)
+	if err := os.WriteFile(filepath.Join(ws, "CLAUDE.md"), []byte("# CLAUDE.md\n\nuser content\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repo := makeExtRepo(t, allContribManifest)
+
+	out, err := runExtCfg(t, cfgHome, ws, "install", repo)
+	if err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "applied:") {
+		t.Errorf("summary should report applied contributions: %q", out)
+	}
+
+	// Each contribution landed.
+	claude, _ := os.ReadFile(filepath.Join(ws, "CLAUDE.md"))
+	if !strings.Contains(string(claude), "ext:full:section:start=full-rules") {
+		t.Errorf("CLAUDE.md section missing:\n%s", claude)
+	}
+	mustExist(t, filepath.Join(ws, "notes", "full-guide.md"))
+	mustExist(t, filepath.Join(ws, "templates", "full.md"))
+	mustExist(t, filepath.Join(ws, ".claude", "hooks", "gate.sh"))
+	settings, _ := os.ReadFile(filepath.Join(ws, ".claude", "settings.json"))
+	if !strings.Contains(string(settings), ".claude/hooks/gate.sh") {
+		t.Errorf("hook not registered:\n%s", settings)
+	}
+	// Ledger written with all five.
+	led, err := extension.LoadLedger(ws, "full")
+	if err != nil || led == nil {
+		t.Fatalf("ledger missing: %v", err)
+	}
+	if len(led.ClaudeMDSections) != 1 || len(led.Notes) != 1 || len(led.Templates) != 1 ||
+		len(led.Hooks) != 1 || len(led.Subcommands) != 1 {
+		t.Errorf("ledger incomplete: %+v", led)
+	}
+
+	// Remove reverses everything.
+	if _, err := runExtCfg(t, cfgHome, ws, "remove", "full"); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	claude, _ = os.ReadFile(filepath.Join(ws, "CLAUDE.md"))
+	if strings.Contains(string(claude), "ext:full:section") {
+		t.Errorf("section not reversed:\n%s", claude)
+	}
+	if string(claude) != "# CLAUDE.md\n\nuser content\n" {
+		t.Errorf("CLAUDE.md not restored: %q", claude)
+	}
+	for _, p := range []string{
+		filepath.Join(ws, "notes", "full-guide.md"),
+		filepath.Join(ws, "templates", "full.md"),
+		filepath.Join(ws, ".claude", "hooks", "gate.sh"),
+		extension.LedgerPath(ws, "full"),
+	} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s should be gone after remove, stat err=%v", p, err)
+		}
+	}
+	settings, _ = os.ReadFile(filepath.Join(ws, ".claude", "settings.json"))
+	if strings.Contains(string(settings), "gate.sh") {
+		t.Errorf("hook not unregistered:\n%s", settings)
+	}
+}
+
+func mustExist(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("expected %s to exist: %v", path, err)
 	}
 }
