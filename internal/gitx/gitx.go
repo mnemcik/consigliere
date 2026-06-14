@@ -77,11 +77,25 @@ func Clone(ctx context.Context, url, dest, ref string) error {
 		return err
 	}
 	if ref != "" {
-		if _, err := Run(ctx, dest, "checkout", "--quiet", ref); err != nil {
-			return err
-		}
+		return Checkout(ctx, dest, ref)
 	}
 	return nil
+}
+
+// Checkout checks out ref (a branch or tag) in dir.
+func Checkout(ctx context.Context, dir, ref string) error {
+	_, err := Run(ctx, dir, "checkout", "--quiet", ref)
+	return err
+}
+
+// LatestTag returns the most recent tag reachable in dir, or "" if there are no
+// tags (a clean state, not an error).
+func LatestTag(ctx context.Context, dir string) string {
+	out, err := Run(ctx, dir, "describe", "--tags", "--abbrev=0")
+	if err != nil {
+		return ""
+	}
+	return out
 }
 
 // IsAncestor reports whether commit a is an ancestor of commit b in dir.

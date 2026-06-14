@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -18,31 +19,34 @@ import (
 
 var extInstallRef string
 var extListJSON bool
+var extRemovePurge bool
 
 func init() {
 	rootCmd.AddCommand(extensionCmd)
-	extensionCmd.AddCommand(extInstallCmd, extListCmd)
+	extensionCmd.AddCommand(extInstallCmd, extListCmd, extRemoveCmd, extUpdateCmd)
 	extInstallCmd.Flags().StringVar(&extInstallRef, "ref", "",
 		"git ref (tag or branch) to check out after cloning (default: the repo's default branch)")
 	extListCmd.Flags().BoolVar(&extListJSON, "json", false, "output as JSON")
+	extRemoveCmd.Flags().BoolVar(&extRemovePurge, "purge", false,
+		"also delete the machine-shared clone under ~/.config/consigliere/extensions/")
 }
 
 var extensionCmd = &cobra.Command{
 	Use:     "extension",
 	Aliases: []string{"ext"},
 	Short:   "Manage cg extensions",
-	Long: "Install, list, and manage cg extensions — pluggable workspace- or " +
-		"domain-specific behaviour. See docs/extensions.md for the design and " +
+	Long: "Install, list, update, and remove cg extensions — pluggable workspace- " +
+		"or domain-specific behaviour. See docs/extensions.md for the design and " +
 		"EXTENSIONS.md for authoring.",
 }
 
 var extInstallCmd = &cobra.Command{
-	Use:   "install <repo-url>",
-	Short: "Install an extension from a git repo URL",
-	Long: "Clone an extension from a git repo URL (or local path), validate its " +
-		"cg-extension.json manifest, and record it in .cg.json.\n\n" +
-		"Registry lookup by short name lands in a later milestone; for now pass a " +
-		"repo URL or a local path.",
+	Use:   "install <name|repo-url>",
+	Short: "Install an extension from the registry or a git repo URL",
+	Long: "Install an extension and record it in .cg.json.\n\n" +
+		"A bare name is resolved against the registry; a git URL or local path is " +
+		"cloned directly. The cg-extension.json manifest is validated before the " +
+		"extension is recorded.",
 	Args: cobra.ExactArgs(1),
 	RunE: runExtInstall,
 }
@@ -54,73 +58,112 @@ var extListCmd = &cobra.Command{
 	RunE:  runExtList,
 }
 
+var extRemoveCmd = &cobra.Command{
+	Use:     "remove <name>",
+	Aliases: []string{"rm"},
+	Short:   "Remove an installed extension from this workspace",
+	Args:    cobra.ExactArgs(1),
+	RunE:    runExtRemove,
+}
+
+var extUpdateCmd = &cobra.Command{
+	Use:   "update [<name>]",
+	Short: "Update one or all installed extensions to their latest version",
+	Args:  cobra.MaximumNArgs(1),
+	RunE:  runExtUpdate,
+}
+
 func runExtInstall(cmd *cobra.Command, args []string) error {
 	cmd.SilenceUsage = true
-	src := args[0]
-	if !looksLikeRepoSource(src) {
-		return cgerr.New(cgerr.ExitUsage,
-			"registry lookup by name is not yet available; pass a repo URL or local path (got %q)", src)
-	}
+	arg := args[0]
 	if !gitx.Available() {
 		return cgerr.New(cgerr.ExitUsage, "git is required to install extensions")
 	}
 
-	root, err := workspaceRoot(cmd)
+	root, cfg, err := requireWorkspace(cmd)
 	if err != nil {
 		return err
 	}
-	cfg, err := workspace.Detect(root)
+
+	// A git URL or local path installs directly; a bare name resolves against
+	// the registry.
+	repo, source := arg, workspace.ExtSourceDirect
+	if !looksLikeRepoSource(arg) {
+		entry, rerr := resolveRegistry(cmd.Context(), arg)
+		if rerr != nil {
+			return rerr
+		}
+		repo, source = entry.Repo, workspace.ExtSourceRegistry
+	}
+
+	m, dest, err := installFrom(cmd.Context(), repo, extInstallRef)
 	if err != nil {
 		return err
 	}
-	if cfg == nil {
-		return cgerr.New(cgerr.ExitUsage, "%s not found in %s; run `cg init` first", workspace.ConfigFile, root)
-	}
-
-	ctx := cmd.Context()
-	staging := extension.StagingDir()
-	if err := os.RemoveAll(staging); err != nil {
-		return fmt.Errorf("clearing staging dir: %w", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(staging), 0o755); err != nil { //nolint:gosec // user config dir
-		return fmt.Errorf("creating extensions dir: %w", err)
-	}
-	// Best-effort cleanup: harmless once a successful install renames staging away.
-	defer func() { _ = os.RemoveAll(staging) }()
-
-	if err := gitx.Clone(ctx, src, staging, extInstallRef); err != nil {
-		return cgerr.New(cgerr.ExitUsage, "cloning %s: %v", src, err)
-	}
-
-	m, err := extension.LoadManifest(staging)
-	if err != nil {
-		return cgerr.New(cgerr.ExitUsage, "reading %s: %v", extension.ManifestFile, err)
-	}
-	if err := m.Validate(); err != nil {
-		return cgerr.New(cgerr.ExitUsage, "invalid %s: %v", extension.ManifestFile, err)
-	}
-
-	dest := extension.CloneDir(m.Name)
-	if err := os.RemoveAll(dest); err != nil {
-		return fmt.Errorf("clearing prior install at %s: %w", dest, err)
-	}
-	if err := os.Rename(staging, dest); err != nil {
-		return fmt.Errorf("installing to %s: %w", dest, err)
-	}
-
 	cfg.UpsertExtension(&workspace.ExtensionRef{
 		Name:      m.Name,
 		Version:   m.Version,
-		Source:    workspace.ExtSourceDirect,
-		Repo:      src,
+		Source:    source,
+		Repo:      repo,
 		Installed: time.Now().UTC().Format(time.RFC3339),
 	})
 	if err := cfg.Save(root); err != nil {
 		return fmt.Errorf("updating %s: %w", workspace.ConfigFile, err)
 	}
 
-	printInstallSummary(cmd, m, dest, src)
+	printInstallSummary(cmd, m, dest, source, repo)
 	return nil
+}
+
+// installFrom clones repo (at ref, if non-empty) into a staging dir, validates
+// its manifest, and atomically renames it into the machine-shared install
+// location. It returns the validated manifest and the install path. It does not
+// touch .cg.json — callers record the workspace entry. Contribution application
+// to the workspace lands in M4.
+func installFrom(ctx context.Context, repo, ref string) (*extension.Manifest, string, error) {
+	staging := extension.StagingDir()
+	if err := os.RemoveAll(staging); err != nil {
+		return nil, "", fmt.Errorf("clearing staging dir: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(staging), 0o755); err != nil { //nolint:gosec // user config dir
+		return nil, "", fmt.Errorf("creating extensions dir: %w", err)
+	}
+	// Best-effort cleanup: harmless once a successful install renames staging away.
+	defer func() { _ = os.RemoveAll(staging) }()
+
+	if err := gitx.Clone(ctx, repo, staging, ref); err != nil {
+		return nil, "", cgerr.New(cgerr.ExitUsage, "cloning %s: %v", repo, err)
+	}
+	m, err := extension.LoadManifest(staging)
+	if err != nil {
+		return nil, "", cgerr.New(cgerr.ExitUsage, "reading %s: %v", extension.ManifestFile, err)
+	}
+	if err := m.Validate(); err != nil {
+		return nil, "", cgerr.New(cgerr.ExitUsage, "invalid %s: %v", extension.ManifestFile, err)
+	}
+
+	dest := extension.CloneDir(m.Name)
+	if err := os.RemoveAll(dest); err != nil {
+		return nil, "", fmt.Errorf("clearing prior install at %s: %w", dest, err)
+	}
+	if err := os.Rename(staging, dest); err != nil {
+		return nil, "", fmt.Errorf("installing to %s: %w", dest, err)
+	}
+	return m, dest, nil
+}
+
+// resolveRegistry fetches the catalogue and finds the named extension.
+func resolveRegistry(ctx context.Context, name string) (*extension.RegistryEntry, error) {
+	idx, err := extension.FetchIndex(ctx)
+	if err != nil {
+		return nil, cgerr.New(cgerr.ExitUsage, "%v", err)
+	}
+	entry, ok := idx.Find(name)
+	if !ok {
+		return nil, cgerr.New(cgerr.ExitUsage,
+			"extension %q not found in the registry; pass a repo URL to install directly", name)
+	}
+	return entry, nil
 }
 
 func runExtList(cmd *cobra.Command, _ []string) error {
@@ -160,8 +203,7 @@ func runExtList(cmd *cobra.Command, _ []string) error {
 }
 
 // looksLikeRepoSource reports whether s is a git URL or local path rather than a
-// bare registry name. Bare names route to registry resolution (a later
-// milestone); until then they are rejected with a clear message.
+// bare registry name. Bare names route to registry resolution.
 func looksLikeRepoSource(s string) bool {
 	switch {
 	case strings.Contains(s, "://"),
@@ -179,10 +221,27 @@ func looksLikeRepoSource(s string) bool {
 	return false
 }
 
-func printInstallSummary(cmd *cobra.Command, m *extension.Manifest, dest, src string) {
+// requireWorkspace resolves the workspace root and its config, erroring when the
+// command is not run inside an initialised workspace.
+func requireWorkspace(cmd *cobra.Command) (string, *workspace.Config, error) {
+	root, err := workspaceRoot(cmd)
+	if err != nil {
+		return "", nil, err
+	}
+	cfg, err := workspace.Detect(root)
+	if err != nil {
+		return "", nil, err
+	}
+	if cfg == nil {
+		return "", nil, cgerr.New(cgerr.ExitUsage, "%s not found in %s; run `cg init` first", workspace.ConfigFile, root)
+	}
+	return root, cfg, nil
+}
+
+func printInstallSummary(cmd *cobra.Command, m *extension.Manifest, dest, source, repo string) {
 	out := cmd.OutOrStdout()
 	_, _ = fmt.Fprintf(out, "Installed %s v%s — %s\n", m.Name, m.Version, m.Description)
-	_, _ = fmt.Fprintf(out, "  source:   direct (%s)\n", src)
+	_, _ = fmt.Fprintf(out, "  source:   %s (%s)\n", source, repo)
 	_, _ = fmt.Fprintf(out, "  location: %s\n", dest)
 
 	c := m.Contributes
@@ -202,4 +261,141 @@ func printInstallSummary(cmd *cobra.Command, m *extension.Manifest, dest, src st
 		return
 	}
 	_, _ = fmt.Fprintf(out, "  declares: %s\n", strings.Join(declared, ", "))
+}
+
+func runExtRemove(cmd *cobra.Command, args []string) error {
+	cmd.SilenceUsage = true
+	name := args[0]
+
+	root, cfg, err := requireWorkspace(cmd)
+	if err != nil {
+		return err
+	}
+	if _, ok := findExtension(cfg, name); !ok {
+		return cgerr.New(cgerr.ExitUsage, "extension %q is not installed in this workspace", name)
+	}
+
+	// Reverse what the install applied to this workspace, recorded in the ledger.
+	// Contribution application (and thus a populated ledger) lands in M4; until
+	// then there is nothing to reverse and the ledger file is absent.
+	ledger, err := extension.LoadLedger(root, name)
+	if err != nil {
+		return fmt.Errorf("reading ledger for %q: %w", name, err)
+	}
+	if ledger != nil {
+		// M4: reverse ledger.ClaudeMDSections / Notes / Hooks / Templates / IndexRows here.
+		if rmErr := os.Remove(extension.LedgerPath(root, name)); rmErr != nil && !os.IsNotExist(rmErr) {
+			return fmt.Errorf("removing ledger for %q: %w", name, rmErr)
+		}
+	}
+
+	cfg.RemoveExtension(name)
+	if err := cfg.Save(root); err != nil {
+		return fmt.Errorf("updating %s: %w", workspace.ConfigFile, err)
+	}
+
+	out := cmd.OutOrStdout()
+	_, _ = fmt.Fprintf(out, "Removed %s from this workspace\n", name)
+	clone := extension.CloneDir(name)
+	if extRemovePurge {
+		if err := os.RemoveAll(clone); err != nil {
+			return fmt.Errorf("purging clone %s: %w", clone, err)
+		}
+		_, _ = fmt.Fprintf(out, "  purged shared clone: %s\n", clone)
+	} else {
+		_, _ = fmt.Fprintf(out, "  shared clone left in place: %s (use --purge to delete)\n", clone)
+	}
+	return nil
+}
+
+func runExtUpdate(cmd *cobra.Command, args []string) error {
+	cmd.SilenceUsage = true
+	if !gitx.Available() {
+		return cgerr.New(cgerr.ExitUsage, "git is required to update extensions")
+	}
+	root, cfg, err := requireWorkspace(cmd)
+	if err != nil {
+		return err
+	}
+
+	var targets []workspace.ExtensionRef
+	if len(args) == 1 {
+		ref, ok := findExtension(cfg, args[0])
+		if !ok {
+			return cgerr.New(cgerr.ExitUsage, "extension %q is not installed in this workspace", args[0])
+		}
+		targets = []workspace.ExtensionRef{*ref}
+	} else {
+		targets = cfg.Extensions
+	}
+	if len(targets) == 0 {
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "no extensions installed")
+		return nil
+	}
+
+	out := cmd.OutOrStdout()
+	for i := range targets {
+		newVer, err := updateOne(cmd.Context(), targets[i].Name)
+		if err != nil {
+			return err
+		}
+		old := targets[i].Version
+		ref := targets[i]
+		ref.Version = newVer
+		cfg.UpsertExtension(&ref)
+		if old == newVer {
+			_, _ = fmt.Fprintf(out, "%s: already at v%s\n", ref.Name, newVer)
+		} else {
+			_, _ = fmt.Fprintf(out, "%s: v%s → v%s\n", ref.Name, old, newVer)
+		}
+	}
+	if err := cfg.Save(root); err != nil {
+		return fmt.Errorf("updating %s: %w", workspace.ConfigFile, err)
+	}
+	return nil
+}
+
+// updateOne fetches the clone of name, checks out its latest tag (or default
+// branch when untagged), re-reads + validates the manifest, and returns the new
+// version. Re-applying contributions to the workspace lands in M4.
+func updateOne(ctx context.Context, name string) (string, error) {
+	clone := extension.CloneDir(name)
+	if _, err := os.Stat(clone); err != nil {
+		return "", cgerr.New(cgerr.ExitUsage,
+			"clone for %q missing at %s; reinstall it", name, clone)
+	}
+	if err := gitx.Fetch(ctx, clone, "origin", "--tags"); err != nil {
+		return "", cgerr.New(cgerr.ExitUsage, "fetching %q: %v", name, err)
+	}
+	if tag := gitx.LatestTag(ctx, clone); tag != "" {
+		if err := gitx.Checkout(ctx, clone, tag); err != nil {
+			return "", cgerr.New(cgerr.ExitUsage, "checking out %s of %q: %v", tag, name, err)
+		}
+	} else {
+		db := gitx.DefaultBranch(ctx, clone)
+		if err := gitx.Checkout(ctx, clone, db); err != nil {
+			return "", cgerr.New(cgerr.ExitUsage, "checking out %s of %q: %v", db, name, err)
+		}
+		if err := gitx.MergeFFOnly(ctx, clone, "origin/"+db); err != nil {
+			return "", cgerr.New(cgerr.ExitUsage, "fast-forwarding %q: %v", name, err)
+		}
+	}
+	m, err := extension.LoadManifest(clone)
+	if err != nil {
+		return "", cgerr.New(cgerr.ExitUsage, "reading %s for %q: %v", extension.ManifestFile, name, err)
+	}
+	if err := m.Validate(); err != nil {
+		return "", cgerr.New(cgerr.ExitUsage, "invalid %s for %q: %v", extension.ManifestFile, name, err)
+	}
+	return m.Version, nil
+}
+
+// findExtension returns the workspace's recorded entry for name.
+func findExtension(cfg *workspace.Config, name string) (*workspace.ExtensionRef, bool) {
+	for i := range cfg.Extensions {
+		if cfg.Extensions[i].Name == name {
+			return &cfg.Extensions[i], true
+		}
+	}
+	return nil, false
 }
