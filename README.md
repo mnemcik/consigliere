@@ -226,6 +226,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development details.
 
 - [Auto-update](docs/auto-update.md) — `cg update`, the background worker, the major-version gate, and every state file
 - [Workspace sync](docs/workspace-sync.md) — how `cg sync` reconciles a workspace's content with the framework
+- [Extensions (design)](docs/extensions.md) — the `cg-extension.json` manifest, registry, `cg extension`, and contribution points
+- [Authoring an extension](EXTENSIONS.md) — tutorial for writing a `cg` extension
 - [Contributing](CONTRIBUTING.md) — setup, common tasks, release process, commit conventions
 - [Security policy](SECURITY.md) — how to report vulnerabilities privately
 - [Code of conduct](CODE_OF_CONDUCT.md) — Contributor Covenant 2.1
