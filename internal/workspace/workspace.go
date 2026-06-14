@@ -36,12 +36,67 @@ const (
 type Config struct {
 	Type    string            `json:"type"`
 	Version string            `json:"version"`
-	Indexes map[string]string `json:"indexes"`
+	Indexes map[string]string `json:"indexes,omitempty"`
 
 	// v1.1 additive blocks. All optional; nil means "use defaults".
 	Worktree   *WorktreeConfig   `json:"worktree,omitempty"`
 	Session    *SessionConfig    `json:"session,omitempty"`
 	PushPolicy *PushPolicyConfig `json:"pushPolicy,omitempty"`
+
+	// v1.2 additive block: extensions installed in this workspace, so a fresh
+	// clone + `cg init` can re-install them. Empty/absent means none.
+	Extensions []ExtensionRef `json:"extensions,omitempty"`
+}
+
+// ExtensionRef records an installed extension in .cg.json (schema v1.2). The
+// per-workspace ledger (.cg/ext/<name>.json) records what each install applied;
+// this is the lighter "what is installed + where from" index.
+type ExtensionRef struct {
+	Name      string `json:"name"`
+	Version   string `json:"version"`
+	Source    string `json:"source"` // "registry" | "direct"
+	Repo      string `json:"repo"`
+	Installed string `json:"installed"` // RFC3339 timestamp
+}
+
+// Extension sources.
+const (
+	ExtSourceRegistry = "registry"
+	ExtSourceDirect   = "direct"
+)
+
+// UpsertExtension adds ref, or replaces the existing entry with the same Name.
+func (c *Config) UpsertExtension(ref *ExtensionRef) {
+	for i := range c.Extensions {
+		if c.Extensions[i].Name == ref.Name {
+			c.Extensions[i] = *ref
+			return
+		}
+	}
+	c.Extensions = append(c.Extensions, *ref)
+}
+
+// RemoveExtension drops the entry with the given name, reporting whether one was
+// removed.
+func (c *Config) RemoveExtension(name string) bool {
+	for i := range c.Extensions {
+		if c.Extensions[i].Name == name {
+			c.Extensions = append(c.Extensions[:i], c.Extensions[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// Save writes the config back to <dir>/.cg.json as indented JSON. Round-trips
+// through the typed Config, matching how `cg init` writes the file; any field
+// not modeled here is not preserved (the struct models the full schema).
+func (c *Config) Save(dir string) error {
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, ConfigFile), append(data, '\n'), 0o644) //nolint:gosec // ConfigFile is a fixed name under dir
 }
 
 // WorktreeConfig tunes `cg worktree`. Root overrides the prefix used to derive
