@@ -372,6 +372,47 @@ func TestExtUpdateTagged(t *testing.T) {
 	}
 }
 
+// TestExtUpdateNewerTagAndDropsOrphan locks two behaviours together: update must
+// find a tag that is AHEAD of the installed checkout (LatestTag across all tags,
+// not just those reachable from HEAD), and re-applying the new manifest must
+// reverse a contribution the new version dropped.
+func TestExtUpdateNewerTagAndDropsOrphan(t *testing.T) {
+	if !gitx.Available() {
+		t.Skip("git not available")
+	}
+	const v1 = `{"manifest":1,"name":"demo","version":"1.0.0","description":"v1",
+	  "contributes":{"notes":[{"src":"notes/a.md","dest":"notes/a.md"},{"src":"notes/b.md","dest":"notes/b.md"}]}}`
+	const v2 = `{"manifest":1,"name":"demo","version":"2.0.0","description":"v2",
+	  "contributes":{"notes":[{"src":"notes/a.md","dest":"notes/a.md"}]}}`
+
+	cfgHome := t.TempDir()
+	ws := newWorkspace(t)
+	repo := makeExtRepo(t, v1) // committed and (in makeExtRepo) not tagged
+	// Tag v1.0.0 on the initial commit, then install from that tagged state.
+	if _, err := gitx.Run(context.Background(), repo, "tag", "v1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runExtCfg(t, cfgHome, ws, "install", repo); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	mustExist(t, filepath.Join(ws, "notes", "b.md"))
+
+	// Upstream releases v2.0.0 (ahead of the installed v1.0.0 checkout), dropping note b.
+	updateExtRepo(t, repo, v2, "v2.0.0")
+
+	out, err := runExtCfg(t, cfgHome, ws, "update", "demo")
+	if err != nil {
+		t.Fatalf("update: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "v1.0.0 → v2.0.0") {
+		t.Errorf("update should pick up the newer tag ahead of HEAD: %q", out)
+	}
+	if _, err := os.Stat(filepath.Join(ws, "notes", "b.md")); !os.IsNotExist(err) {
+		t.Errorf("dropped note b.md should be reversed on update, stat err=%v", err)
+	}
+	mustExist(t, filepath.Join(ws, "notes", "a.md"))
+}
+
 func TestExtInstallInvalidManifestFails(t *testing.T) {
 	if !gitx.Available() {
 		t.Skip("git not available")
@@ -444,9 +485,9 @@ func TestExtLifecycleAllContributions(t *testing.T) {
 	}
 	mustExist(t, filepath.Join(ws, "notes", "full-guide.md"))
 	mustExist(t, filepath.Join(ws, "templates", "full.md"))
-	mustExist(t, filepath.Join(ws, ".claude", "hooks", "gate.sh"))
+	mustExist(t, filepath.Join(ws, ".claude", "hooks", "full-gate.sh"))
 	settings, _ := os.ReadFile(filepath.Join(ws, ".claude", "settings.json"))
-	if !strings.Contains(string(settings), ".claude/hooks/gate.sh") {
+	if !strings.Contains(string(settings), ".claude/hooks/full-gate.sh") {
 		t.Errorf("hook not registered:\n%s", settings)
 	}
 	// Ledger written with all five.
@@ -473,7 +514,7 @@ func TestExtLifecycleAllContributions(t *testing.T) {
 	for _, p := range []string{
 		filepath.Join(ws, "notes", "full-guide.md"),
 		filepath.Join(ws, "templates", "full.md"),
-		filepath.Join(ws, ".claude", "hooks", "gate.sh"),
+		filepath.Join(ws, ".claude", "hooks", "full-gate.sh"),
 		extension.LedgerPath(ws, "full"),
 	} {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {

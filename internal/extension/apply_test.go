@@ -70,8 +70,8 @@ func TestApplyAndReverseAllContributions(t *testing.T) {
 	// Note + template copied.
 	assertFile(t, filepath.Join(root, "notes", "demo-guide.md"), "note-body")
 	assertFile(t, filepath.Join(root, "templates", "demo.md"), "template-body")
-	// Hook wrapper installed + executable + registered in settings.json.
-	hookPath := filepath.Join(root, ".claude", "hooks", "gate.sh")
+	// Hook wrapper installed (name-prefixed) + executable + registered.
+	hookPath := filepath.Join(root, ".claude", "hooks", "demo-gate.sh")
 	info, err := os.Stat(hookPath)
 	if err != nil {
 		t.Fatalf("hook wrapper not installed: %v", err)
@@ -80,7 +80,7 @@ func TestApplyAndReverseAllContributions(t *testing.T) {
 		t.Errorf("hook wrapper should be executable, mode=%v", info.Mode())
 	}
 	settings, _ := os.ReadFile(filepath.Join(root, ".claude", "settings.json"))
-	if !strings.Contains(string(settings), ".claude/hooks/gate.sh") {
+	if !strings.Contains(string(settings), ".claude/hooks/demo-gate.sh") {
 		t.Errorf("hook not registered in settings.json:\n%s", settings)
 	}
 	// Ledger records everything.
@@ -159,6 +159,91 @@ func TestReverseToleratesMissingArtifacts(t *testing.T) {
 	}
 	if err := Reverse(root, l); err != nil {
 		t.Errorf("Reverse should tolerate already-absent artifacts, got %v", err)
+	}
+}
+
+func TestOrphanLedger(t *testing.T) {
+	old := &Ledger{
+		Name:             "demo",
+		ClaudeMDSections: []string{"a", "b"},
+		Notes:            []string{"notes/x.md", "notes/y.md"},
+		Templates:        []string{"templates/t.md"},
+		Hooks:            []LedgerHook{{Event: "SessionStart", Wrapper: ".claude/hooks/demo-old.sh"}},
+	}
+	next := &Ledger{
+		Name:             "demo",
+		ClaudeMDSections: []string{"a"},                                                               // b dropped
+		Notes:            []string{"notes/x.md"},                                                      // y dropped
+		Templates:        []string{"templates/t.md"},                                                  // kept
+		Hooks:            []LedgerHook{{Event: "SessionStart", Wrapper: ".claude/hooks/demo-new.sh"}}, // wrapper changed
+	}
+	orphan := OrphanLedger(old, next)
+	if orphan == nil {
+		t.Fatal("expected orphans")
+	}
+	if len(orphan.ClaudeMDSections) != 1 || orphan.ClaudeMDSections[0] != "b" {
+		t.Errorf("section orphans wrong: %+v", orphan.ClaudeMDSections)
+	}
+	if len(orphan.Notes) != 1 || orphan.Notes[0] != "notes/y.md" {
+		t.Errorf("note orphans wrong: %+v", orphan.Notes)
+	}
+	if len(orphan.Templates) != 0 {
+		t.Errorf("kept template should not be orphaned: %+v", orphan.Templates)
+	}
+	if len(orphan.Hooks) != 1 || orphan.Hooks[0].Wrapper != ".claude/hooks/demo-old.sh" {
+		t.Errorf("hook orphans wrong: %+v", orphan.Hooks)
+	}
+
+	// Identical ledgers produce no orphans; nil old is nil.
+	if OrphanLedger(next, next) != nil {
+		t.Error("identical ledgers should have no orphans")
+	}
+	if OrphanLedger(nil, next) != nil {
+		t.Error("nil old should yield nil")
+	}
+}
+
+func TestApplyDoesNotTouchWorkspaceOnFailure(t *testing.T) {
+	// A failed Apply must leave a previously-applied install intact (the
+	// caller applies the new manifest first, before reversing orphans).
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("# CLAUDE.md\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	good := fullManifest()
+	clone := makeClone(t, good)
+	prior, err := Apply(root, clone, good)
+	if err != nil {
+		t.Fatalf("initial apply: %v", err)
+	}
+
+	// A new manifest whose hook source is missing → Apply fails and self-rolls-back.
+	broken := fullManifest()
+	broken.Version = "2.0.0"
+	brokenClone := makeClone(t, broken)
+	if err := os.Remove(filepath.Join(brokenClone, "hooks", "gate.sh")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(root, brokenClone, broken); err == nil {
+		t.Fatal("expected failure")
+	}
+
+	// The prior install's artifacts must still be present (Apply rolled back only
+	// its own partial work; the caller hadn't reversed the prior ledger yet).
+	mustHave(t, prior, root)
+}
+
+func mustHave(t *testing.T, l *Ledger, root string) {
+	t.Helper()
+	for _, n := range l.Notes {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(n))); err != nil {
+			t.Errorf("prior note %s should survive: %v", n, err)
+		}
+	}
+	for _, h := range l.Hooks {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(h.Wrapper))); err != nil {
+			t.Errorf("prior hook %s should survive: %v", h.Wrapper, err)
+		}
 	}
 }
 

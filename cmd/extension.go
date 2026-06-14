@@ -100,21 +100,8 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	// If this name is already installed, reverse its prior contributions first so
-	// a reinstall of a changed manifest can't orphan a dropped contribution.
-	if old, lerr := extension.LoadLedger(root, m.Name); lerr != nil {
-		return fmt.Errorf("reading ledger for %q: %w", m.Name, lerr)
-	} else if old != nil {
-		if rerr := extension.Reverse(root, old); rerr != nil {
-			return fmt.Errorf("reversing prior contributions for %q: %w", m.Name, rerr)
-		}
-	}
-	ledger, err := extension.Apply(root, dest, m)
-	if err != nil {
-		return cgerr.New(cgerr.ExitUsage, "applying contributions for %q: %v", m.Name, err)
-	}
-	if err := ledger.Save(root); err != nil {
-		return fmt.Errorf("writing ledger for %q: %w", m.Name, err)
+	if err := reapply(root, dest, m); err != nil {
+		return err
 	}
 	cfg.UpsertExtension(&workspace.ExtensionRef{
 		Name:      m.Name,
@@ -128,6 +115,31 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	printInstallSummary(cmd, m, dest, source, repo)
+	return nil
+}
+
+// reapply applies m's contributions into the workspace and persists the ledger,
+// then reverses any contributions a prior install of the same extension shipped
+// that the new manifest drops. It applies the NEW manifest first: Apply
+// self-rolls-back on failure, so a failed reinstall/update leaves the prior
+// install intact rather than half-removed.
+func reapply(root, cloneDir string, m *extension.Manifest) error {
+	old, err := extension.LoadLedger(root, m.Name)
+	if err != nil {
+		return fmt.Errorf("reading ledger for %q: %w", m.Name, err)
+	}
+	ledger, err := extension.Apply(root, cloneDir, m)
+	if err != nil {
+		return cgerr.New(cgerr.ExitUsage, "applying contributions for %q: %v", m.Name, err)
+	}
+	if orphan := extension.OrphanLedger(old, ledger); orphan != nil {
+		if rerr := extension.Reverse(root, orphan); rerr != nil {
+			return fmt.Errorf("removing dropped contributions for %q: %w", m.Name, rerr)
+		}
+	}
+	if err := ledger.Save(root); err != nil {
+		return fmt.Errorf("writing ledger for %q: %w", m.Name, err)
+	}
 	return nil
 }
 
@@ -405,20 +417,9 @@ func updateOne(ctx context.Context, root, name string) (string, error) {
 		return "", cgerr.New(cgerr.ExitUsage, "invalid %s for %q: %v", extension.ManifestFile, name, err)
 	}
 
-	// Re-apply: reverse the previous contributions, then apply the new manifest.
-	if old, lerr := extension.LoadLedger(root, name); lerr != nil {
-		return "", fmt.Errorf("reading ledger for %q: %w", name, lerr)
-	} else if old != nil {
-		if rerr := extension.Reverse(root, old); rerr != nil {
-			return "", fmt.Errorf("reversing prior contributions for %q: %w", name, rerr)
-		}
-	}
-	ledger, err := extension.Apply(root, clone, m)
-	if err != nil {
-		return "", cgerr.New(cgerr.ExitUsage, "applying contributions for %q: %v", name, err)
-	}
-	if err := ledger.Save(root); err != nil {
-		return "", fmt.Errorf("writing ledger for %q: %w", name, err)
+	// Re-apply: new manifest first, then reverse any contributions it dropped.
+	if err := reapply(root, clone, m); err != nil {
+		return "", err
 	}
 	return m.Version, nil
 }

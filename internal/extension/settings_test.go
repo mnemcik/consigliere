@@ -81,6 +81,50 @@ func TestUnregisterDropsEmptyEvent(t *testing.T) {
 	}
 }
 
+func TestUnregisterKeepsSiblingHooksInEntry(t *testing.T) {
+	root := t.TempDir()
+	// One entry containing two hooks; only one matches the command we remove.
+	seed := `{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[
+	  {"type":"command","command":".claude/hooks/ours.sh"},
+	  {"type":"command","command":".claude/hooks/theirs.sh"}
+	]}]}}`
+	if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(settingsPath(root), []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := unregisterHook(root, ".claude/hooks/ours.sh"); err != nil {
+		t.Fatal(err)
+	}
+	settings := readSettings(t, root)
+	entries := settings["hooks"].(map[string]any)["PreToolUse"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("entry should survive with its sibling hook, got %d entries", len(entries))
+	}
+	if entryHasCommand(entries[0], ".claude/hooks/ours.sh") {
+		t.Error("our hook should be removed")
+	}
+	if !entryHasCommand(entries[0], ".claude/hooks/theirs.sh") {
+		t.Error("the sibling hook in the same entry must be preserved")
+	}
+}
+
+func TestRegisterIsIdempotent(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < 3; i++ {
+		if err := registerHook(root, "SessionStart", ".claude/hooks/dup.sh"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	settings := readSettings(t, root)
+	entries := settings["hooks"].(map[string]any)["SessionStart"].([]any)
+	if len(entries) != 1 {
+		t.Errorf("re-registering the same command must not duplicate it, got %d entries", len(entries))
+	}
+}
+
 func readSettings(t *testing.T, root string) map[string]any {
 	t.Helper()
 	data, err := os.ReadFile(settingsPath(root))

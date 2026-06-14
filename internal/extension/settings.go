@@ -19,7 +19,9 @@ func settingsPath(root string) string {
 	return filepath.Join(root, filepath.FromSlash(settingsRel))
 }
 
-// registerHook appends a command hook for event, pointing at commandRel.
+// registerHook appends a command hook for event, pointing at commandRel. It is
+// idempotent: any prior registration of the same command (in any event) is
+// removed first, so re-applying an extension can't accumulate duplicate hooks.
 func registerHook(root, event, commandRel string) error {
 	settings, err := loadSettings(settingsPath(root))
 	if err != nil {
@@ -30,6 +32,7 @@ func registerHook(root, event, commandRel string) error {
 		hooks = map[string]any{}
 		settings["hooks"] = hooks
 	}
+	removeHookCommand(hooks, commandRel)
 	entry := map[string]any{
 		"matcher": "",
 		"hooks": []any{
@@ -41,9 +44,8 @@ func registerHook(root, event, commandRel string) error {
 	return saveSettings(settingsPath(root), settings)
 }
 
-// unregisterHook removes every hook entry whose command equals commandRel,
-// across all events, dropping an event key that becomes empty. Missing file or
-// absent entry is a no-op.
+// unregisterHook removes the command hook invoking commandRel wherever it
+// appears, across all events. Missing file or absent hook is a no-op.
 func unregisterHook(root, commandRel string) error {
 	settings, err := loadSettings(settingsPath(root))
 	if err != nil {
@@ -53,30 +55,67 @@ func unregisterHook(root, commandRel string) error {
 	if !ok {
 		return nil
 	}
+	if !removeHookCommand(hooks, commandRel) {
+		return nil
+	}
+	return saveSettings(settingsPath(root), settings)
+}
+
+// removeHookCommand strips the command hook invoking commandRel from every event
+// entry, keeping any sibling hooks in the same entry. An entry whose inner hooks
+// all drop is removed; an event whose entries all drop is deleted. Returns
+// whether anything changed.
+func removeHookCommand(hooks map[string]any, commandRel string) bool {
 	changed := false
 	for event, v := range hooks {
 		arr, ok := v.([]any)
 		if !ok {
 			continue
 		}
-		kept := make([]any, 0, len(arr))
+		keptEntries := make([]any, 0, len(arr))
 		for _, item := range arr {
-			if entryHasCommand(item, commandRel) {
-				changed = true
+			m, ok := item.(map[string]any)
+			if !ok {
+				keptEntries = append(keptEntries, item)
 				continue
 			}
-			kept = append(kept, item)
+			inner, ok := m["hooks"].([]any)
+			if !ok {
+				keptEntries = append(keptEntries, item)
+				continue
+			}
+			keptInner := make([]any, 0, len(inner))
+			for _, h := range inner {
+				if hookHasCommand(h, commandRel) {
+					changed = true
+					continue
+				}
+				keptInner = append(keptInner, h)
+			}
+			if len(keptInner) == 0 {
+				// Whole entry's hooks removed — drop the entry.
+				continue
+			}
+			m["hooks"] = keptInner
+			keptEntries = append(keptEntries, m)
 		}
-		if len(kept) == 0 {
+		if len(keptEntries) == 0 {
 			delete(hooks, event)
 		} else {
-			hooks[event] = kept
+			hooks[event] = keptEntries
 		}
 	}
-	if !changed {
-		return nil
+	return changed
+}
+
+// hookHasCommand reports whether an inner hook object invokes commandRel.
+func hookHasCommand(h any, commandRel string) bool {
+	hm, ok := h.(map[string]any)
+	if !ok {
+		return false
 	}
-	return saveSettings(settingsPath(root), settings)
+	cmd, ok := hm["command"].(string)
+	return ok && cmd == commandRel
 }
 
 // entryHasCommand reports whether a hooks-array entry contains a command hook
@@ -91,11 +130,7 @@ func entryHasCommand(item any, commandRel string) bool {
 		return false
 	}
 	for _, h := range inner {
-		hm, ok := h.(map[string]any)
-		if !ok {
-			continue
-		}
-		if cmd, ok := hm["command"].(string); ok && cmd == commandRel {
+		if hookHasCommand(h, commandRel) {
 			return true
 		}
 	}
