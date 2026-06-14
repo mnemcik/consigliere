@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-06-14
+
+The extension system. `cg` gains a pluggable, opt-in extension layer so users can
+add workspace- or domain-specific behaviour (credential rules, backlog
+standards, digests, drafting personas) without forking the framework or
+hand-editing `CLAUDE.md`. Extensions are independent git repos with a
+`cg-extension.json` manifest; the framework ships the mechanism — install,
+contribution application, removal, update, and external-subcommand dispatch — and
+a central registry. Distinct from `cg sync` (workspace *content*) and `cg update`
+(the *binary*).
+
 ### Added
 
 - **Extension system (`cg extension`).** Opt-in, pluggable workspace- or domain-specific behaviour without forking the framework. Each extension is a separate git repo with a `cg-extension.json` manifest (schema v1) declaring **contributions** across five points: `claude-md-sections` (inserted into the workspace `CLAUDE.md` under an `ext:<name>:section` marker namespace, distinct from `cg:section`/`user:section` so `cg sync` never touches them), `notes`, `templates`, `hooks` (bash wrappers registered into `.claude/settings.json`), and `subcommands` (external `cg-<name>` binaries). Subcommands:
