@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **Extension system (`cg extension`).** Opt-in, pluggable workspace- or domain-specific behaviour without forking the framework. Each extension is a separate git repo with a `cg-extension.json` manifest (schema v1) declaring **contributions** across five points: `claude-md-sections` (inserted into the workspace `CLAUDE.md` under an `ext:<name>:section` marker namespace, distinct from `cg:section`/`user:section` so `cg sync` never touches them), `notes`, `templates`, `hooks` (bash wrappers registered into `.claude/settings.json`), and `subcommands` (external `cg-<name>` binaries). Subcommands:
+  - `cg extension install <name|repo-url> [--ref]` — resolve a bare name against the central **registry** ([`mnemcik/cg-extensions-registry`](https://github.com/mnemcik/cg-extensions-registry)) or clone a git URL / local path directly; validate the manifest; apply all contributions; record the install.
+  - `cg extension list [--json]`, `cg extension remove <name> [--purge]` (reverses every applied contribution via a per-workspace ledger; `--purge` also deletes the machine-shared clone), `cg extension update [<name>]` (fetch the latest tag or fast-forward; re-apply, reversing dropped contributions).
+  - **External-subcommand dispatch** (git's `git foo` → `git-foo` pattern): `cg <verb>` runs an installed extension's `cg-<verb>` (or one on `$PATH`) when `<verb>` isn't a built-in; built-ins always win.
+  - Clones live under `~/.config/consigliere/extensions/<name>/` (shared with the auto-update config root). Applied state is tracked per-workspace in `.cg/ext/<name>.json`; installed extensions are recorded in `.cg.json` (**schema v1.2**, `extensions[]`) so `cg init` re-installs a missing clone after a workspace is re-cloned to a new machine.
+  - Contribution application is fully transactional: a failed install/update restores the workspace to its prior state. Design in [`docs/extensions.md`](docs/extensions.md); authoring guide in [`EXTENSIONS.md`](EXTENSIONS.md).
+
 ## [1.3.0] - 2026-06-13
 
 Native workspace mechanics. The `cg` binary absorbs the worktree, session-hook,

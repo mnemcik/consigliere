@@ -25,6 +25,12 @@ linters:
     goconst:
       min-len: 3
       min-occurrences: 3
+      # Don't count occurrences in _test.go files. Without this, a repeated
+      # fixture/table literal in tests (e.g. "list", "init") pushes a single
+      # non-test literal over the threshold and the issue is reported on the
+      # non-test line — which the _test.go exclusion below can't suppress.
+      # golangci-lint began scanning _test.go for goconst in v2.12.
+      ignore-tests: true
     gocritic:
       enabled-tags:
         - diagnostic

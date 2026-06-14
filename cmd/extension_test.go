@@ -533,3 +533,51 @@ func mustExist(t *testing.T, path string) {
 		t.Errorf("expected %s to exist: %v", path, err)
 	}
 }
+
+// TestInitReinstallsMissingExtensionClone simulates a re-cloned workspace: the
+// extension is recorded in .cg.json but its machine-shared clone is gone.
+// `cg init --force` must re-clone it and re-apply its contributions.
+func TestInitReinstallsMissingExtensionClone(t *testing.T) {
+	if !gitx.Available() {
+		t.Skip("git not available")
+	}
+	cfgHome := t.TempDir()
+	ws := newWorkspace(t)
+	if err := os.WriteFile(filepath.Join(ws, "CLAUDE.md"), []byte("# CLAUDE.md\n\nuser\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repo := makeExtRepo(t, allContribManifest)
+	if _, err := runExtCfg(t, cfgHome, ws, "install", repo); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	// Simulate a fresh machine: the workspace's .cg.json still lists the
+	// extension, but the clone and applied artifacts are gone.
+	clone := cloneDirFor(cfgHome, "full")
+	if err := os.RemoveAll(clone); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(ws, "notes", "full-guide.md")); err != nil {
+		t.Fatal(err)
+	}
+
+	// `cg init --force` (same config home + cwd) re-installs the missing clone.
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	t.Chdir(ws)
+	forceInit = true
+	t.Cleanup(func() { forceInit = false })
+	rootCmd.SetArgs([]string{"init", "--force"})
+	rootCmd.SetOut(new(bytes.Buffer))
+	rootCmd.SetErr(new(bytes.Buffer))
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("init --force: %v", err)
+	}
+
+	mustExist(t, clone)
+	mustExist(t, filepath.Join(ws, "notes", "full-guide.md"))
+	// The extension entry must survive the .cg.json rewrite.
+	cfg, _ := workspace.Detect(ws)
+	if len(cfg.Extensions) != 1 || cfg.Extensions[0].Name != "full" {
+		t.Errorf("extensions[] should be preserved across init --force: %+v", cfg.Extensions)
+	}
+}
