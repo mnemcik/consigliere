@@ -68,6 +68,22 @@ func RefExists(ctx context.Context, dir, ref string) bool {
 	return ok(ctx, dir, "rev-parse", "--verify", "--quiet", ref)
 }
 
+// Clone clones url into dest (which must not already exist). When ref is
+// non-empty it is checked out after the clone — a branch or a tag. A local
+// filesystem path is a valid url, which the extension installer relies on for
+// fixture-based tests.
+func Clone(ctx context.Context, url, dest, ref string) error {
+	if _, err := Run(ctx, "", "clone", "--quiet", url, dest); err != nil {
+		return err
+	}
+	if ref != "" {
+		if _, err := Run(ctx, dest, "checkout", "--quiet", ref); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // IsAncestor reports whether commit a is an ancestor of commit b in dir.
 func IsAncestor(ctx context.Context, dir, a, b string) bool {
 	return ok(ctx, dir, "merge-base", "--is-ancestor", a, b)

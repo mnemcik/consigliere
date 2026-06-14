@@ -41,7 +41,7 @@ contributions); project decisions DEC-001 (manifest schema v1) and DEC-002
   └───────────────┘              │ notes/ hooks/     │          │ .claude/hooks/…   │
                                  │ templates/ bin/   │          │ templates/…       │
                                  └──────────────────┘          │ .cg/ext/<n>.json  │ ◀ ledger
-        clone to ~/.config/cg/extensions/<name>/                │ .cg.json          │ ◀ extensions[]
+                                                                │ .cg.json          │ ◀ extensions[]
                                                                 └──────────────────┘
 ```
 
@@ -50,7 +50,7 @@ contributions); project decisions DEC-001 (manifest schema v1) and DEC-002
   the catalogue can grow without a binary release.
 - **Extension repo**: holds `cg-extension.json` plus the contribution payloads.
 - **Clone**: `cg extension install` clones the repo to
-  `~/.config/cg/extensions/<name>/` (machine-shared source of truth).
+  `~/.config/consigliere/extensions/<name>/` (machine-shared source of truth).
 - **Workspace**: contributions are *applied* per-workspace and tracked in a
   per-workspace ledger (`.cg/ext/<name>.json`) + `.cg.json` `extensions[]`.
 
@@ -59,7 +59,7 @@ contributions); project decisions DEC-001 (manifest schema v1) and DEC-002
 The cloned extension source is **per machine**, XDG-compliant:
 
 ```
-~/.config/cg/extensions/<name>/      # the cloned extension repo (shared across this machine's workspaces)
+~/.config/consigliere/extensions/<name>/      # the cloned extension repo (shared across this machine's workspaces)
   cg-extension.json
   fragments/<id>.md                  # CLAUDE.md section bodies
   notes/<file>.md                    # notes to copy into the workspace
@@ -68,9 +68,10 @@ The cloned extension source is **per machine**, XDG-compliant:
   bin/cg-<name>                      # optional external subcommand binary
 ```
 
-`$XDG_CONFIG_HOME` is honoured when set; otherwise `~/.config`. On Windows the
-base is `%AppData%\cg\extensions\<name>\` (resolved via the same path helper the
-rest of `cg` uses).
+`$XDG_CONFIG_HOME` is honoured when set; otherwise `~/.config`. This is the
+**same `~/.config/consigliere` root** that `cg`'s auto-update state already uses
+(`internal/autoupdate.StateDir`) — extensions deliberately do not introduce a
+second config tree (project DEC-002, 2026-06-14).
 
 What was *applied to a given workspace* is recorded **in that workspace**, not in
 the shared clone, because one clone may back several workspaces:
@@ -80,7 +81,7 @@ the shared clone, because one clone may back several workspaces:
 <workspace>/.cg.json                 # extensions[] entry (re-install on cg init)
 ```
 
-This refines the project todo's original `~/.config/cg/extensions/<name>/.install-log.json`
+This refines the project todo's original `~/.config/consigliere/extensions/<name>/.install-log.json`
 placement: the ledger must be per-workspace so `cg extension remove` reverses the
 right workspace, and so two workspaces sharing one clone don't fight over one
 log. See DEC-002.
@@ -162,7 +163,7 @@ forbids cross-extension dependencies (declare none).
 
 | Command | Behaviour |
 |---------|-----------|
-| `cg extension install <name>` | Resolve `<name>` in the registry → clone `repo` to `~/.config/cg/extensions/<name>/` (skip if present) → read manifest → apply all contributions to the current workspace → write ledger + `.cg.json` entry. |
+| `cg extension install <name>` | Resolve `<name>` in the registry → clone `repo` to `~/.config/consigliere/extensions/<name>/` (skip if present) → read manifest → apply all contributions to the current workspace → write ledger + `.cg.json` entry. |
 | `cg extension install <repo-url>` | Same, but skip the registry: clone the URL directly, read its manifest, take `name` from the manifest. Source recorded as `direct`. |
 | `cg extension install … --ref <tag\|branch>` | Pin the clone to a ref. Default: latest tag, else `main`. |
 | `cg extension list [--json]` | List installed extensions for the current workspace: name, version, source, installed-at. |
