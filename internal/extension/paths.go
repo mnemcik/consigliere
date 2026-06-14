@@ -29,7 +29,10 @@ func ExtensionsDir() string {
 	return filepath.Join(configBase(), "extensions")
 }
 
-// CloneDir is the install directory for the named extension.
+// CloneDir is the install directory for the named extension. name must be a
+// validated extension name (matching the manifest's nameRe — [a-z0-9-]+); the
+// install flow validates m.Name via Manifest.Validate before calling this, so
+// name never contains path separators or "..".
 func CloneDir(name string) string {
 	return filepath.Join(ExtensionsDir(), name)
 }

@@ -45,6 +45,9 @@ type LedgerIndexRow struct {
 }
 
 // LedgerPath is the ledger file path for the named extension in a workspace.
+// name must be a validated extension name (matching the manifest's nameRe —
+// [a-z0-9-]+); callers obtain it from a manifest passed through
+// Manifest.Validate, so it never contains path separators or "..".
 func LedgerPath(root, name string) string {
 	return filepath.Join(root, filepath.FromSlash(ledgerSubdir), name+".json")
 }

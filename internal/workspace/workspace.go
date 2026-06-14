@@ -66,7 +66,11 @@ const (
 )
 
 // UpsertExtension adds ref, or replaces the existing entry with the same Name.
+// A nil ref is a no-op.
 func (c *Config) UpsertExtension(ref *ExtensionRef) {
+	if ref == nil {
+		return
+	}
 	for i := range c.Extensions {
 		if c.Extensions[i].Name == ref.Name {
 			c.Extensions[i] = *ref

@@ -94,7 +94,7 @@ func ParseManifest(data []byte) (*Manifest, error) {
 func LoadManifest(dir string) (*Manifest, error) {
 	data, err := os.ReadFile(filepath.Join(dir, ManifestFile))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading %s: %w", ManifestFile, err)
 	}
 	return ParseManifest(data)
 }
