@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mnemcik/consigliere/internal/extension"
 	"github.com/mnemcik/consigliere/internal/manifest"
 	"github.com/mnemcik/consigliere/internal/wizard"
 	"github.com/mnemcik/consigliere/internal/workspace"
@@ -144,6 +145,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if cfg != nil {
 		priorExtensions = cfg.Extensions
 	}
+	// Seed the public registry under the built-in "cg" alias so `cg extension
+	// install cg/<name>` works out of the box. On re-init preserve any
+	// user-configured registries, only adding "cg" if it's missing.
+	registries := map[string]string{}
+	if cfg != nil {
+		for alias, src := range cfg.Registries {
+			registries[alias] = src
+		}
+	}
+	if _, ok := registries[extension.BuiltinRegistryAlias]; !ok {
+		registries[extension.BuiltinRegistryAlias] = extension.DefaultRegistryURL
+	}
 	cgJSON := workspace.Config{
 		Type:    workspace.TypeConsigliere,
 		Version: Version,
@@ -160,6 +173,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 			GateTemplate: gateTemplateRel,
 		},
 		Extensions: priorExtensions,
+		Registries: registries,
 	}
 	data, _ := json.MarshalIndent(cgJSON, "", "  ")
 	data = append(data, '\n')

@@ -46,6 +46,15 @@ type Config struct {
 	// v1.2 additive block: extensions installed in this workspace, so a fresh
 	// clone + `cg init` can re-install them. Empty/absent means none.
 	Extensions []ExtensionRef `json:"extensions,omitempty"`
+
+	// v1.3 additive block: named extension registries. Maps a short alias to a
+	// registry source — either a raw index.json URL (fetched anonymously over
+	// HTTPS) or a git repo URL (cloned, its root index.json read; lets a private
+	// repo serve as a registry over authenticated transport). Installs are always
+	// fully qualified — `cg extension install <alias>/<name>` — so the source is
+	// unambiguous; there is no bare-name resolution and no first-match search.
+	// `cg init` seeds the public registry under the "cg" alias.
+	Registries map[string]string `json:"registries,omitempty"`
 }
 
 // ExtensionRef records an installed extension in .cg.json (schema v1.2). The
@@ -55,7 +64,11 @@ type ExtensionRef struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 	Source  string `json:"source"` // "registry" | "direct"
-	Repo    string `json:"repo"`
+	// Registry is the alias the extension was resolved through (Source ==
+	// "registry"); empty for direct repo-URL installs. Recorded so `cg extension
+	// list` can show the fully-qualified name it was installed as.
+	Registry string `json:"registry,omitempty"`
+	Repo     string `json:"repo"`
 	// Path is the subdir within Repo holding cg-extension.json (and its payload
 	// files) when an extension is co-located with others in one repo (a monorepo).
 	// Empty means the repo root — the single-extension-per-repo default.

@@ -47,7 +47,9 @@ contributions); project decisions DEC-001 (manifest schema v1) and DEC-002
 
 - **Registry** (`mnemcik/cg-extensions-registry`): a JSON index mapping a short
   name to a repo URL + manifest URL. Decoupled from the `cg` release cadence so
-  the catalogue can grow without a binary release.
+  the catalogue can grow without a binary release. A workspace can name several
+  registries (public + private) and installs are fully qualified —
+  see [Multiple registries](#multiple-registries-fully-qualified-names).
 - **Extension repo**: holds `cg-extension.json` plus the contribution payloads.
 - **Clone**: `cg extension install` clones the repo to
   `~/.config/consigliere/extensions/<name>/` (machine-shared source of truth).
@@ -163,10 +165,10 @@ forbids cross-extension dependencies (declare none).
 
 | Command | Behaviour |
 |---------|-----------|
-| `cg extension install <name>` | Resolve `<name>` in the registry → clone `repo` to `~/.config/consigliere/extensions/<name>/` (skip if present) → read manifest → apply all contributions to the current workspace → write ledger + `.cg.json` entry. |
-| `cg extension install <repo-url>` | Same, but skip the registry: clone the URL directly, read its manifest, take `name` from the manifest. Source recorded as `direct`. |
+| `cg extension install <registry>/<name>` | Resolve `<name>` in the **named** registry `<registry>` (from `.cg.json` `registries`; the built-in `cg` alias is the public catalogue) → clone `repo` to `~/.config/consigliere/extensions/<name>/` (skip if present) → read manifest → apply all contributions → write ledger + `.cg.json` entry. **Names are always fully qualified** — a bare name is rejected, so the source is unambiguous (no first-match search, no [dependency confusion](#multiple-registries-fully-qualified-names)). |
+| `cg extension install <repo-url>` | Skip the registry: clone the URL directly, read its manifest, take `name` from the manifest. Source recorded as `direct`. |
 | `cg extension install … --ref <tag\|branch>` | Pin the clone to a ref. Default: latest tag, else the default branch. |
-| `cg extension install <repo-url> --path <subdir>` | Install a co-located extension whose manifest lives in `<subdir>` of a monorepo. Direct installs only; registry names carry their own `path`. See [Co-located extensions](#co-located-extensions-monorepo). |
+| `cg extension install <repo-url> --path <subdir>` | Install a co-located extension whose manifest lives in `<subdir>` of a monorepo. Direct installs only; registry entries carry their own `path`. See [Co-located extensions](#co-located-extensions-monorepo). |
 | `cg extension list [--json]` | List installed extensions for the current workspace: name, version, source, installed-at. |
 | `cg extension remove <name> [--purge]` | Reverse every contribution recorded in the workspace ledger (delete the `ext:<name>:section` block, copied notes/templates, hook wrapper + settings entry, INDEX rows), drop the `.cg.json` entry, delete the ledger. `--purge` also deletes the shared clone. |
 | `cg extension update [<name>]` | Advance a **single-repo** extension's clone to the latest tag (or its default branch when untagged), then re-apply contributions (replace-in-place). A **co-located** (subdir) extension instead tracks the default branch and versions from its manifest — see [Co-located extensions](#co-located-extensions-monorepo). No `<name>` updates all installed extensions. |
@@ -197,11 +199,15 @@ Additive and optional; absence = no extensions. Existing fields unchanged.
 ```jsonc
 {
   // … existing type / version / indexes / v1.1 blocks …
+  "registries": {                                 // v1.3: named registries (alias → source)
+    "cg": "https://raw.githubusercontent.com/mnemcik/cg-extensions-registry/main/index.json"
+  },
   "extensions": [
     {
       "name": "1password",
       "version": "0.1.0",
       "source": "registry",                       // "registry" | "direct"
+      "registry": "cg",                           // alias resolved through (registry installs); absent for direct
       "repo": "https://github.com/mnemcik/cg-extensions",
       "path": "1password",                        // optional: subdir for a co-located extension; absent = repo root
       "installed": "2026-06-14T10:00:00Z"
@@ -257,8 +263,53 @@ README.md                        # how to add an extension (PR the index)
 }
 ```
 
-`cg extension install <name>` fetches `index.json` (anonymous HTTPS, like the
-auto-update GitHub discovery), finds the entry, and clones `repo`.
+`cg extension install <registry>/<name>` resolves `<registry>` to a source (see
+below), fetches that one `index.json`, finds the entry, and clones `repo`.
+
+## Multiple registries, fully-qualified names
+
+A workspace can consult more than one registry — e.g. the public catalogue plus
+a private, org-internal one. Registries are **named** in `.cg.json` under
+`registries` (a map of alias → source), and installs are **always fully
+qualified**:
+
+```jsonc
+// .cg.json
+"registries": {
+  "cg":    "https://raw.githubusercontent.com/mnemcik/cg-extensions-registry/main/index.json",
+  "visma": "git@github-work:acme/cg-extensions-registry.git"
+}
+```
+
+```console
+cg extension install cg/1password         # public catalogue
+cg extension install visma/vpaas-backlog  # private catalogue
+```
+
+- **Fully-qualified, never bare.** The alias names exactly one registry, so the
+  source is unambiguous. A bare name (`cg extension install 1password`) is a
+  hard error. This is deliberate: resolving a bare name across an ordered list
+  of registries (first-match-wins) is a **dependency-confusion / name-shadowing**
+  vector — a registry earlier in the list could silently supply a different
+  extension than intended. Fully-qualified names remove that class of bug and
+  any precedence rules along with it.
+- **Transport is auto-detected from the source.** A raw HTTPS URL (e.g. a
+  `…/index.json`, or any `http(s)://` endpoint) is fetched anonymously. A git
+  source (`git@…`, `ssh://…`, or a URL ending in `.git`) is **cloned** and its
+  root `index.json` read — over git's own auth, so a **private** registry repo
+  works over SSH (e.g. the 1Password SSH agent) exactly like private extension
+  *content* does.
+- **The built-in `cg` alias** always resolves to the public catalogue and is
+  **immutable**: `CONSIGLIERE_EXTENSIONS_REGISTRY` overrides it (a test / fork
+  hook), otherwise it is `DefaultRegistryURL` — it is **not** overridable via
+  `.cg.json`, so a committed or tampered config can't silently repoint `cg/<name>`
+  to another registry. It resolves even in a workspace whose `.cg.json` predates
+  the `registries` map; `cg init` also seeds it for visibility. It is a *named*
+  registry addressed as `cg/<name>` — not a nameless default that bare names fall
+  through to.
+- **Unknown alias** is a hard error listing the configured registries. The
+  installed-extension record (`.cg.json` `extensions[]`) stores the registry
+  alias so `update` / `remove` / re-install re-resolve the same source.
 
 ## Co-located extensions (monorepo)
 

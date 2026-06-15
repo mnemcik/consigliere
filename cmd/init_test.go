@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/mnemcik/consigliere/internal/extension"
 	"github.com/mnemcik/consigliere/internal/manifest"
 )
 
@@ -131,6 +132,15 @@ func TestInitCreatesWorkspace(t *testing.T) {
 
 	if cfg["type"] != "consigliere" {
 		t.Errorf("expected type 'consigliere', got %v", cfg["type"])
+	}
+
+	// init seeds the public registry under the built-in "cg" alias.
+	regs, ok := cfg["registries"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected a registries map in .cg.json, got %v", cfg["registries"])
+	}
+	if regs["cg"] != extension.DefaultRegistryURL {
+		t.Errorf("expected registries.cg == %q, got %v", extension.DefaultRegistryURL, regs["cg"])
 	}
 
 	// Verify directories exist

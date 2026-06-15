@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -44,12 +45,14 @@ var extensionCmd = &cobra.Command{
 }
 
 var extInstallCmd = &cobra.Command{
-	Use:   "install <name|repo-url>",
-	Short: "Install an extension from the registry or a git repo URL",
+	Use:   "install <registry>/<name> | <repo-url>",
+	Short: "Install an extension by fully-qualified name or a git repo URL",
 	Long: "Install an extension and record it in .cg.json.\n\n" +
-		"A bare name is resolved against the registry; a git URL or local path is " +
-		"cloned directly. The cg-extension.json manifest is validated before the " +
-		"extension is recorded.",
+		"A fully-qualified name <registry>/<extension> (e.g. cg/1password) is resolved " +
+		"against that one named registry from .cg.json (the built-in `cg` alias is the " +
+		"public catalogue). A git URL or local path is cloned directly. Bare names are " +
+		"rejected — the source must be unambiguous. The cg-extension.json manifest is " +
+		"validated before the extension is recorded.",
 	Args: cobra.ExactArgs(1),
 	RunE: runExtInstall,
 }
@@ -88,20 +91,28 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// A git URL or local path installs directly; a bare name resolves against
-	// the registry. The subdir holding the manifest comes from --path for direct
-	// installs and from the catalogue entry for registry installs.
-	repo, source, path := arg, workspace.ExtSourceDirect, extInstallPath
+	// A git URL or local path installs directly. Otherwise the arg must be a
+	// fully-qualified "<registry>/<extension>" name, resolved against that one
+	// named registry — there is no bare-name or first-match resolution. The
+	// subdir holding the manifest comes from --path for direct installs and from
+	// the catalogue entry for registry installs.
+	repo, source, path, regAlias := arg, workspace.ExtSourceDirect, extInstallPath, ""
 	if !looksLikeRepoSource(arg) {
 		if extInstallPath != "" {
 			return cgerr.New(cgerr.ExitUsage,
 				"--path applies only to direct repo-url installs; a registry entry carries its own subdir")
 		}
-		entry, rerr := resolveRegistry(cmd.Context(), arg)
+		alias, name, ok := extension.ParseQualifiedName(arg)
+		if !ok {
+			return cgerr.New(cgerr.ExitUsage,
+				"install needs a fully-qualified name <registry>/<extension> (e.g. %s/%s) or a repo URL; got %q. Configured registries: %s",
+				extension.BuiltinRegistryAlias, arg, arg, registryAliasList(cfg))
+		}
+		entry, rerr := resolveQualified(cmd.Context(), cfg, alias, name)
 		if rerr != nil {
 			return rerr
 		}
-		repo, source, path = entry.Repo, workspace.ExtSourceRegistry, entry.Path
+		repo, source, path, regAlias = entry.Repo, workspace.ExtSourceRegistry, entry.Path, alias
 	}
 	path, err = extension.CleanSubdir(path)
 	if err != nil {
@@ -119,6 +130,7 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 		Name:      m.Name,
 		Version:   m.Version,
 		Source:    source,
+		Registry:  regAlias,
 		Repo:      repo,
 		Path:      path,
 		Installed: time.Now().UTC().Format(time.RFC3339),
@@ -127,7 +139,7 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("updating %s: %w", workspace.ConfigFile, err)
 	}
 
-	printInstallSummary(cmd, m, dest, source, repo, path)
+	printInstallSummary(cmd, m, dest, source, regAlias, repo, path)
 	return nil
 }
 
@@ -223,18 +235,65 @@ func installFrom(ctx context.Context, repo, ref, path string) (*extension.Manife
 	return m, dest, nil
 }
 
-// resolveRegistry fetches the catalogue and finds the named extension.
-func resolveRegistry(ctx context.Context, name string) (*extension.RegistryEntry, error) {
-	idx, err := extension.FetchIndex(ctx)
+// resolveQualified resolves alias to its registry source, fetches that one
+// catalogue, and finds the named extension in it. The alias names exactly one
+// source, so resolution is unambiguous — no search across registries.
+func resolveQualified(ctx context.Context, cfg *workspace.Config, alias, name string) (*extension.RegistryEntry, error) {
+	src, ok := registrySource(cfg, alias)
+	if !ok {
+		return nil, cgerr.New(cgerr.ExitUsage,
+			"unknown registry %q. Configured registries: %s", alias, registryAliasList(cfg))
+	}
+	idx, err := extension.FetchIndexFrom(ctx, src)
 	if err != nil {
 		return nil, cgerr.New(cgerr.ExitUsage, "%v", err)
 	}
 	entry, ok := idx.Find(name)
 	if !ok {
 		return nil, cgerr.New(cgerr.ExitUsage,
-			"extension %q not found in the registry; pass a repo URL to install directly", name)
+			"extension %q not found in registry %q; pass a repo URL to install directly", name, alias)
 	}
 	return entry, nil
+}
+
+// registrySource resolves a registry alias to its source string. The "cg"
+// builtin alias is immutable: it resolves to the env override if set (a test /
+// fork hook), else the public default — and is deliberately NOT overridable via
+// .cg.json. That keeps cg/<name> a trustworthy reference to the public
+// catalogue: a committed or tampered workspace config can't silently repoint it
+// to another registry (which would reintroduce the name-shadowing risk that
+// fully-qualified names exist to prevent). Any other alias is resolved from
+// .cg.json registries.
+func registrySource(cfg *workspace.Config, alias string) (string, bool) {
+	if alias == extension.BuiltinRegistryAlias {
+		if env := strings.TrimSpace(os.Getenv("CONSIGLIERE_EXTENSIONS_REGISTRY")); env != "" {
+			return env, true
+		}
+		return extension.DefaultRegistryURL, true
+	}
+	if cfg != nil {
+		if src, ok := cfg.Registries[alias]; ok && strings.TrimSpace(src) != "" {
+			return src, true
+		}
+	}
+	return "", false
+}
+
+// registryAliasList returns the configured registry aliases (plus the builtin
+// "cg") as a sorted, comma-joined string for error messages.
+func registryAliasList(cfg *workspace.Config) string {
+	seen := map[string]bool{extension.BuiltinRegistryAlias: true}
+	aliases := []string{extension.BuiltinRegistryAlias}
+	if cfg != nil {
+		for a := range cfg.Registries {
+			if !seen[a] {
+				seen[a] = true
+				aliases = append(aliases, a)
+			}
+		}
+	}
+	sort.Strings(aliases)
+	return strings.Join(aliases, ", ")
 }
 
 func runExtList(cmd *cobra.Command, _ []string) error {
@@ -266,9 +325,15 @@ func runExtList(cmd *cobra.Command, _ []string) error {
 		_, _ = fmt.Fprintln(out, "no extensions installed")
 		return nil
 	}
-	_, _ = fmt.Fprintf(out, "%-20s %-10s %-9s %s\n", "NAME", "VERSION", "SOURCE", "REPO")
+	_, _ = fmt.Fprintf(out, "%-20s %-10s %-12s %s\n", "NAME", "VERSION", "SOURCE", "REPO")
 	for _, e := range exts {
-		_, _ = fmt.Fprintf(out, "%-20s %-10s %-9s %s\n", e.Name, e.Version, e.Source, e.Repo)
+		// For registry installs show the alias the extension came from (its
+		// fully-qualified prefix); direct installs show "direct".
+		src := e.Source
+		if e.Registry != "" {
+			src = "registry:" + e.Registry
+		}
+		_, _ = fmt.Fprintf(out, "%-20s %-10s %-12s %s\n", e.Name, e.Version, src, e.Repo)
 	}
 	return nil
 }
@@ -309,10 +374,14 @@ func requireWorkspace(cmd *cobra.Command) (string, *workspace.Config, error) {
 	return root, cfg, nil
 }
 
-func printInstallSummary(cmd *cobra.Command, m *extension.Manifest, dest, source, repo, path string) {
+func printInstallSummary(cmd *cobra.Command, m *extension.Manifest, dest, source, regAlias, repo, path string) {
 	out := cmd.OutOrStdout()
 	_, _ = fmt.Fprintf(out, "Installed %s v%s — %s\n", m.Name, m.Version, m.Description)
-	_, _ = fmt.Fprintf(out, "  source:   %s (%s)\n", source, repo)
+	if regAlias != "" {
+		_, _ = fmt.Fprintf(out, "  source:   %s %s/%s (%s)\n", source, regAlias, m.Name, repo)
+	} else {
+		_, _ = fmt.Fprintf(out, "  source:   %s (%s)\n", source, repo)
+	}
 	if path != "" {
 		_, _ = fmt.Fprintf(out, "  subdir:   %s\n", filepath.ToSlash(path))
 	}
