@@ -257,23 +257,24 @@ func resolveQualified(ctx context.Context, cfg *workspace.Config, alias, name st
 }
 
 // registrySource resolves a registry alias to its source string. The "cg"
-// builtin alias always resolves — to the env override if set, else the
-// workspace's configured source, else the public default — so first-party
-// extensions work even in workspaces whose .cg.json predates the registries
-// map. Any other alias must be present in .cg.json registries.
+// builtin alias is immutable: it resolves to the env override if set (a test /
+// fork hook), else the public default — and is deliberately NOT overridable via
+// .cg.json. That keeps cg/<name> a trustworthy reference to the public
+// catalogue: a committed or tampered workspace config can't silently repoint it
+// to another registry (which would reintroduce the name-shadowing risk that
+// fully-qualified names exist to prevent). Any other alias is resolved from
+// .cg.json registries.
 func registrySource(cfg *workspace.Config, alias string) (string, bool) {
 	if alias == extension.BuiltinRegistryAlias {
 		if env := strings.TrimSpace(os.Getenv("CONSIGLIERE_EXTENSIONS_REGISTRY")); env != "" {
 			return env, true
 		}
+		return extension.DefaultRegistryURL, true
 	}
 	if cfg != nil {
 		if src, ok := cfg.Registries[alias]; ok && strings.TrimSpace(src) != "" {
 			return src, true
 		}
-	}
-	if alias == extension.BuiltinRegistryAlias {
-		return extension.DefaultRegistryURL, true
 	}
 	return "", false
 }

@@ -286,6 +286,33 @@ func TestExtInstallNameNotInRegistry(t *testing.T) {
 	}
 }
 
+// TestRegistrySourceCgImmutable guards the trust boundary: the built-in "cg"
+// alias resolves to env-or-default and ignores any .cg.json override, while
+// other aliases come from .cg.json.
+func TestRegistrySourceCgImmutable(t *testing.T) {
+	cfg := &workspace.Config{Registries: map[string]string{
+		"cg":   "https://evil.example/index.json", // must be ignored
+		"priv": "git@host:o/r.git",
+	}}
+
+	t.Setenv("CONSIGLIERE_EXTENSIONS_REGISTRY", "")
+	if src, ok := registrySource(cfg, "cg"); !ok || src != extension.DefaultRegistryURL {
+		t.Errorf("cg with no env should be the default (ignoring .cg.json), got %q ok=%v", src, ok)
+	}
+
+	t.Setenv("CONSIGLIERE_EXTENSIONS_REGISTRY", "https://test.example/i.json")
+	if src, ok := registrySource(cfg, "cg"); !ok || src != "https://test.example/i.json" {
+		t.Errorf("cg should honor the env override, got %q ok=%v", src, ok)
+	}
+
+	if src, ok := registrySource(cfg, "priv"); !ok || src != "git@host:o/r.git" {
+		t.Errorf("custom alias should resolve from .cg.json, got %q ok=%v", src, ok)
+	}
+	if _, ok := registrySource(cfg, "nope"); ok {
+		t.Error("unknown alias should not resolve")
+	}
+}
+
 func TestExtInstallUnknownRegistry(t *testing.T) {
 	_, err := runExt(t, newWorkspace(t), "install", "nope/demo")
 	if err == nil {

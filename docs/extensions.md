@@ -299,11 +299,14 @@ cg extension install visma/vpaas-backlog  # private catalogue
   root `index.json` read — over git's own auth, so a **private** registry repo
   works over SSH (e.g. the 1Password SSH agent) exactly like private extension
   *content* does.
-- **The built-in `cg` alias** always resolves to the public catalogue
-  (`CONSIGLIERE_EXTENSIONS_REGISTRY` overrides it; otherwise `DefaultRegistryURL`),
-  even in a workspace whose `.cg.json` predates the `registries` map. `cg init`
-  seeds it explicitly. It is a *named* registry addressed as `cg/<name>` — not a
-  nameless default that bare names fall through to.
+- **The built-in `cg` alias** always resolves to the public catalogue and is
+  **immutable**: `CONSIGLIERE_EXTENSIONS_REGISTRY` overrides it (a test / fork
+  hook), otherwise it is `DefaultRegistryURL` — it is **not** overridable via
+  `.cg.json`, so a committed or tampered config can't silently repoint `cg/<name>`
+  to another registry. It resolves even in a workspace whose `.cg.json` predates
+  the `registries` map; `cg init` also seeds it for visibility. It is a *named*
+  registry addressed as `cg/<name>` — not a nameless default that bare names fall
+  through to.
 - **Unknown alias** is a hard error listing the configured registries. The
   installed-extension record (`.cg.json` `extensions[]`) stores the registry
   alias so `update` / `remove` / re-install re-resolve the same source.
