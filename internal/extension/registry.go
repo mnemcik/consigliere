@@ -22,9 +22,13 @@ var registryClient = &http.Client{Timeout: 15 * time.Second}
 
 // RegistryEntry is one extension in the catalogue.
 type RegistryEntry struct {
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	Repo          string `json:"repo"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Repo        string `json:"repo"`
+	// Path is the subdir within Repo holding cg-extension.json, for catalogue
+	// entries that co-locate several extensions in one repo (a monorepo). Absent
+	// means the repo root.
+	Path          string `json:"path,omitempty"`
 	LatestVersion string `json:"latestVersion"`
 	ManifestURL   string `json:"manifestUrl"`
 }

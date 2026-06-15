@@ -166,6 +166,7 @@ forbids cross-extension dependencies (declare none).
 | `cg extension install <name>` | Resolve `<name>` in the registry → clone `repo` to `~/.config/consigliere/extensions/<name>/` (skip if present) → read manifest → apply all contributions to the current workspace → write ledger + `.cg.json` entry. |
 | `cg extension install <repo-url>` | Same, but skip the registry: clone the URL directly, read its manifest, take `name` from the manifest. Source recorded as `direct`. |
 | `cg extension install … --ref <tag\|branch>` | Pin the clone to a ref. Default: latest tag, else `main`. |
+| `cg extension install <repo-url> --path <subdir>` | Install a co-located extension whose manifest lives in `<subdir>` of a monorepo. Direct installs only; registry names carry their own `path`. See [Co-located extensions](#co-located-extensions-monorepo). |
 | `cg extension list [--json]` | List installed extensions for the current workspace: name, version, source, installed-at. |
 | `cg extension remove <name> [--purge]` | Reverse every contribution recorded in the workspace ledger (delete the `ext:<name>:section` block, copied notes/templates, hook wrapper + settings entry, INDEX rows), drop the `.cg.json` entry, delete the ledger. `--purge` also deletes the shared clone. |
 | `cg extension update [<name>]` | `git pull` the clone to the latest tag (or `main`), then re-apply contributions (replace-in-place). No `<name>` updates all installed extensions. |
@@ -201,7 +202,8 @@ Additive and optional; absence = no extensions. Existing fields unchanged.
       "name": "1password",
       "version": "0.1.0",
       "source": "registry",                       // "registry" | "direct"
-      "repo": "https://github.com/mnemcik/cg-ext-1password",
+      "repo": "https://github.com/mnemcik/cg-extensions",
+      "path": "1password",                        // optional: subdir for a co-located extension; absent = repo root
       "installed": "2026-06-14T10:00:00Z"
     }
   ]
@@ -257,6 +259,50 @@ README.md                        # how to add an extension (PR the index)
 
 `cg extension install <name>` fetches `index.json` (anonymous HTTPS, like the
 auto-update GitHub discovery), finds the entry, and clones `repo`.
+
+## Co-located extensions (monorepo)
+
+Several extensions can share one git repo, each in its own subdirectory — the
+Claude-marketplace shape — so a maintainer with a handful of first-party
+extensions doesn't run a repo apiece. The single-repo layout is still fully
+supported; co-location is purely additive (gap-analysis DEC-010).
+
+A registry entry addresses a subdir with an optional `path`:
+
+```json
+{
+  "name": "1password",
+  "description": "1Password as authoritative credential store",
+  "repo": "https://github.com/mnemcik/cg-extensions",
+  "path": "1password",
+  "latestVersion": "0.1.0",
+  "manifestUrl": "https://raw.githubusercontent.com/mnemcik/cg-extensions/main/1password/cg-extension.json"
+}
+```
+
+`path` absent ⇒ the manifest is at the repo root (the single-extension default).
+For a direct install, the user supplies the subdir explicitly:
+
+```
+cg extension install https://github.com/mnemcik/cg-extensions --path 1password
+```
+
+`--path` applies only to direct repo-url installs; a registry name carries its
+own `path`. The subdir is validated (relative, no `..` escape) before use.
+
+**Isolation.** Each extension still gets its own name-keyed clone under
+`~/.config/consigliere/extensions/<name>/` (the whole repo is cloned, the
+manifest and payloads are read from `<clone>/<path>`). Co-located siblings
+therefore install, remove, and update independently — `remove --purge` of one
+never touches another's clone. The subdir is recorded in `.cg.json` (`path`) so
+update and fresh-clone re-install know where each manifest lives.
+
+**Versioning.** A single-repo extension's git tags are its releases, so `update`
+checks out the latest tag (or the default branch when untagged). A whole-repo tag
+can't map to a single co-located extension's version, so a subdir extension's
+`update` instead tracks the repo's **default branch** and takes the version from
+the manifest's own `version` field. Bump the manifest `version` in the subdir to
+publish a new version of a co-located extension.
 
 ## Reuse of existing machinery
 

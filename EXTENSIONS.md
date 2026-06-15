@@ -148,12 +148,59 @@ Use semver for `version`. `cg extension update` pulls the latest tag (or `main`
 if you publish no tags) and re-applies contributions. Treat a `name` change, a
 removed contribution, or a renamed section `id` as a major bump.
 
+(Co-located extensions version differently — see below.)
+
+## Co-locating extensions in one repo (monorepo)
+
+You can keep several extensions in one repo, each in its own subdirectory,
+instead of a repo apiece — handy when you maintain a few related extensions:
+
+```
+cg-extensions/
+  1password/
+    cg-extension.json
+    fragments/ notes/ …
+  vpaas-backlog/
+    cg-extension.json
+    notes/ …
+```
+
+Each subdir is a complete extension (its own `cg-extension.json` + payloads).
+Install one directly with `--path`:
+
+```
+cg extension install https://github.com/you/cg-extensions --path 1password
+```
+
+To make it installable by name, give its registry entry a `path` pointing at the
+subdir (and a `manifestUrl` that includes the subdir):
+
+```json
+{
+  "name": "1password",
+  "description": "…",
+  "repo": "https://github.com/you/cg-extensions",
+  "path": "1password",
+  "latestVersion": "0.1.0",
+  "manifestUrl": "https://raw.githubusercontent.com/you/cg-extensions/main/1password/cg-extension.json"
+}
+```
+
+Co-located extensions install, update, and remove independently of each other.
+One caveat on **versioning**: a single-repo extension is updated to its latest
+git tag, but a whole-repo tag can't identify one co-located extension's version,
+so a subdir extension is updated by tracking the repo's default branch and
+reading the manifest's own `version`. **Bump the `version` in the subdir's
+`cg-extension.json`** to publish a new version of a co-located extension; don't
+rely on a repo-wide tag.
+
 ## Publishing to the registry
 
-Direct install works without the registry:
+Direct install works without the registry (root or subdir):
 
 ```
 cg extension install https://github.com/you/cg-ext-foo
+cg extension install https://github.com/you/cg-extensions --path foo
 ```
 
 To let users install by name, open a PR against

@@ -32,6 +32,7 @@ func runExtCfg(t *testing.T, configHome, workdir string, args ...string) (string
 	t.Chdir(workdir)
 	extListJSON = false
 	extInstallRef = ""
+	extInstallPath = ""
 	extRemovePurge = false
 
 	buf := new(bytes.Buffer)
