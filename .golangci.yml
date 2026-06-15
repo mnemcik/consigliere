@@ -54,6 +54,14 @@ linters:
       - path: _test\.go
         linters:
           - goconst
+      # gosec G101 ("hardcoded credentials") fires on test fixture manifests
+      # whose names contain credential-ish substrings (e.g. a "1pw"/credential
+      # extension fixture). These are inert JSON test data, not secrets. Scope
+      # only G101 away from test files; the rest of gosec still runs there.
+      - path: _test\.go
+        text: G101
+        linters:
+          - gosec
     paths:
       - cmd/embed_templates
 

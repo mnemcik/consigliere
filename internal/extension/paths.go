@@ -1,9 +1,35 @@
 package extension
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+// CleanSubdir validates and normalises a monorepo subdir — the directory within
+// a cloned extension repo that holds cg-extension.json and its payload files. An
+// empty path means the repo root (the single-extension-per-repo default). The
+// result is cleaned to the host separator and rejected if it is absolute or
+// escapes the repo via "..", so a registry entry or a hand-edited .cg.json can
+// never point the install/apply machinery outside the clone.
+func CleanSubdir(p string) (string, error) {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return "", nil
+	}
+	cleaned := filepath.Clean(filepath.FromSlash(p))
+	// "." cleans to the repo root, which the rest of the flow represents as the
+	// empty sentinel; returning "." would wrongly look like subdir mode.
+	if cleaned == "." {
+		return "", nil
+	}
+	if filepath.IsAbs(cleaned) || cleaned == ".." ||
+		strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("invalid subdir %q: must be a relative path inside the repo", p)
+	}
+	return cleaned, nil
+}
 
 // configBase returns cg's config root. It mirrors internal/autoupdate.StateDir:
 // honor $XDG_CONFIG_HOME, else ~/.config, with a temp-dir fallback when the home

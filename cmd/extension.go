@@ -18,6 +18,7 @@ import (
 )
 
 var extInstallRef string
+var extInstallPath string
 var extListJSON bool
 var extRemovePurge bool
 
@@ -26,6 +27,8 @@ func init() {
 	extensionCmd.AddCommand(extInstallCmd, extListCmd, extRemoveCmd, extUpdateCmd)
 	extInstallCmd.Flags().StringVar(&extInstallRef, "ref", "",
 		"git ref (tag or branch) to check out after cloning (default: the repo's default branch)")
+	extInstallCmd.Flags().StringVar(&extInstallPath, "path", "",
+		"subdir within the repo holding cg-extension.json (for monorepos; direct repo-url installs only)")
 	extListCmd.Flags().BoolVar(&extListJSON, "json", false, "output as JSON")
 	extRemoveCmd.Flags().BoolVar(&extRemovePurge, "purge", false,
 		"also delete the machine-shared clone under ~/.config/consigliere/extensions/")
@@ -86,21 +89,30 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	// A git URL or local path installs directly; a bare name resolves against
-	// the registry.
-	repo, source := arg, workspace.ExtSourceDirect
+	// the registry. The subdir holding the manifest comes from --path for direct
+	// installs and from the catalogue entry for registry installs.
+	repo, source, path := arg, workspace.ExtSourceDirect, extInstallPath
 	if !looksLikeRepoSource(arg) {
+		if extInstallPath != "" {
+			return cgerr.New(cgerr.ExitUsage,
+				"--path applies only to direct repo-url installs; a registry entry carries its own subdir")
+		}
 		entry, rerr := resolveRegistry(cmd.Context(), arg)
 		if rerr != nil {
 			return rerr
 		}
-		repo, source = entry.Repo, workspace.ExtSourceRegistry
+		repo, source, path = entry.Repo, workspace.ExtSourceRegistry, entry.Path
+	}
+	path, err = extension.CleanSubdir(path)
+	if err != nil {
+		return cgerr.New(cgerr.ExitUsage, "%v", err)
 	}
 
-	m, dest, err := installFrom(cmd.Context(), repo, extInstallRef)
+	m, dest, err := installFrom(cmd.Context(), repo, extInstallRef, path)
 	if err != nil {
 		return err
 	}
-	if err := reapply(root, dest, m); err != nil {
+	if err := reapply(root, filepath.Join(dest, path), m); err != nil {
 		return err
 	}
 	cfg.UpsertExtension(&workspace.ExtensionRef{
@@ -108,13 +120,14 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 		Version:   m.Version,
 		Source:    source,
 		Repo:      repo,
+		Path:      path,
 		Installed: time.Now().UTC().Format(time.RFC3339),
 	})
 	if err := cfg.Save(root); err != nil {
 		return fmt.Errorf("updating %s: %w", workspace.ConfigFile, err)
 	}
 
-	printInstallSummary(cmd, m, dest, source, repo)
+	printInstallSummary(cmd, m, dest, source, repo, path)
 	return nil
 }
 
@@ -123,12 +136,12 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 // that the new manifest drops. It applies the NEW manifest first: Apply
 // self-rolls-back on failure, so a failed reinstall/update leaves the prior
 // install intact rather than half-removed.
-func reapply(root, cloneDir string, m *extension.Manifest) error {
+func reapply(root, manifestDir string, m *extension.Manifest) error {
 	old, err := extension.LoadLedger(root, m.Name)
 	if err != nil {
 		return fmt.Errorf("reading ledger for %q: %w", m.Name, err)
 	}
-	ledger, err := extension.Apply(root, cloneDir, m)
+	ledger, err := extension.Apply(root, manifestDir, m)
 	if err != nil {
 		return cgerr.New(cgerr.ExitUsage, "applying contributions for %q: %v", m.Name, err)
 	}
@@ -156,11 +169,15 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		if !gitx.Available() {
 			return done, cgerr.New(cgerr.ExitUsage, "git is required to re-install extension %q", e.Name)
 		}
-		m, dest, err := installFrom(cmd.Context(), e.Repo, "")
+		path, perr := extension.CleanSubdir(e.Path)
+		if perr != nil {
+			return done, cgerr.New(cgerr.ExitUsage, "extension %q: %v", e.Name, perr)
+		}
+		m, dest, err := installFrom(cmd.Context(), e.Repo, "", path)
 		if err != nil {
 			return done, err
 		}
-		if err := reapply(root, dest, m); err != nil {
+		if err := reapply(root, filepath.Join(dest, path), m); err != nil {
 			return done, err
 		}
 		done = append(done, fmt.Sprintf("extension %q v%s (re-installed)", m.Name, m.Version))
@@ -168,11 +185,13 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 	return done, nil
 }
 
-// installFrom clones repo (at ref, if non-empty) into a staging dir, validates
-// its manifest, and atomically renames it into the machine-shared install
-// location. It returns the validated manifest and the install path. It does not
+// installFrom clones repo (at ref, if non-empty) into a staging dir, reads and
+// validates the manifest at <staging>/<path> (path empty = repo root), and
+// atomically renames the whole clone into the machine-shared install location
+// keyed by the extension name. It returns the validated manifest and the clone
+// root (the manifest and its payloads live at <cloneRoot>/<path>). It does not
 // touch the workspace — callers Apply contributions and record the .cg.json entry.
-func installFrom(ctx context.Context, repo, ref string) (*extension.Manifest, string, error) {
+func installFrom(ctx context.Context, repo, ref, path string) (*extension.Manifest, string, error) {
 	staging := extension.StagingDir()
 	if err := os.RemoveAll(staging); err != nil {
 		return nil, "", fmt.Errorf("clearing staging dir: %w", err)
@@ -186,7 +205,7 @@ func installFrom(ctx context.Context, repo, ref string) (*extension.Manifest, st
 	if err := gitx.Clone(ctx, repo, staging, ref); err != nil {
 		return nil, "", cgerr.New(cgerr.ExitUsage, "cloning %s: %v", repo, err)
 	}
-	m, err := extension.LoadManifest(staging)
+	m, err := extension.LoadManifest(filepath.Join(staging, path))
 	if err != nil {
 		return nil, "", cgerr.New(cgerr.ExitUsage, "reading %s: %v", extension.ManifestFile, err)
 	}
@@ -290,10 +309,13 @@ func requireWorkspace(cmd *cobra.Command) (string, *workspace.Config, error) {
 	return root, cfg, nil
 }
 
-func printInstallSummary(cmd *cobra.Command, m *extension.Manifest, dest, source, repo string) {
+func printInstallSummary(cmd *cobra.Command, m *extension.Manifest, dest, source, repo, path string) {
 	out := cmd.OutOrStdout()
 	_, _ = fmt.Fprintf(out, "Installed %s v%s — %s\n", m.Name, m.Version, m.Description)
 	_, _ = fmt.Fprintf(out, "  source:   %s (%s)\n", source, repo)
+	if path != "" {
+		_, _ = fmt.Fprintf(out, "  subdir:   %s\n", filepath.ToSlash(path))
+	}
 	_, _ = fmt.Fprintf(out, "  location: %s\n", dest)
 
 	c := m.Contributes
@@ -389,7 +411,7 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 	out := cmd.OutOrStdout()
 	for i := range targets {
 		old := targets[i].Version
-		newVer, err := updateOne(cmd.Context(), root, targets[i].Name)
+		newVer, err := updateOne(cmd.Context(), root, targets[i].Name, targets[i].Path)
 		if err != nil {
 			return err
 		}
@@ -410,11 +432,18 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// updateOne fetches the clone of name, checks out its latest tag (or default
-// branch when untagged), re-validates the manifest, re-applies its contributions
-// to the workspace (reverse the prior ledger, then apply the new manifest), and
-// returns the new version.
-func updateOne(ctx context.Context, root, name string) (string, error) {
+// updateOne fetches the clone of name, advances it to the right commit,
+// re-validates the manifest at <clone>/<path>, re-applies its contributions to
+// the workspace (reverse the prior ledger, then apply the new manifest), and
+// returns the new version (always the manifest's own version field).
+//
+// Commit selection depends on layout. A root extension (path == "") is its own
+// repo, so its git tags are its releases: check out the latest tag, or track the
+// default branch when untagged. A subdir extension (path != "") shares one repo
+// with siblings, so whole-repo tags don't map to a single extension's version —
+// track the default branch and let the manifest's version field be the source of
+// truth.
+func updateOne(ctx context.Context, root, name, path string) (string, error) {
 	clone := extension.CloneDir(name)
 	if _, err := os.Stat(clone); err != nil {
 		return "", cgerr.New(cgerr.ExitUsage,
@@ -423,7 +452,7 @@ func updateOne(ctx context.Context, root, name string) (string, error) {
 	if err := gitx.Fetch(ctx, clone, "origin", "--tags"); err != nil {
 		return "", cgerr.New(cgerr.ExitUsage, "fetching %q: %v", name, err)
 	}
-	if tag := gitx.LatestTag(ctx, clone); tag != "" {
+	if tag := gitx.LatestTag(ctx, clone); path == "" && tag != "" {
 		if err := gitx.Checkout(ctx, clone, tag); err != nil {
 			return "", cgerr.New(cgerr.ExitUsage, "checking out %s of %q: %v", tag, name, err)
 		}
@@ -436,7 +465,8 @@ func updateOne(ctx context.Context, root, name string) (string, error) {
 			return "", cgerr.New(cgerr.ExitUsage, "fast-forwarding %q: %v", name, err)
 		}
 	}
-	m, err := extension.LoadManifest(clone)
+	manifestDir := filepath.Join(clone, path)
+	m, err := extension.LoadManifest(manifestDir)
 	if err != nil {
 		return "", cgerr.New(cgerr.ExitUsage, "reading %s for %q: %v", extension.ManifestFile, name, err)
 	}
@@ -445,7 +475,7 @@ func updateOne(ctx context.Context, root, name string) (string, error) {
 	}
 
 	// Re-apply: new manifest first, then reverse any contributions it dropped.
-	if err := reapply(root, clone, m); err != nil {
+	if err := reapply(root, manifestDir, m); err != nil {
 		return "", err
 	}
 	return m.Version, nil

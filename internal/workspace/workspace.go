@@ -52,10 +52,14 @@ type Config struct {
 // per-workspace ledger (.cg/ext/<name>.json) records what each install applied;
 // this is the lighter "what is installed + where from" index.
 type ExtensionRef struct {
-	Name      string `json:"name"`
-	Version   string `json:"version"`
-	Source    string `json:"source"` // "registry" | "direct"
-	Repo      string `json:"repo"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Source  string `json:"source"` // "registry" | "direct"
+	Repo    string `json:"repo"`
+	// Path is the subdir within Repo holding cg-extension.json (and its payload
+	// files) when an extension is co-located with others in one repo (a monorepo).
+	// Empty means the repo root — the single-extension-per-repo default.
+	Path      string `json:"path,omitempty"`
 	Installed string `json:"installed"` // RFC3339 timestamp
 }
 
