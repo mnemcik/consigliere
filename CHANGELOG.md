@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-06-15
+
+Subdir-addressed extensions. Several extensions can now live in one git repo —
+the Claude-marketplace shape — each in its own subdirectory, instead of requiring
+a separate repo per extension. Single-repo extensions are unchanged; co-location
+is purely additive.
+
 ### Added
 
 - **Subdir-addressed extensions (monorepo support).** Several extensions can now live in one git repo, each in its own subdirectory — the Claude-marketplace shape — instead of requiring a repo per extension. A registry entry may carry an optional `path` (the subdir holding that extension's `cg-extension.json`), and `cg extension install <repo-url> --path <subdir>` installs a co-located extension directly. Single-repo extensions are unchanged: an absent `path` means the repo root. Each extension still gets its own name-keyed clone, so install/remove/update stay fully isolated between co-located siblings. For a subdir extension, `cg extension update` tracks the repo's default branch and takes the version from the manifest's own `version` field (a whole-repo git tag can't map to a single co-located extension); a single-repo extension still honors its latest tag. `.cg.json` records each extension's `path`. (gap-analysis DEC-010)
