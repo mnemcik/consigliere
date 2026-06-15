@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **Multiple named registries, fully-qualified install names.** A workspace can consult more than one extension registry — e.g. the public catalogue plus a private, org-internal one — declared in `.cg.json` under `registries` (a map of alias → source). Installs are now **always fully qualified**: `cg extension install <registry>/<extension>` (e.g. `cg/1password`). A bare name is a hard error. This is deliberate — bare-name resolution across an ordered list of registries (first-match-wins) is a dependency-confusion / name-shadowing vector; a fully-qualified name names exactly one source, so resolution is unambiguous and there are no precedence rules. Registry transport is auto-detected from the source: a raw HTTPS URL is fetched anonymously, while a git source (`git@…`, `ssh://…`, or a `.git` URL) is cloned over git's own auth and its root `index.json` read — so a **private** registry repo works over SSH. The built-in `cg` alias always resolves to the public catalogue (honoring `CONSIGLIERE_EXTENSIONS_REGISTRY`); `cg init` seeds it explicitly. `.cg.json` `extensions[]` records the registry alias an extension was installed through. Unknown aliases are a hard error listing the configured registries.
+
+### Changed
+
+- `cg extension install <name>` → `cg extension install <registry>/<name>`. Existing public extensions install as `cg/<name>` (e.g. `cg extension install cg/1password`). Direct repo-URL / local-path installs are unchanged.
+
 ## [1.5.0] - 2026-06-15
 
 Subdir-addressed extensions. Several extensions can now live in one git repo —

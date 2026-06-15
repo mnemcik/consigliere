@@ -241,9 +241,9 @@ func TestExtInstallFromRegistry(t *testing.T) {
 	defer srv.Close()
 	t.Setenv("CONSIGLIERE_EXTENSIONS_REGISTRY", srv.URL)
 
-	out, err := runExt(t, ws, "install", "demo")
+	out, err := runExt(t, ws, "install", "cg/demo")
 	if err != nil {
-		t.Fatalf("install by name: %v\n%s", err, out)
+		t.Fatalf("install by fully-qualified name: %v\n%s", err, out)
 	}
 	if !strings.Contains(out, "source:   registry") {
 		t.Errorf("summary should show registry source: %q", out)
@@ -252,8 +252,21 @@ func TestExtInstallFromRegistry(t *testing.T) {
 	if len(cfg.Extensions) != 1 || cfg.Extensions[0].Source != workspace.ExtSourceRegistry {
 		t.Errorf("expected one registry-sourced extension, got %+v", cfg.Extensions)
 	}
+	if cfg.Extensions[0].Registry != "cg" {
+		t.Errorf("recorded registry alias should be %q, got %q", "cg", cfg.Extensions[0].Registry)
+	}
 	if cfg.Extensions[0].Repo != repo {
 		t.Errorf("recorded repo should be the resolved URL %q, got %q", repo, cfg.Extensions[0].Repo)
+	}
+}
+
+func TestExtInstallBareNameRejected(t *testing.T) {
+	_, err := runExt(t, newWorkspace(t), "install", "demo")
+	if err == nil {
+		t.Fatal("expected a bare name to be rejected; installs must be fully qualified")
+	}
+	if !strings.Contains(err.Error(), "fully-qualified") {
+		t.Errorf("error should require a fully-qualified name: %v", err)
 	}
 }
 
@@ -264,12 +277,22 @@ func TestExtInstallNameNotInRegistry(t *testing.T) {
 	defer srv.Close()
 	t.Setenv("CONSIGLIERE_EXTENSIONS_REGISTRY", srv.URL)
 
-	_, err := runExt(t, newWorkspace(t), "install", "absent")
+	_, err := runExt(t, newWorkspace(t), "install", "cg/absent")
 	if err == nil {
 		t.Fatal("expected an error for a name not in the registry")
 	}
-	if !strings.Contains(err.Error(), "not found in the registry") {
+	if !strings.Contains(err.Error(), "not found in registry") {
 		t.Errorf("error should explain the name is unknown: %v", err)
+	}
+}
+
+func TestExtInstallUnknownRegistry(t *testing.T) {
+	_, err := runExt(t, newWorkspace(t), "install", "nope/demo")
+	if err == nil {
+		t.Fatal("expected an error for an unknown registry alias")
+	}
+	if !strings.Contains(err.Error(), "unknown registry") {
+		t.Errorf("error should explain the registry alias is unknown: %v", err)
 	}
 }
 

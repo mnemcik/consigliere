@@ -70,6 +70,71 @@ func makeMonorepo(t *testing.T, subdirs map[string]string) string {
 	return dir
 }
 
+// makeGitRegistry creates a git repo holding index.json at its root — a private
+// registry served over git transport. Returns the repo path (a clone source).
+func makeGitRegistry(t *testing.T, index string) string {
+	t.Helper()
+	dir := t.TempDir()
+	ctx := context.Background()
+	for _, args := range [][]string{
+		{"init", "--quiet"},
+		{"config", "user.email", "t@example.com"},
+		{"config", "user.name", "test"},
+	} {
+		if _, err := gitx.Run(ctx, dir, args...); err != nil {
+			t.Fatalf("git %v: %v", args, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.json"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitx.Run(ctx, dir, "add", "-A"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitx.Run(ctx, dir, "commit", "--quiet", "-m", "init"); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// TestExtInstallViaNamedGitRegistry exercises the full private-marketplace path:
+// a named registry in .cg.json whose source is a git repo, resolved by a
+// fully-qualified name, pointing at a monorepo subdir.
+func TestExtInstallViaNamedGitRegistry(t *testing.T) {
+	if !gitx.Available() {
+		t.Skip("git not available")
+	}
+	ws := newWorkspace(t)
+	if err := os.WriteFile(filepath.Join(ws, "CLAUDE.md"), []byte("# CLAUDE.md\n\nuser\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	content := makeMonorepo(t, map[string]string{"1pw": ext1pwManifest})
+	index := `{"version":1,"extensions":[{"name":"1pw","description":"d","repo":"` +
+		content + `","path":"1pw","latestVersion":"0.1.0","manifestUrl":"x"}]}`
+	registry := makeGitRegistry(t, index)
+
+	// Register the private "priv" registry in the workspace .cg.json.
+	cfg, err := workspace.Detect(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Registries = map[string]string{"priv": registry}
+	if err := cfg.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runExt(t, ws, "install", "priv/1pw")
+	if err != nil {
+		t.Fatalf("install priv/1pw: %v\n%s", err, out)
+	}
+	cfg, _ = workspace.Detect(ws)
+	r := findRef(cfg.Extensions, "1pw")
+	if r == nil || r.Source != workspace.ExtSourceRegistry || r.Registry != "priv" || r.Path != "1pw" {
+		t.Errorf("named-registry ref wrong: %+v", r)
+	}
+	mustExist(t, filepath.Join(ws, "notes", "creds.md"))
+}
+
 func findRef(refs []workspace.ExtensionRef, name string) *workspace.ExtensionRef {
 	for i := range refs {
 		if refs[i].Name == name {
@@ -142,9 +207,9 @@ func TestExtInstallSubdirFromRegistry(t *testing.T) {
 	defer srv.Close()
 	t.Setenv("CONSIGLIERE_EXTENSIONS_REGISTRY", srv.URL)
 
-	out, err := runExt(t, ws, "install", "1pw")
+	out, err := runExt(t, ws, "install", "cg/1pw")
 	if err != nil {
-		t.Fatalf("install by name: %v\n%s", err, out)
+		t.Fatalf("install by fully-qualified name: %v\n%s", err, out)
 	}
 	cfg, _ := workspace.Detect(ws)
 	r := findRef(cfg.Extensions, "1pw")

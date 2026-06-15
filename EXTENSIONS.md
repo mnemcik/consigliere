@@ -17,7 +17,8 @@ ships the content.
 3. Tag a release (`v0.1.0`).
 4. Install it: `cg extension install https://github.com/you/cg-ext-foo`.
 5. (Optional) PR your entry into `mnemcik/cg-extensions-registry` so users can
-   `cg extension install foo` by name.
+   `cg extension install cg/foo` by fully-qualified name (the public catalogue is
+   the built-in `cg` registry; private registries get their own alias).
 
 ## Repository layout
 
@@ -204,9 +205,12 @@ cg extension install https://github.com/you/cg-ext-foo
 cg extension install https://github.com/you/cg-extensions --path foo
 ```
 
-To let users install by name, open a PR against
+To let users install by fully-qualified name (`cg extension install cg/foo`),
+open a PR against
 [`mnemcik/cg-extensions-registry`](https://github.com/mnemcik/cg-extensions-registry)
-adding your entry to `index.json`:
+adding your entry to `index.json`. (For a private/internal registry, host your
+own `index.json` repo and have users add it to `.cg.json` `registries` under
+their own alias — installs are always `<alias>/<name>`.)
 
 ```json
 {
