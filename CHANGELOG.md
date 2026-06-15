@@ -6,9 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-06-15
+
+Named registries and fully-qualified extension names. A workspace can now consult
+more than one extension registry — the public catalogue plus private,
+org-internal ones — and installs name their source explicitly
+(`cg extension install <registry>/<extension>`). **Breaking:** bare-name installs
+(`cg extension install 1password`) are no longer accepted; use `cg/1password`.
+
 ### Added
 
-- **Multiple named registries, fully-qualified install names.** A workspace can consult more than one extension registry — e.g. the public catalogue plus a private, org-internal one — declared in `.cg.json` under `registries` (a map of alias → source). Installs are now **always fully qualified**: `cg extension install <registry>/<extension>` (e.g. `cg/1password`). A bare name is a hard error. This is deliberate — bare-name resolution across an ordered list of registries (first-match-wins) is a dependency-confusion / name-shadowing vector; a fully-qualified name names exactly one source, so resolution is unambiguous and there are no precedence rules. Registry transport is auto-detected from the source: a raw HTTPS URL is fetched anonymously, while a git source (`git@…`, `ssh://…`, or a `.git` URL) is cloned over git's own auth and its root `index.json` read — so a **private** registry repo works over SSH. The built-in `cg` alias always resolves to the public catalogue (honoring `CONSIGLIERE_EXTENSIONS_REGISTRY`); `cg init` seeds it explicitly. `.cg.json` `extensions[]` records the registry alias an extension was installed through. Unknown aliases are a hard error listing the configured registries.
+- **Multiple named registries, fully-qualified install names.** A workspace can consult more than one extension registry — e.g. the public catalogue plus a private, org-internal one — declared in `.cg.json` under `registries` (a map of alias → source). Installs are now **always fully qualified**: `cg extension install <registry>/<extension>` (e.g. `cg/1password`). A bare name is a hard error. This is deliberate — bare-name resolution across an ordered list of registries (first-match-wins) is a dependency-confusion / name-shadowing vector; a fully-qualified name names exactly one source, so resolution is unambiguous and there are no precedence rules. Registry transport is auto-detected from the source: a raw HTTPS URL is fetched anonymously, while a git source (`git@…`, `ssh://…`, or a `.git` URL) is cloned over git's own auth and its root `index.json` read — so a **private** registry repo works over SSH. The built-in `cg` alias is immutable — it resolves to the public catalogue (`CONSIGLIERE_EXTENSIONS_REGISTRY` overrides it; otherwise `DefaultRegistryURL`) and is **not** overridable via `.cg.json`, so a committed or tampered config can't repoint `cg/<name>`. `cg init` seeds it for visibility. `.cg.json` `extensions[]` records the registry alias an extension was installed through. Unknown aliases are a hard error listing the configured registries.
 
 ### Changed
 
