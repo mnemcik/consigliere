@@ -19,6 +19,11 @@ func CleanSubdir(p string) (string, error) {
 		return "", nil
 	}
 	cleaned := filepath.Clean(filepath.FromSlash(p))
+	// "." cleans to the repo root, which the rest of the flow represents as the
+	// empty sentinel; returning "." would wrongly look like subdir mode.
+	if cleaned == "." {
+		return "", nil
+	}
 	if filepath.IsAbs(cleaned) || cleaned == ".." ||
 		strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("invalid subdir %q: must be a relative path inside the repo", p)

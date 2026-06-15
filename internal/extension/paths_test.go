@@ -8,6 +8,8 @@ import (
 func TestCleanSubdir(t *testing.T) {
 	ok := map[string]string{
 		"":          "",
+		".":         "",
+		"./":        "",
 		"1pw":       "1pw",
 		"  vault  ": "vault",
 		"a/b":       filepath.Join("a", "b"),

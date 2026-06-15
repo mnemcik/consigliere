@@ -165,11 +165,11 @@ forbids cross-extension dependencies (declare none).
 |---------|-----------|
 | `cg extension install <name>` | Resolve `<name>` in the registry → clone `repo` to `~/.config/consigliere/extensions/<name>/` (skip if present) → read manifest → apply all contributions to the current workspace → write ledger + `.cg.json` entry. |
 | `cg extension install <repo-url>` | Same, but skip the registry: clone the URL directly, read its manifest, take `name` from the manifest. Source recorded as `direct`. |
-| `cg extension install … --ref <tag\|branch>` | Pin the clone to a ref. Default: latest tag, else `main`. |
+| `cg extension install … --ref <tag\|branch>` | Pin the clone to a ref. Default: latest tag, else the default branch. |
 | `cg extension install <repo-url> --path <subdir>` | Install a co-located extension whose manifest lives in `<subdir>` of a monorepo. Direct installs only; registry names carry their own `path`. See [Co-located extensions](#co-located-extensions-monorepo). |
 | `cg extension list [--json]` | List installed extensions for the current workspace: name, version, source, installed-at. |
 | `cg extension remove <name> [--purge]` | Reverse every contribution recorded in the workspace ledger (delete the `ext:<name>:section` block, copied notes/templates, hook wrapper + settings entry, INDEX rows), drop the `.cg.json` entry, delete the ledger. `--purge` also deletes the shared clone. |
-| `cg extension update [<name>]` | `git pull` the clone to the latest tag (or `main`), then re-apply contributions (replace-in-place). No `<name>` updates all installed extensions. |
+| `cg extension update [<name>]` | Advance a **single-repo** extension's clone to the latest tag (or its default branch when untagged), then re-apply contributions (replace-in-place). A **co-located** (subdir) extension instead tracks the default branch and versions from its manifest — see [Co-located extensions](#co-located-extensions-monorepo). No `<name>` updates all installed extensions. |
 
 ### Re-install on fresh clone
 
@@ -283,7 +283,7 @@ A registry entry addresses a subdir with an optional `path`:
 `path` absent ⇒ the manifest is at the repo root (the single-extension default).
 For a direct install, the user supplies the subdir explicitly:
 
-```
+```console
 cg extension install https://github.com/mnemcik/cg-extensions --path 1password
 ```
 

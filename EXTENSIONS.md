@@ -144,9 +144,10 @@ Same copy semantics as notes, without the INDEX pointer.
 
 ## Versioning
 
-Use semver for `version`. `cg extension update` pulls the latest tag (or `main`
-if you publish no tags) and re-applies contributions. Treat a `name` change, a
-removed contribution, or a renamed section `id` as a major bump.
+Use semver for `version`. For a single-repo extension, `cg extension update`
+pulls the latest tag (or the default branch if you publish no tags) and re-applies
+contributions. Treat a `name` change, a removed contribution, or a renamed
+section `id` as a major bump.
 
 (Co-located extensions version differently — see below.)
 
@@ -155,7 +156,7 @@ removed contribution, or a renamed section `id` as a major bump.
 You can keep several extensions in one repo, each in its own subdirectory,
 instead of a repo apiece — handy when you maintain a few related extensions:
 
-```
+```text
 cg-extensions/
   1password/
     cg-extension.json
@@ -168,7 +169,7 @@ cg-extensions/
 Each subdir is a complete extension (its own `cg-extension.json` + payloads).
 Install one directly with `--path`:
 
-```
+```console
 cg extension install https://github.com/you/cg-extensions --path 1password
 ```
 
