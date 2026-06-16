@@ -86,8 +86,8 @@ Releases are automated by [release-please](https://github.com/googleapis/release
    GitHub Release; that release event triggers GoReleaser, which builds the
    cross-platform binaries, checksums, Homebrew cask, and `install.sh` artifacts.
 
-Bump rules: `feat:` → minor, `fix:` → patch, `feat!:`/`fix!:` or a `BREAKING CHANGE:`
-footer → major.
+Bump rules: `feat:` → minor, `fix:` → patch, and any `type!:` commit or a
+`BREAKING CHANGE:` footer → major.
 
 Manual hotfix escape hatch (automation down): create the release directly with
 `gh release create vX.Y.Z --notes "…"` — this fires GoReleaser. A bare `git push --tags`

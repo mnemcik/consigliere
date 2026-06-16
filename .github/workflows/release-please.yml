@@ -20,6 +20,11 @@ jobs:
         with:
           app-id: ${{ vars.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_APP_PRIVATE_KEY }}
+          # Downscope the minted token to exactly what release-please needs
+          # (least privilege; guards against future installation permission creep).
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
 
       - uses: googleapis/release-please-action@v4
         with:
