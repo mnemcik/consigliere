@@ -71,4 +71,7 @@ release:
     name: consigliere
   draft: false
   prerelease: auto
+  # release-please creates the GitHub Release (with CHANGELOG-derived notes) before
+  # this runs; keep-existing uploads artifacts without overwriting that body.
+  mode: keep-existing
   name_template: "v{{.Version}}"

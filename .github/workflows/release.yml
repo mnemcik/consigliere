@@ -1,9 +1,16 @@
 name: Release
 
+# Triggered by the GitHub Release that release-please publishes (the release and
+# its tag are created in one Releases-API call). Because release-please creates the
+# release with a GitHub App token, this `release` event fires normally — the default
+# GITHUB_TOKEN would not have triggered it. GoReleaser uploads its artifacts onto the
+# existing release (release.mode: keep-existing) without overwriting the notes.
+#
+# Manual hotfix escape hatch: `gh release create vX.Y.Z --notes "…"` fires this too.
+# A bare `git push --tags` will NOT — the trigger is the release event, not the tag.
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]
 
 permissions:
   contents: write

@@ -1,0 +1,24 @@
+name: PR Title Lint
+
+# Validates the PR title against Conventional Commits. We squash-merge, so the PR
+# title becomes the sole commit on main — which release-please parses to derive the
+# next version and CHANGELOG. This is the single Conventional-Commits enforcement point.
+on:
+  pull_request_target:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+
+permissions:
+  pull-requests: read
+
+jobs:
+  validate:
+    name: Validate PR title
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
