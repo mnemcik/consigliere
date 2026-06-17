@@ -209,6 +209,20 @@ For analyses that involve **external vendors, products, pricing, governance, acq
 **Run `git fetch origin` before reading repo state to review, assess, or summarize, and `git pull --ff-only` if the current branch is behind.** Other concurrent sessions may land commits since your worktree was created; stale local state produces incorrect reviews. Fresh worktrees from `cg worktree create` start synced and `cg worktree land` handles push-time drift automatically — this rule is specifically about **read-time** freshness when you're about to inspect, review, or assess files.
 <!-- cg:section:end=remote-sync -->
 
+<!-- cg:section:start=shared-state-auth -->
+## Shared-State Actions Require Per-Action Authorisation
+
+**Never run `gh pr merge`, a release-firing `git push origin <tag>`, a force-push to a shared branch, or equivalent shared-state-firing actions without explicit per-action authorisation from the user** — even under auto mode, even with green CI + approved reviews + resolved threads. Summarise the state and pause for explicit direction (*"pr merged"*, *"merge it"*, *"can you execute? i'll approve"*). A "wait for CI and review" instruction is a prerequisite, not an authorisation. Narrow per-action delegation is fine; widen it only if the user says so explicitly.
+<!-- cg:section:end=shared-state-auth -->
+
+<!-- cg:section:start=apply-uncontroversial -->
+## Apply Uncontroversial Review Findings Without Asking
+
+When CI / CodeRabbit / Copilot posts findings on a PR Claude just opened, **validate first, then apply silently**: findings that pass validation and are small + localised + reversible (lint, type errors, obvious bugs with suggested diffs) get applied → pushed → re-checked → summarised, with no intervening confirmation prompt. This pairs with the shared-state rule above — **fix automatically, merge only on explicit authorisation.**
+
+For the per-finding validation checklist, when to push back instead of applying, and the rule that a target repo's own review config (`.coderabbit.yaml`, `CODEOWNERS`, contributor guide) overrides a principled "out of scope" rejection, load [`notes/apply-uncontroversial-review-findings.md`](notes/apply-uncontroversial-review-findings.md).
+<!-- cg:section:end=apply-uncontroversial -->
+
 <!-- cg:section:start=conventions -->
 ## Conventions
 
