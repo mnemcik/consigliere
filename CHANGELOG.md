@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.0](https://github.com/mnemcik/consigliere/compare/v1.7.0...v1.8.0) (2026-06-17)
+
+
+### Features
+
+* ship decision/judgment behavioural rules in workspace CLAUDE.md ([#60](https://github.com/mnemcik/consigliere/issues/60)) ([9523418](https://github.com/mnemcik/consigliere/commit/9523418c295ad4adced6f5d153849a4c5639385d))
+* ship evidence behavioural rules in workspace CLAUDE.md ([#62](https://github.com/mnemcik/consigliere/issues/62)) ([89cbf73](https://github.com/mnemcik/consigliere/commit/89cbf73236ec1d0567c15c08779207ff5e4303af))
+* ship shared-state behavioural rules in workspace CLAUDE.md ([#63](https://github.com/mnemcik/consigliere/issues/63)) ([b3d2ed6](https://github.com/mnemcik/consigliere/commit/b3d2ed607f2461f77d427e7ec6d74a998e5fb28b))
+
 ## [1.7.0](https://github.com/mnemcik/consigliere/compare/v1.6.0...v1.7.0) (2026-06-17)
 
 
