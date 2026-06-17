@@ -163,6 +163,36 @@ For the notes-capture procedure (category + tags + INDEX), the insights-draft pr
 For the fetch probes, the per-comment outcome taxonomy (fix / reply / escalate), the CI-failure handling, the guardrails (no amend/force-push on a review branch), and the session-end `/schedule` handoff, load [`notes/after-pr-checks.md`](notes/after-pr-checks.md).
 <!-- cg:section:end=pr-review-loop -->
 
+<!-- cg:section:start=confidence-gate -->
+## Confidence Gate — Non-Trivial Tasks
+
+Before non-trivial work (multi-file changes, new mechanisms, design decisions, ambiguous asks), gauge confidence in **intent** and **approach**. If ≥95% sure on both, proceed. If not, name the ambiguity and either ask one clarifying question or present 2–3 options before implementing. Trivial edits and exploratory questions are exempt — proceed directly.
+<!-- cg:section:end=confidence-gate -->
+
+<!-- cg:section:start=exploratory-options -->
+## Exploratory Questions — Option-List Shape
+
+For exploratory questions with **2+ reasonable solution shapes** (scope, location, mechanism, timing), structure the response as: one-line recommendation → numbered alternatives with main tradeoff each → short pick-one closer. For questions with an **obviously dominant answer**, a single recommendation is still enough — don't pad follow-up asks with options that have dominant defaults. The option-list shape is only worth the extra lines when the answer genuinely has multiple valid directions.
+<!-- cg:section:end=exploratory-options -->
+
+<!-- cg:section:start=post-completion-coverage -->
+## Post-Completion Coverage Questions
+
+When the user asks a coverage/adequacy question right after Claude reports work complete ("is it properly covered?", "is this enough?", "are the tests good?", "did you handle X?"), treat it as a request for **gap analysis, not reassurance**. Respond with: (1) what *is* covered (tight summary), (2) what is *not* covered (named, concrete gaps), (3) honest judgment on whether each gap is worth closing. Then wait for direction. Don't manufacture gaps to look thorough — if the work genuinely covers what matters, say so explicitly.
+<!-- cg:section:end=post-completion-coverage -->
+
+<!-- cg:section:start=problem-capture -->
+## Problem Capture — Describe, Don't Solution
+
+When asked to capture a problem, open question, feature request, or requirement, describe **what** the problem is — the observable behavior, the gap, the thing that needs resolving. Do not prescribe candidate solutions, option matrices, or recommended approaches. If rationale helps, explain the *consequences* or *impact* of the problem, not the shape of a solution. Solutioning is a downstream step owned by whoever resolves the question. Override only when the user explicitly asks for options or recommendations.
+<!-- cg:section:end=problem-capture -->
+
+<!-- cg:section:start=reframing -->
+## Reframing Questions — Zoom Out from Tactical
+
+When the user responds to your tactical options with a reframing question (*"should we rather …"*, *"is the real issue …"*, *"why not Y instead?"*), treat it as a root-cause challenge, not a preference among your options. Evaluate honestly whether the tactical fix is solving a symptom — if yes, say so and let the tactical work go. When the reframe reveals a larger concern that deserves dedicated tracking, promote it to its own project/idea instead of burying it in another project's todo. Don't defend in-progress tactical work for its own sake; wasted effort on a mooted path is cheaper than committing to it.
+<!-- cg:section:end=reframing -->
+
 <!-- cg:section:start=conventions -->
 ## Conventions
 
