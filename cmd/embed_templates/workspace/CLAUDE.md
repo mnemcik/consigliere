@@ -193,6 +193,22 @@ When asked to capture a problem, open question, feature request, or requirement,
 When the user responds to your tactical options with a reframing question (*"should we rather …"*, *"is the real issue …"*, *"why not Y instead?"*), treat it as a root-cause challenge, not a preference among your options. Evaluate honestly whether the tactical fix is solving a symptom — if yes, say so and let the tactical work go. When the reframe reveals a larger concern that deserves dedicated tracking, promote it to its own project/idea instead of burying it in another project's todo. Don't defend in-progress tactical work for its own sake; wasted effort on a mooted path is cheaper than committing to it.
 <!-- cg:section:end=reframing -->
 
+<!-- cg:section:start=evidence -->
+## Evidence Over Inference
+
+When a recommendation, instruction, or trade-off depends on what users, teams, or environments already have in place (tooling installed, permissions granted, naming conventions, account/vault configuration, team practices), do **not** assert the precondition. Either verify it (ask the user, read repo/docs/config, run a command) or caveat it plainly — *"assuming X; flag if that's not the case"*. Inference from a single signal (it's a Node repo → "everyone has Node"; one folder follows a naming convention → "every folder does") is not evidence. Cost of verification is seconds; cost of an unfounded anchor is doc rewrites and lost trust on the next recommendation.
+
+When diagnosing a performance or behaviour problem, separate **state** (allocation snapshots, accumulated counts, lifetime totals) from **rate** (paging/sec, I/O during the slow window, sampled deltas). Causal claims require rates or timings, not snapshots. "47G memory used" is a state; "0 swapins, 0 swapouts in the slow window" is a rate. If the user challenges an attribution rooted in a static number, don't defend — re-measure with a time-derivative tool (`vm_stat 1 3`, `iostat`, `top -l 2 -i 1`, `time <cmd>`) and revise openly.
+
+For analyses that involve **external vendors, products, pricing, governance, acquisitions, or other time-sensitive state**, verify load-bearing claims via web search / fetch / official MCPs *before* presenting — not only when prompted. Training-data assertions about acquisition status, licence model, project affiliation, current pricing, or product archive state go stale fast and break the credibility of the whole artifact when one is wrong. A claim is load-bearing if it justifies a recommendation, would flip the recommendation if false, or will be quoted in an external artifact (ADR, review, proposal). Cite sources inline so freshness is auditable; flag any claim that couldn't be verified.
+<!-- cg:section:end=evidence -->
+
+<!-- cg:section:start=remote-sync -->
+## Remote-Sync Check
+
+**Run `git fetch origin` before reading repo state to review, assess, or summarize, and `git pull --ff-only` if the current branch is behind.** Other concurrent sessions may land commits since your worktree was created; stale local state produces incorrect reviews. Fresh worktrees from `cg worktree create` start synced and `cg worktree land` handles push-time drift automatically — this rule is specifically about **read-time** freshness when you're about to inspect, review, or assess files.
+<!-- cg:section:end=remote-sync -->
+
 <!-- cg:section:start=conventions -->
 ## Conventions
 
