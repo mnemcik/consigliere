@@ -73,11 +73,25 @@ cp templates/idea.md cmd/embed_templates/idea.md
 
 ## Release process
 
-1. Update `CHANGELOG.md`
-2. Commit: `git commit -m "release: vX.Y.Z"`
-3. Tag: `git tag vX.Y.Z`
-4. Push: `git push origin main --tags`
-5. GitHub Actions runs GoReleaser automatically, creating the release with cross-platform binaries
+Releases are automated by [release-please](https://github.com/googleapis/release-please).
+**Do not** hand-edit `CHANGELOG.md`, bump a version, or push tags.
+
+1. Merge PRs to `main` with Conventional-Commits titles (`feat:`, `fix:`, etc.). The
+   PR title is validated by the **PR Title Lint** check and — because we squash-merge —
+   becomes the single commit on `main` that release-please reads.
+2. release-please keeps an open **"chore: release X.Y.Z"** Release PR that accumulates
+   the `CHANGELOG.md` section, the version, and the `templates/workspace/.cg.json`
+   version bump derived from the merged commits.
+3. **To ship, merge the Release PR.** release-please then tags the repo and creates the
+   GitHub Release; that release event triggers GoReleaser, which builds the
+   cross-platform binaries, checksums, Homebrew cask, and `install.sh` artifacts.
+
+Bump rules: `feat:` → minor, `fix:` → patch, and any `type!:` commit or a
+`BREAKING CHANGE:` footer → major.
+
+Manual hotfix escape hatch (automation down): create the release directly with
+`gh release create vX.Y.Z --notes "…"` — this fires GoReleaser. A bare `git push --tags`
+will not (the Release workflow triggers on the release event, not the tag).
 
 ## Commit messages
 
@@ -90,4 +104,5 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/):
 - `ci:` — CI/CD changes
 - `test:` — test changes
 - `refactor:` — code restructuring
-- `release:` — version release
+
+Release commits are produced automatically by release-please — you don't author them.
