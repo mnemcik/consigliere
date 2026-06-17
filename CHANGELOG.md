@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.7.0](https://github.com/mnemcik/consigliere/compare/v1.6.0...v1.7.0) (2026-06-17)
+
+
+### Features
+
+* automate releases with release-please + Conventional-Commits PR-title lint ([#58](https://github.com/mnemcik/consigliere/issues/58)) ([844f03b](https://github.com/mnemcik/consigliere/commit/844f03b56843896baaa245e2d5a91cfb704a2d01))
+
 ## [Unreleased]
 
 ## [1.6.0] - 2026-06-15
