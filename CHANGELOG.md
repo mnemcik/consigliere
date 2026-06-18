@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.11.0](https://github.com/mnemcik/consigliere/compare/v1.10.0...v1.11.0) (2026-06-18)
+
+
+### Features
+
+* **init:** embed wrap skill and install it via cg init ([#72](https://github.com/mnemcik/consigliere/issues/72)) ([92b94d0](https://github.com/mnemcik/consigliere/commit/92b94d0bd6234877e4d9098163f4f37c2e3123ac))
+
 ## [1.10.0](https://github.com/mnemcik/consigliere/compare/v1.9.0...v1.10.0) (2026-06-18)
 
 
