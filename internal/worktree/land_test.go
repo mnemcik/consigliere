@@ -146,6 +146,51 @@ func TestLandUnknownStrategy(t *testing.T) {
 	}
 }
 
+func TestLandToleratesSlugArg(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	var log bytes.Buffer
+	wt, err := Create(ctx, "land6", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	mustGit(t, ctx, wt, "commit", "--allow-empty", "-m", "feature work")
+	want := headSHA(t, ctx, wt)
+
+	// Passing the worktree's own slug or its full session branch is a no-op
+	// equivalent to no-arg (lands HEAD) rather than a "commit not found" error.
+	for _, arg := range []string{"land6", "session/land6"} {
+		opt := landOpts(wt)
+		opt.TargetSHA = arg
+		res, err := Land(ctx, opt, &log)
+		if err != nil {
+			t.Fatalf("Land with slug arg %q: %v\nlog: %s", arg, err, log.String())
+		}
+		if res.SHA != want {
+			t.Errorf("arg %q: landed SHA = %s, want %s", arg, res.SHA, want)
+		}
+	}
+}
+
+func TestLandRejectsUnknownArg(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	var log bytes.Buffer
+	wt, err := Create(ctx, "land7", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	mustGit(t, ctx, wt, "commit", "--allow-empty", "-m", "x")
+
+	// An arg that is neither a known commit nor this worktree's slug is a usage
+	// error (not silently tolerated).
+	opt := landOpts(wt)
+	opt.TargetSHA = "not-a-sha-or-slug"
+	_, err = Land(ctx, opt, &log)
+	var coded *cgerr.CodedError
+	if !errors.As(err, &coded) || coded.ExitCode() != cgerr.ExitUsage {
+		t.Fatalf("expected ExitUsage for unknown arg, got %v", err)
+	}
+}
+
 func TestLandTargetSHANotReachable(t *testing.T) {
 	ctx, root := setupWorkspace(t)
 	var log bytes.Buffer
