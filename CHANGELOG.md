@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.9.0](https://github.com/mnemcik/consigliere/compare/v1.8.0...v1.9.0) (2026-06-18)
+
+
+### Features
+
+* ship delta behavioural rules (parallel, api-contracts, bug-diagnosis, bulk-ops) ([#64](https://github.com/mnemcik/consigliere/issues/64)) ([ae83d52](https://github.com/mnemcik/consigliere/commit/ae83d52a74b6ec3741becef1a19ebac330fbc3a2))
+
 ## [1.8.0](https://github.com/mnemcik/consigliere/compare/v1.7.0...v1.8.0) (2026-06-17)
 
 
