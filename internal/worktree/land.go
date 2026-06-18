@@ -29,7 +29,9 @@ type LandOptions struct {
 	LandingBranch string
 	// Strategy is "direct-to-main" or "pr".
 	Strategy string
-	// TargetSHA, when set, must be reachable from HEAD (a caller-compat guard).
+	// TargetSHA, when set, asserts that commit is reachable from HEAD before
+	// landing — an optional manual reachability guard. No caller requires it
+	// (the wrap skill, ≥1.1.0, invokes land bare); retained as a manual convenience.
 	TargetSHA string
 	// MaxRetries bounds the non-ff rebase+retry loop (0 → defaultMaxRetries).
 	MaxRetries int
@@ -75,7 +77,7 @@ func Land(ctx context.Context, opt *LandOptions, logw io.Writer) (LandResult, er
 		return LandResult{}, err
 	}
 
-	// Optional caller-compat guard: the named SHA must be part of this branch.
+	// Optional manual reachability guard: the named SHA must be part of this branch.
 	//
 	// Slug tolerance: callers sometimes pass the session slug here by analogy
 	// with `worktree create <slug>` / `remove <slug>`. The arg is redundant for
