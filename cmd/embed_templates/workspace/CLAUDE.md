@@ -288,14 +288,23 @@ For the full selection procedure, the `cg active` flags/liveness windows, and wh
 When a project accumulates long-lived architectural decisions, spawns multiple distinct feature tracks, or has no credible "done when", consider promoting its durable content to a new **area** and re-bounding the remaining work as discrete projects. For the criteria and the mechanical procedure, load [`notes/promoting-a-project-to-an-area.md`](notes/promoting-a-project-to-an-area.md).
 <!-- cg:section:end=promoting-to-area -->
 
+<!-- cg:section:start=tooling-preferences -->
+## Tooling Preferences — MCPs and Custom Code
+
+When a task needs external-system integration (Slack, Jira, Confluence, GitHub, Gmail, Drive, Calendar, Notion, etc.), prefer in this order: **official / first-party MCP tools already installed → custom code you fully control (scripts in the workspace) → third-party MCP servers** (last resort; pin a version, audit the code, narrow the tool surface). When an official tool lacks a capability, write a custom script rather than reaching for a third-party MCP.
+
+For the full preference order, the gap-handling rule, and the reasoning, load [`notes/tooling-preferences-mcps.md`](notes/tooling-preferences-mcps.md).
+<!-- cg:section:end=tooling-preferences -->
+
 <!-- cg:section:start=conventions -->
 ## Conventions
 
 - Idea statuses: `raw` → `exploring` → `ready` → `parked` | `rejected`
 - Project statuses: `defining` → `in-progress` → `done` | `on-hold`
 - Project priorities: `high` | `medium` | `low` — stored in each project's README.md Meta section and in `projects/TODO.md` (sorted by priority)
-- Area tags: free-form, multi-valued. The current tag vocabulary is listed in the **Area Tags** section above.
-- Tags on ideas are free-form. Use them to group and filter.
+- **Rank within a priority bucket** in `projects/TODO.md` is the row order and is **user-owned** — suggest re-ranking, but never silently reorder rows.
+- Area tags: free-form, multi-valued. The current tag vocabulary is listed in the **Area Tags** section above. **Reuse an existing tag before inventing a near-duplicate.**
+- Tags on ideas are free-form. Use them to group and filter; reuse existing values where they fit.
 - Areas on all items are mandatory. Use area slugs from `areas/INDEX.md`.
 - Not everything becomes a ticket — projects may produce tools, docs, automation, or just notes.
 - **Pull request URLs:** Always provide full URLs (e.g., `https://github.com/org/repo/pull/123`) when referencing pull requests, not shorthand like `org/repo#123`. The user needs clickable links to navigate directly.
