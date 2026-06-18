@@ -595,6 +595,9 @@ Session notes, findings, and reference material organized by category.
 - [Bulk / Destructive Ops — Pre-flight](bulk-ops-preflight.md) — before a command that touches many entities, state target set + exclusion set + single-sample dry-run + quoting/arity check and wait for approval.
 - [Continuous Improvement — What to Look For, How to Suggest, Where to Capture](continuous-improvement.md) — the what-to-look-for catalogue for improving the workspace's own rules/structure/workflows, plus the in-session vs. session-end sequencing.
 - [Capturing Improvement Proposals](capturing-improvement-proposals.md) — how to persist a harness improvement proposal with a lifecycle + triage surface (meta-framework idea file + BACKLOG row).
+- [Reviewing Insights Workflow](reviewing-insights-workflow.md) — the promote / reject / defer mechanics for draft insights; draft insights are never active rules until promoted.
+- [Selecting the Next Project — Procedure + Active-Work Detection](selecting-next-project.md) — the ranked selection procedure (TODO order, skip Done/On-hold/active) and the cg active detector flags/windows.
+- [Promoting a Project to an Area](promoting-a-project-to-an-area.md) — when and how to promote a project that outgrew single-project tracking into a persistent area, re-bounding remaining work.
 - [Area Rules — Linking, Reference Hubs & External-Repo Lookup](area-rules.md) — the full area rules (multi-area items, creating an area, the freshness check), the project-linking rule, and the external-repo → area lookup.
 
 ## Research

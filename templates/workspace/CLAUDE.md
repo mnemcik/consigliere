@@ -268,6 +268,26 @@ For the what-to-look-for catalogue and the in-session vs. end-of-session sequenc
 Every piece of information has **one authoritative location**; other files link to it. Domain/system context lives in area files; project status/scope/decisions live in the project folder; workflow steps live in notes or `CLAUDE.md`. When adding information, always ask: *"Is this already documented somewhere? If so, link — don't copy."* When the same detail appears in multiple places, consolidate into the authoritative location and replace the copies with links.
 <!-- cg:section:end=dry-principle -->
 
+<!-- cg:section:start=reviewing-insights -->
+## Reviewing Insights
+
+When the user asks to review insights (phrases like "review my insights", "go through the drafts", "promote/reject insights", or a triage command on insights), load [`notes/reviewing-insights-workflow.md`](notes/reviewing-insights-workflow.md) for the full promote / reject / defer mechanics. Draft insights are never active rules until promoted.
+<!-- cg:section:end=reviewing-insights -->
+
+<!-- cg:section:start=selecting-next-project -->
+## Selecting the Next Project to Work On
+
+When the user asks "what should I work on next?" / "pick a project" (open-ended, not naming a specific project), use the ranked procedure — don't guess. In short: read `projects/TODO.md` top-to-bottom (priority then rank), skip Done/On-hold, skip projects already live in another session per `cg active --slugs`, then confirm the pick before starting. Rank within a priority bucket is **user-owned** — suggest re-ranking but never silently reorder rows.
+
+For the full selection procedure, the `cg active` flags/liveness windows, and when else to consult active-work detection, load [`notes/selecting-next-project.md`](notes/selecting-next-project.md).
+<!-- cg:section:end=selecting-next-project -->
+
+<!-- cg:section:start=promoting-to-area -->
+## Promoting a Project to an Area
+
+When a project accumulates long-lived architectural decisions, spawns multiple distinct feature tracks, or has no credible "done when", consider promoting its durable content to a new **area** and re-bounding the remaining work as discrete projects. For the criteria and the mechanical procedure, load [`notes/promoting-a-project-to-an-area.md`](notes/promoting-a-project-to-an-area.md).
+<!-- cg:section:end=promoting-to-area -->
+
 <!-- cg:section:start=conventions -->
 ## Conventions
 
