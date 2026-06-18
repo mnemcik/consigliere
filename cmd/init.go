@@ -604,6 +604,8 @@ Session notes, findings, and reference material organized by category.
 
 ## Reference
 
+- [Tooling Preferences — MCPs and Custom Code](tooling-preferences-mcps.md) — the preference order for external-system integration (official MCP → custom code you control → third-party MCP), with the gap-handling rule and reasoning.
+
 ## Troubleshooting
 `
 
