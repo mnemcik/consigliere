@@ -76,11 +76,23 @@ func Land(ctx context.Context, opt *LandOptions, logw io.Writer) (LandResult, er
 	}
 
 	// Optional caller-compat guard: the named SHA must be part of this branch.
+	//
+	// Slug tolerance: callers sometimes pass the session slug here by analogy
+	// with `worktree create <slug>` / `remove <slug>`. The arg is redundant for
+	// land — it always lands THIS worktree's HEAD — so when it names this
+	// worktree (the slug or the full session branch) accept it as the no-arg
+	// case instead of failing, and proceed as if no SHA was given.
 	if opt.TargetSHA != "" {
-		if !gitx.CommitishExists(ctx, dir, opt.TargetSHA) {
-			return LandResult{}, cgerr.New(cgerr.ExitUsage, "commit not found: %s", opt.TargetSHA)
-		}
-		if !gitx.IsAncestor(ctx, dir, opt.TargetSHA, "HEAD") {
+		slug := strings.TrimPrefix(branch, branchPrefix)
+		switch {
+		case opt.TargetSHA == slug || opt.TargetSHA == branch:
+			logf("note: %q is this worktree's slug, not a commit; landing HEAD (the <sha> arg is optional — run with no args)\n", opt.TargetSHA)
+		case !gitx.CommitishExists(ctx, dir, opt.TargetSHA):
+			return LandResult{}, cgerr.New(cgerr.ExitUsage,
+				"%q is neither a commit reachable from HEAD nor this worktree's slug (%s); "+
+					"land takes an optional <sha> — usually run it with no args from the worktree",
+				opt.TargetSHA, slug)
+		case !gitx.IsAncestor(ctx, dir, opt.TargetSHA, "HEAD"):
 			return LandResult{}, cgerr.New(cgerr.ExitAssertFail,
 				"%s is not reachable from HEAD (%s)", opt.TargetSHA, branch)
 		}

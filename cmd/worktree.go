@@ -117,7 +117,10 @@ leaves the rebase in progress and exits 3. Prints the landed SHA on success.
 pr: pushes the session branch and opens a pull request via 'gh'; prints the PR
 URL.
 
-Optional <sha>: asserts that commit is reachable from HEAD before landing.
+Normally run with NO arguments. The optional argument is a commit SHA — NOT a
+slug (unlike 'worktree create <slug>' / 'remove <slug>'). When given, it asserts
+that commit is reachable from HEAD before landing. As a convenience, passing
+this worktree's own slug (or 'session/<slug>') is tolerated and lands HEAD.
 
 Exit codes: 1 usage, 3 rebase conflict, 4 push failed, 5 assertion failed.`,
 	Args: cobra.MaximumNArgs(1),
