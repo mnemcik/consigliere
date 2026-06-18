@@ -193,6 +193,12 @@ When asked to capture a problem, open question, feature request, or requirement,
 When the user responds to your tactical options with a reframing question (*"should we rather …"*, *"is the real issue …"*, *"why not Y instead?"*), treat it as a root-cause challenge, not a preference among your options. Evaluate honestly whether the tactical fix is solving a symptom — if yes, say so and let the tactical work go. When the reframe reveals a larger concern that deserves dedicated tracking, promote it to its own project/idea instead of burying it in another project's todo. Don't defend in-progress tactical work for its own sake; wasted effort on a mooted path is cheaper than committing to it.
 <!-- cg:section:end=reframing -->
 
+<!-- cg:section:start=parallel-by-default -->
+## Parallel by Default for Independent Operations
+
+When multiple operations are independent — no data dependency between them — run them in parallel, not sequentially. Multiple `Read`/`Bash`/`Grep` calls go in a single response; multiple long-running jobs go in parallel background `Bash` runs (`run_in_background: true`) or fan out to subagents; independent subagent work goes in a single response with multiple `Agent` tool calls. Sequential is the right choice only when a later step needs an earlier step's output.
+<!-- cg:section:end=parallel-by-default -->
+
 <!-- cg:section:start=evidence -->
 ## Evidence Over Inference
 
@@ -202,6 +208,20 @@ When diagnosing a performance or behaviour problem, separate **state** (allocati
 
 For analyses that involve **external vendors, products, pricing, governance, acquisitions, or other time-sensitive state**, verify load-bearing claims via web search / fetch / official MCPs *before* presenting — not only when prompted. Training-data assertions about acquisition status, licence model, project affiliation, current pricing, or product archive state go stale fast and break the credibility of the whole artifact when one is wrong. A claim is load-bearing if it justifies a recommendation, would flip the recommendation if false, or will be quoted in an external artifact (ADR, review, proposal). Cite sources inline so freshness is auditable; flag any claim that couldn't be verified.
 <!-- cg:section:end=evidence -->
+
+<!-- cg:section:start=dont-guess-api -->
+## Don't Guess API Contracts
+
+When calling an API, tool, or service with a non-trivial contract (endpoint paths, HTTP verbs, request/response body shapes, parameter names), consult the official API reference *before* calling. Do not probe by trying guessed endpoints or body formats: a 404 from a wrong path misreads as "unsupported", and a guessed body can mutate state unexpectedly. If the docs are silent, find an authoritative source (OpenAPI spec, SDK source, vendor support) rather than brute-forcing variants.
+<!-- cg:section:end=dont-guess-api -->
+
+<!-- cg:section:start=bug-diagnosis -->
+## Bug Diagnosis — Evidence Before Fixing
+
+For bug diagnosis specifically (user reports broken behaviour, asks "why doesn't X work", or requests a fix for a non-trivial symptom — especially UI / layout / scroll / resize / component-framework / framework-internal), state **reproduction-or-trace + hypothesis-with-evidence + one-alternative-ruled-out** before proposing the change. Trivial bugs (typo, obviously-wrong constant) are exempt.
+
+For the full contract, why single-hypothesis debugging is the trap, and the exceptions, load [`notes/debugging-evidence-contract.md`](notes/debugging-evidence-contract.md).
+<!-- cg:section:end=bug-diagnosis -->
 
 <!-- cg:section:start=remote-sync -->
 ## Remote-Sync Check
@@ -222,6 +242,14 @@ When CI / CodeRabbit / Copilot posts findings on a PR Claude just opened, **vali
 
 For the per-finding validation checklist, when to push back instead of applying, and the rule that a target repo's own review config (`.coderabbit.yaml`, `CODEOWNERS`, contributor guide) overrides a principled "out of scope" rejection, load [`notes/apply-uncontroversial-review-findings.md`](notes/apply-uncontroversial-review-findings.md).
 <!-- cg:section:end=apply-uncontroversial -->
+
+<!-- cg:section:start=bulk-ops-preflight -->
+## Bulk / Destructive Ops — Pre-flight
+
+For any command that iterates over many entities (bulk permission changes, mass invitations, multi-repo edits, remote-URL rewrites, multi-file rename/`sed` sweeps, `--paginate` API mutations, `for X in $(...)` loops), state **target set + exclusion set + single-sample dry-run + quoting/arity check, then wait for approval** before running the full batch. Threshold: more than ~5 entities, or any set you can't visually enumerate before the command runs.
+
+For the per-step pre-flight, the default exclusion set, the shell-splitting tells, and the reversibility carve-out, load [`notes/bulk-ops-preflight.md`](notes/bulk-ops-preflight.md).
+<!-- cg:section:end=bulk-ops-preflight -->
 
 <!-- cg:section:start=conventions -->
 ## Conventions

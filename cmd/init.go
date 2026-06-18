@@ -591,6 +591,8 @@ Session notes, findings, and reference material organized by category.
 - [Session-End Capture — Notes & Insights Procedures](session-end-capture.md) — the step-by-step procedures for capturing notes (category + tags + INDEX) and insight drafts at session end, plus the duplicate-check.
 - [After Creating a PR — Review-Resolution Loop](after-pr-checks.md) — after opening a PR, the fetch probes, the per-comment fix/reply/escalate taxonomy, CI-failure handling, and the guardrails for driving review to green.
 - [Apply Uncontroversial Review Findings Without Asking](apply-uncontroversial-review-findings.md) — the per-finding validation checklist, when to apply silently vs. push back, and the rule that a target repo's own review config overrides a principled "out of scope" rejection.
+- [Debugging — Evidence Contract Before Fixing](debugging-evidence-contract.md) — for a non-trivial bug, state reproduction-or-trace + hypothesis-with-evidence + one-alternative-ruled-out before proposing a fix; the bug-diagnosis subset of Evidence Over Inference.
+- [Bulk / Destructive Ops — Pre-flight](bulk-ops-preflight.md) — before a command that touches many entities, state target set + exclusion set + single-sample dry-run + quoting/arity check and wait for approval.
 - [Area Rules — Linking, Reference Hubs & External-Repo Lookup](area-rules.md) — the full area rules (multi-area items, creating an area, the freshness check), the project-linking rule, and the external-repo → area lookup.
 
 ## Research
