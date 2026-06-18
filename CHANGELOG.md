@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.10.0](https://github.com/mnemcik/consigliere/compare/v1.9.0...v1.10.0) (2026-06-18)
+
+
+### Features
+
+* ship continuous-improvement + DRY meta-framework rules ([#66](https://github.com/mnemcik/consigliere/issues/66)) ([d13de1d](https://github.com/mnemcik/consigliere/commit/d13de1d612fa0ebaed10961a2495a41d58b22e9b))
+* ship meta-framework workflow rules (insights review, next project, promote-to-area) ([#68](https://github.com/mnemcik/consigliere/issues/68)) ([6a25e47](https://github.com/mnemcik/consigliere/commit/6a25e4725038f8bbcbc82a902e4fc7ff04124f72))
+* ship tooling-preferences rule + extend conventions (rank ownership, tag reuse) ([#69](https://github.com/mnemcik/consigliere/issues/69)) ([f85e8f4](https://github.com/mnemcik/consigliere/commit/f85e8f4f3077b9cdea75b0fd6b4978a6e9ca8ab1))
+
+
+### Bug Fixes
+
+* **worktree:** tolerate session slug as the land argument ([#70](https://github.com/mnemcik/consigliere/issues/70)) ([2f8fb0c](https://github.com/mnemcik/consigliere/commit/2f8fb0c6e8ebed9cb292f34da349817a6d68d879))
+
 ## [1.9.0](https://github.com/mnemcik/consigliere/compare/v1.8.0...v1.9.0) (2026-06-18)
 
 
