@@ -284,6 +284,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 			skipped = append(skipped, s...)
 		}
 
+		// Claude Code skills (.claude/skills/<name>/SKILL.md). Skills ship and
+		// version with the binary (no per-skill version); the wrap skill moved
+		// here from the standalone marketplace plugin.
+		skills := map[string]string{
+			"embed_templates/skills/wrap/SKILL.md": filepath.Join(".claude", "skills", "wrap", "SKILL.md"),
+		}
+		for src, dst := range skills {
+			c, s := copyEmbeddedFile(dir, src, dst, forceInit)
+			created = append(created, c...)
+			skipped = append(skipped, s...)
+		}
+
 		// Claude Code hook wrappers + status line: framework-owned, so --force
 		// rewrites them (and they carry the executable bit). They delegate to the
 		// cg binary (DEC-004); a missing cg degrades to a no-op, not a hook error.
