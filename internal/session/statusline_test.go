@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestStatuslineNoBadgeWithoutContext(t *testing.T) {
@@ -73,6 +74,21 @@ func TestRunUpstreamCommand(t *testing.T) {
 	// Empty upstream is a no-op.
 	if got := runUpstream(context.Background(), "", nil); got != "" {
 		t.Errorf("runUpstream(\"\") = %q, want empty", got)
+	}
+}
+
+func TestRunUpstreamTimesOut(t *testing.T) {
+	saved := upstreamTimeout
+	upstreamTimeout = 50 * time.Millisecond
+	defer func() { upstreamTimeout = saved }()
+
+	start := time.Now()
+	got := runUpstream(context.Background(), "sleep 5", nil)
+	if got != "" {
+		t.Errorf("expected empty output on timeout, got %q", got)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("runUpstream did not honor the timeout: took %s", elapsed)
 	}
 }
 
