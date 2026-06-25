@@ -132,10 +132,14 @@ type WorktreeConfig struct {
 
 // SessionConfig tunes the `cg session` hook bodies.
 type SessionConfig struct {
-	ActiveWindowMin    int    `json:"activeWindowMin,omitempty"`
-	DirtyWindowMin     int    `json:"dirtyWindowMin,omitempty"`
-	PruneDays          int    `json:"pruneDays,omitempty"`
-	GateTemplate       string `json:"gateTemplate,omitempty"`
+	ActiveWindowMin int    `json:"activeWindowMin,omitempty"`
+	DirtyWindowMin  int    `json:"dirtyWindowMin,omitempty"`
+	PruneDays       int    `json:"pruneDays,omitempty"`
+	GateTemplate    string `json:"gateTemplate,omitempty"`
+	// StatuslineUpstream is a shell command (run via "bash -c") whose stdout is
+	// prepended to the area/project badge, letting the badge layer on top of an
+	// existing status line instead of replacing it. `cg init` seeds it from the
+	// user's prior statusLine command. Empty = badge only.
 	StatuslineUpstream string `json:"statuslineUpstream,omitempty"`
 	BadgeFormat        string `json:"badgeFormat,omitempty"`
 }

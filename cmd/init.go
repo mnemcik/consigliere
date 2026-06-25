@@ -142,9 +142,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// list so the rewrite doesn't drop it; re-cloned workspaces re-install them
 	// below.
 	var priorExtensions []workspace.ExtensionRef
+	var priorSession *workspace.SessionConfig
 	if cfg != nil {
 		priorExtensions = cfg.Extensions
+		priorSession = cfg.Session
 	}
+	homeDir, _ := os.UserHomeDir()
 	// Seed the public registry under the built-in "cg" alias so `cg extension
 	// install cg/<name>` works out of the box. On re-init preserve any
 	// user-configured registries, only adding "cg" if it's missing.
@@ -169,8 +172,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		},
 		// Point the session-start gate at the editable template shipped under
 		// .claude/cg/ so customizing the wording needs no binary rebuild.
+		// statuslineUpstream is seeded from the user's prior statusLine command
+		// so the badge layers on top of their existing status line rather than
+		// replacing it with a bare badge.
 		Session: &workspace.SessionConfig{
-			GateTemplate: gateTemplateRel,
+			GateTemplate:       gateTemplateRel,
+			StatuslineUpstream: detectStatuslineUpstream(priorSession, homeDir),
 		},
 		Extensions: priorExtensions,
 		Registries: registries,
@@ -435,6 +442,59 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// detectStatuslineUpstream returns the statuslineUpstream command to record in a
+// freshly written .cg.json. On re-init it preserves any prior value (the user
+// may have customized it). Otherwise it reads the user's global
+// ~/.claude/settings.json statusLine command so the area/project badge layers on
+// top of the user's existing status line instead of replacing it with a bare
+// badge. Returns "" when there is nothing to preserve or the prior command would
+// recurse into the badge renderer.
+func detectStatuslineUpstream(prior *workspace.SessionConfig, homeDir string) string {
+	if prior != nil && prior.StatuslineUpstream != "" {
+		return prior.StatuslineUpstream
+	}
+	if homeDir == "" {
+		return ""
+	}
+	cmd := readStatusLineCommand(filepath.Join(homeDir, ".claude", "settings.json"))
+	if isRecursiveStatusline(cmd) {
+		return ""
+	}
+	return cmd
+}
+
+// readStatusLineCommand returns the statusLine.command string from a Claude Code
+// settings.json, or "" on any error (missing file, malformed JSON, no field).
+func readStatusLineCommand(path string) string {
+	data, err := os.ReadFile(path) //nolint:gosec // path derived from the user's home dir
+	if err != nil {
+		return ""
+	}
+	var s struct {
+		StatusLine struct {
+			Command string `json:"command"`
+		} `json:"statusLine"`
+	}
+	if err := json.Unmarshal(data, &s); err != nil {
+		return ""
+	}
+	return s.StatusLine.Command
+}
+
+// isRecursiveStatusline reports whether a candidate upstream command would call
+// the cg badge renderer, which must never be its own upstream. We match the
+// renderer invocation ("cg session statusline") rather than the wrapper's
+// basename: the user's real status line typically lives at ~/.claude/statusline.sh
+// (e.g. "bash ~/.claude/statusline.sh"), which shares the cg wrapper's basename
+// but is exactly what we want to preserve. An empty command is treated as
+// recursive (nothing to preserve).
+func isRecursiveStatusline(cmd string) bool {
+	if cmd == "" {
+		return true
+	}
+	return strings.Contains(cmd, "cg session statusline")
 }
 
 func copyEmbeddedFile(dir, src, dst string, overwrite bool) (created, skipped []string) {
