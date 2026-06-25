@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.12.0](https://github.com/mnemcik/consigliere/compare/v1.11.0...v1.12.0) (2026-06-25)
+
+
+### Features
+
+* **init:** seed statuslineUpstream from the user's prior statusLine ([#76](https://github.com/mnemcik/consigliere/issues/76)) ([8ac61bc](https://github.com/mnemcik/consigliere/commit/8ac61bcc9827467a16bb9c41e6d73470f863090f))
+
 ## [1.11.0](https://github.com/mnemcik/consigliere/compare/v1.10.0...v1.11.0) (2026-06-18)
 
 
