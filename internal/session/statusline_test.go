@@ -51,6 +51,45 @@ func TestStatuslineSingleSide(t *testing.T) {
 	}
 }
 
+func TestRunUpstreamCommand(t *testing.T) {
+	// Upstream is a shell command, not just a script path: a command string runs
+	// via bash -c and its stdin is the forwarded hook payload.
+	got := runUpstream(context.Background(), `printf '%s' "$(cat)"`, []byte("piped-in"))
+	if got != "piped-in" {
+		t.Errorf("runUpstream did not forward stdin to the command: got %q", got)
+	}
+	// A bare executable path still works (back-compat with the old path form).
+	script := filepath.Join(t.TempDir(), "up.sh")
+	if err := os.WriteFile(script, []byte("#!/usr/bin/env bash\nprintf 'BASE'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := runUpstream(context.Background(), script, nil); got != "BASE" {
+		t.Errorf("runUpstream(path) = %q, want %q", got, "BASE")
+	}
+	// A broken upstream yields "" rather than failing the status line.
+	if got := runUpstream(context.Background(), "exit 1", nil); got != "" {
+		t.Errorf("runUpstream(failing) = %q, want empty", got)
+	}
+	// Empty upstream is a no-op.
+	if got := runUpstream(context.Background(), "", nil); got != "" {
+		t.Errorf("runUpstream(\"\") = %q, want empty", got)
+	}
+}
+
+func TestStatuslineUpstreamThenBadge(t *testing.T) {
+	root := t.TempDir()
+	writeCtx(t, root, "s3", `{"area":"consigliere","project":"cg"}`)
+	got := Statusline(context.Background(), root,
+		StatuslineInput{SessionID: "s3"}, `printf 'BASE-LINE'`, "")
+	want := "BASE-LINE\n"
+	if !strings.HasPrefix(got, want) {
+		t.Errorf("expected upstream output first, got %q", got)
+	}
+	if !strings.Contains(got, "[consigliere/cg]") {
+		t.Errorf("expected badge after upstream, got %q", got)
+	}
+}
+
 func TestReadColorField(t *testing.T) {
 	dir := t.TempDir()
 	cases := map[string]string{

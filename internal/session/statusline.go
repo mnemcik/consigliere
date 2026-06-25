@@ -44,12 +44,18 @@ func Statusline(ctx context.Context, root string, in StatuslineInput, upstream, 
 	return base + "\n" + badge
 }
 
+// runUpstream executes the configured upstream as a shell command, forwarding
+// the hook's stdin JSON, and returns its stdout. upstream is a command string
+// (run via "bash -c"), so it can reproduce whatever the user's prior statusLine
+// was — "bash ~/.claude/statusline.sh", "node line.js", or a bare executable
+// path (which still runs, e.g. "bash -c /abs/path.sh"). Any error yields "" so a
+// broken upstream never breaks the status line.
 func runUpstream(ctx context.Context, upstream string, input []byte) string {
 	if upstream == "" {
 		return ""
 	}
-	// #nosec G204 -- upstream path comes from workspace config, not user input.
-	cmd := exec.CommandContext(ctx, "bash", upstream)
+	// #nosec G204 -- upstream command comes from workspace config, not user input.
+	cmd := exec.CommandContext(ctx, "bash", "-c", upstream)
 	cmd.Stdin = strings.NewReader(string(input))
 	out, err := cmd.Output()
 	if err != nil {
