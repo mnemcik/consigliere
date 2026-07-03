@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mnemcik/consigliere/internal/extension"
 	"github.com/mnemcik/consigliere/internal/manifest"
 	syncpkg "github.com/mnemcik/consigliere/internal/sync"
 	"github.com/mnemcik/consigliere/internal/workspace"
@@ -74,6 +75,11 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	if !syncApply {
 		printSyncReport(report, cfg.Version, Version)
+		pending, herr := extension.NormalizeHookCommands(dir, false)
+		if herr != nil {
+			return fmt.Errorf("checking hook command paths: %w", herr)
+		}
+		printHookNormalizeDryRun(pending)
 		return nil
 	}
 
@@ -86,7 +92,37 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	printApplySummary(report, appliedSections, appliedNotes)
+
+	normalized, herr := extension.NormalizeHookCommands(dir, true)
+	if herr != nil {
+		return fmt.Errorf("normalizing hook command paths: %w", herr)
+	}
+	printHookNormalizeApplied(normalized)
 	return nil
+}
+
+// printHookNormalizeDryRun reports settings.json hook/statusLine commands that
+// `cg sync --apply` would pin to $CLAUDE_PROJECT_DIR (cwd-independent).
+func printHookNormalizeDryRun(pending []string) {
+	if len(pending) == 0 {
+		return
+	}
+	fmt.Printf("\nHook command paths to pin to $CLAUDE_PROJECT_DIR (%d):\n", len(pending))
+	for _, cmd := range pending {
+		fmt.Printf("  - %s\n", cmd)
+	}
+	fmt.Println("(run `cg sync --apply` to rewrite them)")
+}
+
+// printHookNormalizeApplied reports the settings.json commands that were pinned.
+func printHookNormalizeApplied(normalized []string) {
+	if len(normalized) == 0 {
+		return
+	}
+	fmt.Printf("\nPinned %d hook command path(s) to $CLAUDE_PROJECT_DIR:\n", len(normalized))
+	for _, cmd := range normalized {
+		fmt.Printf("  - %s\n", cmd)
+	}
 }
 
 // applySync writes the safe changes (updatable + new sections and notes) to the
