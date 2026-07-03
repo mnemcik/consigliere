@@ -39,6 +39,13 @@ func hookCommand(rel string) string {
 	return claudeProjectDirPrefix + filepath.ToSlash(rel)
 }
 
+// PinnedCommand returns the cwd-independent form NormalizeHookCommands writes
+// for a bare framework-relative command. Exposed so callers can report the
+// rewrite as old → new.
+func PinnedCommand(cmd string) string {
+	return claudeProjectDirPrefix + cmd
+}
+
 // registerHook appends a command hook for event, pointing at commandRel. It is
 // idempotent: any prior registration of the same command (in any event) is
 // removed first, so re-applying an extension can't accumulate duplicate hooks.

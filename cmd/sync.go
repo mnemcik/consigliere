@@ -121,7 +121,7 @@ func printHookNormalizeApplied(normalized []string) {
 	}
 	fmt.Printf("\nPinned %d hook command path(s) to $CLAUDE_PROJECT_DIR:\n", len(normalized))
 	for _, cmd := range normalized {
-		fmt.Printf("  - %s\n", cmd)
+		fmt.Printf("  - %s → %s\n", cmd, extension.PinnedCommand(cmd))
 	}
 }
 
