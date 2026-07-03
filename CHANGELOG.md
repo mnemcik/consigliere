@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.12.1](https://github.com/mnemcik/consigliere/compare/v1.12.0...v1.12.1) (2026-07-03)
+
+
+### Bug Fixes
+
+* pin hook and statusLine command paths to $CLAUDE_PROJECT_DIR ([#78](https://github.com/mnemcik/consigliere/issues/78)) ([99f024d](https://github.com/mnemcik/consigliere/commit/99f024d4407a4e5d0144118c41f8437f7a596e03))
+
 ## [1.12.0](https://github.com/mnemcik/consigliere/compare/v1.11.0...v1.12.0) (2026-06-25)
 
 
