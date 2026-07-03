@@ -33,17 +33,14 @@ func settingsPath(root string) string {
 	return filepath.Join(root, filepath.FromSlash(settingsRel))
 }
 
-// hookCommand renders a workspace-relative hook path as a cwd-independent
-// settings.json command string. See claudeProjectDirPrefix for the why.
-func hookCommand(rel string) string {
-	return claudeProjectDirPrefix + filepath.ToSlash(rel)
-}
-
-// PinnedCommand returns the cwd-independent form NormalizeHookCommands writes
-// for a bare framework-relative command. Exposed so callers can report the
-// rewrite as old → new.
-func PinnedCommand(cmd string) string {
-	return claudeProjectDirPrefix + cmd
+// PinnedCommand renders a workspace-relative hook/statusLine path as a
+// cwd-independent settings.json command string, prefixing $CLAUDE_PROJECT_DIR
+// (see claudeProjectDirPrefix). filepath.ToSlash normalizes a filesystem path
+// and is a no-op on an already-slashed command string, so the one helper serves
+// both registration (an FS-joined path) and normalization/reporting (an existing
+// command). It is the single source of the pinned form.
+func PinnedCommand(path string) string {
+	return claudeProjectDirPrefix + filepath.ToSlash(path)
 }
 
 // registerHook appends a command hook for event, pointing at commandRel. It is
@@ -63,7 +60,7 @@ func registerHook(root, event, commandRel string) error {
 	entry := map[string]any{
 		"matcher": "",
 		"hooks": []any{
-			map[string]any{"type": "command", "command": hookCommand(commandRel)},
+			map[string]any{"type": "command", "command": PinnedCommand(commandRel)},
 		},
 	}
 	existing, _ := hooks[event].([]any)
@@ -145,7 +142,7 @@ func hookHasCommand(h any, commandRel string) bool {
 		return false
 	}
 	cmd, ok := hm["command"].(string)
-	return ok && (cmd == commandRel || cmd == hookCommand(commandRel))
+	return ok && (cmd == commandRel || cmd == PinnedCommand(commandRel))
 }
 
 // entryHasCommand reports whether a hooks-array entry contains a command hook
@@ -272,6 +269,6 @@ func normalizeCommandField(m map[string]any) (old string, changed bool) {
 	if !ok || !strings.HasPrefix(cmd, relHookPrefix) {
 		return "", false
 	}
-	m["command"] = claudeProjectDirPrefix + cmd
+	m["command"] = PinnedCommand(cmd)
 	return cmd, true
 }
