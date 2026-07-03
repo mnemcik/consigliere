@@ -1,6 +1,7 @@
 package extension
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -212,7 +213,7 @@ func TestNormalizeHookCommands(t *testing.T) {
 	if len(pending) != 2 {
 		t.Fatalf("dry run should report 2 bare commands, got %d: %v", len(pending), pending)
 	}
-	if after, _ := os.ReadFile(settingsPath(root)); string(after) != string(before) {
+	if after, _ := os.ReadFile(settingsPath(root)); !bytes.Equal(after, before) {
 		t.Error("dry run must not modify settings.json")
 	}
 
