@@ -26,6 +26,7 @@ Every project folder contains these files:
 | File | When to use | Template |
 |------|-------------|----------|
 | `references.md` | When a project accumulates external links (Slack threads, Confluence pages, repos, tickets). | `templates/project/references.md` |
+| `resume.md` | **Transient — written by `/wrap pause`, not authored by hand.** Captures the in-flight cursor (active todo item, mental context, dirty state, next concrete action) so a mid-work session can be picked up later. The Session-Start Rule reads it, surfaces it, and **deletes it** once the user confirms work has resumed; a paused project should therefore have at most one, and a project that is not paused should have none. Durable content belongs in `log.md` or `decisions.md`, not here. | `templates/project/resume.md` |
 | Any other file/folder | Project-specific content (e.g., `trials/`, `candidates.md`, `adr-draft.md`). Freeform — no template needed. | — |
 
 ## Rules for Working with Project Files
