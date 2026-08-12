@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.13.0](https://github.com/mnemcik/consigliere/compare/v1.12.1...v1.13.0) (2026-08-12)
+
+
+### Features
+
+* **wrap:** point wrap skill at cg worktree, ship resume.md template ([#83](https://github.com/mnemcik/consigliere/issues/83)) ([397467c](https://github.com/mnemcik/consigliere/commit/397467c1a78610d89a3eade285933bc63e7b670b))
+
 ## [1.12.1](https://github.com/mnemcik/consigliere/compare/v1.12.0...v1.12.1) (2026-07-03)
 
 
