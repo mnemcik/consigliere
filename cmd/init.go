@@ -117,6 +117,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		"embed_templates/project/todo.md":       filepath.Join("templates", "project", "todo.md"),
 		"embed_templates/project/log.md":        filepath.Join("templates", "project", "log.md"),
 		"embed_templates/project/references.md": filepath.Join("templates", "project", "references.md"),
+		"embed_templates/project/resume.md":     filepath.Join("templates", "project", "resume.md"),
 	}
 	for src, dst := range contentTemplates {
 		c, s := copyEmbeddedFile(dir, src, dst, false)

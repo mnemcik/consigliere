@@ -49,7 +49,8 @@ Every session that involves meaningful work (code changes, research, analysis, d
 2. **Read the area file.** Before doing anything else, read the matched area file(s) to load context, constraints, and repo conventions.
 3. **Identify the project.** Check `projects/TODO.md` for an existing project that covers this work. If no project exists, create one using the standard project creation workflow (see "Creating a New Project" below).
 4. **Read the project files.** Read the project's `README.md` and `todo.md` to understand current state and pending work.
-5. **Proceed with work.** Only after steps 1–4 are complete.
+5. **Check for paused state.** If `projects/<slug>/resume.md` exists, the project was paused mid-work by `/wrap pause`. Read it as the authoritative pickup context, surface it to the user, and delete it once they confirm work has resumed.
+6. **Proceed with work.** Only after steps 1–5 are complete.
 
 ### When identification fails
 

@@ -173,6 +173,7 @@ func TestInitCreatesWorkspace(t *testing.T) {
 		"templates/idea.md",
 		"templates/note.md",
 		"templates/project/README.md",
+		"templates/project/resume.md",
 		".claude/commands/match-project.md",
 		".claude/commands/cg-init.md",
 		".claude/commands/cg-sync.md",
