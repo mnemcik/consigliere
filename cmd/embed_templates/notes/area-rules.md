@@ -25,3 +25,12 @@ Every project MUST link to at least one area. When starting work on a project, *
 ## External Repo → Area Lookup
 
 When the user asks to work on a repository outside this knowledge base (e.g., a tool or service), **check `areas/INDEX.md` for a matching area before starting work.** If an area exists, read it — it contains repo conventions (branch naming, PR title format, CI rules), architecture constraints, and context that must be followed. If no area exists, create one before proceeding. This applies whether the user names the repo explicitly or describes the tool/service by function.
+
+### Reverse direction: finding the project from a descriptive name
+
+The user often refers to work by a **descriptive label that matches no project slug** ("the AI platform gateway deployment" → `ai-gateway-per-client-keys`). When name-matching against `projects/`, `projects/TODO.md`, and `ideas/BACKLOG.md` all come up empty — including the semantic pass in `/match-project` — do **not** conclude the project doesn't exist. Two further probes, in order:
+
+1. **Check `origin/main`, not just the working tree.** A project folder created by a parallel session may exist on `origin/main` while the local `main` is behind or diverged, so `ls projects/` and even a repo-wide `grep` will miss it. Use `git ls-tree origin/main projects/` and `git show origin/main:<path>` to read it without disturbing local state. Expect this whenever per-session worktrees are in use — parallel sessions land to `origin/main` continuously, so the working tree is routinely an incomplete view.
+2. **Look for a related repository and read its `README.md`.** Work tracked here often corresponds to a code repo elsewhere on disk. If that repo's README backlinks to the knowledge base — a line naming the project slug and area — it resolves the slug directly. Worth establishing the convention in the other direction too: when a project produces a repo, add that backlink to the repo's README so this probe has something to find.
+
+Both failure modes are quiet: the searches return nothing and look authoritative. Treat an empty result as "not found *here, yet*", not as "does not exist".
