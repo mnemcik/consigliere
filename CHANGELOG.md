@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.14.0](https://github.com/mnemcik/consigliere/compare/v1.13.0...v1.14.0) (2026-08-13)
+
+
+### Features
+
+* **area-rules:** document reverse lookup when no project slug matches ([#86](https://github.com/mnemcik/consigliere/issues/86)) ([9352cf3](https://github.com/mnemcik/consigliere/commit/9352cf3bad3b47058424888189e1e62f33f6084f))
+
+
+### Bug Fixes
+
+* **sync:** dry-run footer said apply was unimplemented ([#85](https://github.com/mnemcik/consigliere/issues/85)) ([7f7c3c2](https://github.com/mnemcik/consigliere/commit/7f7c3c24e2b9fd0e2eea264abe38b713fc5fe21c))
+
 ## [1.13.0](https://github.com/mnemcik/consigliere/compare/v1.12.1...v1.13.0) (2026-08-12)
 
 
