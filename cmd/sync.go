@@ -402,5 +402,5 @@ func printSyncReport(report syncpkg.Report, workspaceVer, binaryVer string) {
 		fmt.Println()
 	}
 
-	fmt.Println("(dry run — no changes written. Apply is coming in a later release.)")
+	fmt.Println("(dry run — no changes written. Run `cg sync --apply` to apply the safe changes.)")
 }
