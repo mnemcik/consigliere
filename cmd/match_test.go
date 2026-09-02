@@ -56,6 +56,17 @@ func TestExtractFolderSlug(t *testing.T) {
 		{"plain-slug", "plain-slug"},
 		{"plain-slug/", "plain-slug"},
 		{"[name](path/to/slug/)", "slug"},
+		// A link may target a file inside the project folder so that editors
+		// which cannot follow directory links still resolve it. Both forms
+		// must yield the same slug.
+		{"[my-project](my-project/README.md)", "my-project"},
+		{"[name](path/to/slug/README.md)", "slug"},
+		{"[my-project](my-project/todo.md)", "my-project"},
+		{"[my-project](my-project/README.MD)", "my-project"},
+		// No directory component: nothing to strip.
+		{"[readme](README.md)", "README.md"},
+		// A non-markdown suffix is a folder name, not a file.
+		{"[name](path/to/v1.0)", "v1.0"},
 	}
 
 	for _, tt := range tests {

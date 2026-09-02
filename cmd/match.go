@@ -246,6 +246,16 @@ func extractFolderSlug(s string) string {
 	matches := folderLinkRe.FindStringSubmatch(s)
 	if len(matches) >= 3 {
 		slug := strings.TrimSuffix(matches[2], "/")
+		// The Folder column names a folder, but the link may target a file
+		// inside it (e.g. "my-project/README.md"). Editors that only resolve
+		// links to notes -- Obsidian among them -- cannot follow a bare
+		// directory link, so both forms have to yield the same slug. Drop a
+		// trailing markdown filename, keeping the folder it lives in; a link
+		// with no directory component is left alone.
+		if i := strings.LastIndex(slug, "/"); i >= 0 &&
+			strings.HasSuffix(strings.ToLower(slug[i+1:]), ".md") {
+			slug = slug[:i]
+		}
 		// Remove any path prefix
 		if i := strings.LastIndex(slug, "/"); i >= 0 {
 			slug = slug[i+1:]
