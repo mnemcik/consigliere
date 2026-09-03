@@ -1,49 +1,16 @@
 // Package audit implements the read-only workspace scanners promoted from the
 // shell helpers: area-tag counting and badge-color duplicate detection. Both
-// scan markdown front-matter-style Meta fields in the first lines of each file
-// and are deterministic and network-free.
+// read item metadata via internal/meta, which accepts YAML frontmatter or a
+// `## Meta` block, and are deterministic and network-free.
 package audit
 
 import (
-	"bufio"
-	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/mnemcik/consigliere/internal/meta"
 )
-
-// metaScanLimit bounds how many leading lines of a file the scanners read; Meta
-// fields always sit near the top.
-const metaScanLimit = 40
-
-var (
-	tagsFieldRe  = regexp.MustCompile(`^- \*\*Tags:\*\*\s*(.+?)\s*$`)
-	colorFieldRe = regexp.MustCompile(`^(?:- )?\*\*Color:\*\*\s*(.+?)\s*$`)
-)
-
-// readMetaField returns the first capture of re within the first metaScanLimit
-// lines of file, or "" when absent. A `{placeholder}` value counts as unset.
-func readMetaField(file string, re *regexp.Regexp) string {
-	f, err := os.Open(file) //nolint:gosec // file paths come from the workspace layout
-	if err != nil {
-		return ""
-	}
-	defer func() { _ = f.Close() }()
-	sc := bufio.NewScanner(f)
-	for n := 0; n < metaScanLimit && sc.Scan(); n++ {
-		m := re.FindStringSubmatch(sc.Text())
-		if m == nil {
-			continue
-		}
-		val := strings.Trim(strings.TrimSpace(m[1]), "`")
-		if strings.HasPrefix(val, "{") && strings.HasSuffix(val, "}") {
-			return ""
-		}
-		return val
-	}
-	return ""
-}
 
 // TagCount is a tag and the area slugs carrying it.
 type TagCount struct {
@@ -65,13 +32,12 @@ func Tags(root string) ([]TagCount, error) {
 		if slug == "INDEX" {
 			continue
 		}
-		line := readMetaField(f, tagsFieldRe)
-		if line == "" {
+		fields, err := meta.Read(f)
+		if err != nil {
 			continue
 		}
-		for _, raw := range strings.Split(line, ",") {
-			tag := strings.ToLower(strings.TrimSpace(raw))
-			if tag != "" {
+		for _, raw := range fields.Tags {
+			if tag := strings.ToLower(strings.TrimSpace(raw)); tag != "" {
 				byTag[tag] = append(byTag[tag], slug)
 			}
 		}
@@ -138,7 +104,11 @@ func ColorsCheck(root string) (ColorReport, error) {
 		if rel == "" {
 			rel = f
 		}
-		color := readMetaField(f, colorFieldRe)
+		fields, err := meta.Read(f)
+		if err != nil {
+			continue
+		}
+		color := fields.Color
 		if color == "" {
 			rep.Missing = append(rep.Missing, rel)
 			continue
