@@ -25,6 +25,11 @@
 // whose frontmatter was generated from a subset of the Meta block -- and every
 // field the frontmatter omits still resolves from `## Meta`.
 //
+// Omission is judged by key *presence*, not by emptiness. `tags: []` and
+// `color: ""` are declarations that the item has none, and are honoured over
+// any `## Meta` block below. The one exception is an unfilled `{placeholder}`,
+// which is a template artefact rather than a decision and still falls back.
+//
 // Reads are bounded. resolveColor runs on every statusline render, and a real
 // workspace holds 60 KB area files whose Meta block carries 10 KB of review
 // prose on a single line, so Read streams a capped number of lines rather than
@@ -49,10 +54,14 @@ type Fields struct {
 	Color string
 }
 
-// frontmatter mirrors Fields, for YAML decoding.
+// frontmatter mirrors Fields, for YAML decoding. The fields are pointers so an
+// omitted key is distinguishable from one explicitly set to an empty value:
+// `tags: []` means "this item has no tags" and must not be overridden by a
+// stale `## Meta` block, whereas an absent `tags:` key means "not stated here,
+// look further down".
 type frontmatter struct {
-	Tags  flexList `yaml:"tags"`
-	Color string   `yaml:"color"`
+	Tags  *flexList `yaml:"tags"`
+	Color *string   `yaml:"color"`
 }
 
 // flexList accepts either a YAML sequence (`tags: [a, b]`) or a single scalar
@@ -117,6 +126,9 @@ func Read(path string) (Fields, error) {
 	var out Fields
 	var fmLines []string
 	inFrontmatter := false
+	// Whether frontmatter settled each field. Emptiness cannot stand in for
+	// this: an explicit `tags: []` resolves the field to "none".
+	var tagsSet, colorSet bool
 
 	for line := 0; line < scanLineLimit && sc.Scan(); line++ {
 		text := strings.TrimRight(sc.Text(), "\r")
@@ -134,8 +146,15 @@ func Read(path string) (Fields, error) {
 				// A malformed block is not fatal: fall through to `## Meta`
 				// rather than failing the caller over one bad file.
 				if yaml.Unmarshal([]byte(strings.Join(fmLines, "\n")), &parsed) == nil {
-					out.Tags = clean(parsed.Tags)
-					out.Color = cleanScalar(parsed.Color)
+					if parsed.Tags != nil {
+						out.Tags, tagsSet = clean(*parsed.Tags), true
+					}
+					// A `{placeholder}` is an unfilled template value, not a
+					// declaration, so it stays unresolved and falls back --
+					// unlike an explicit empty string, which is a decision.
+					if parsed.Color != nil && !placeholderRe.MatchString(strings.TrimSpace(*parsed.Color)) {
+						out.Color, colorSet = cleanScalar(*parsed.Color), true
+					}
 				}
 				continue
 			}
@@ -143,13 +162,13 @@ func Read(path string) (Fields, error) {
 			continue
 		}
 
-		if m := tagsFieldRe.FindStringSubmatch(text); m != nil && len(out.Tags) == 0 {
-			out.Tags = clean(splitScalars(m[1]))
+		if m := tagsFieldRe.FindStringSubmatch(text); m != nil && !tagsSet {
+			out.Tags, tagsSet = clean(splitScalars(m[1])), true
 		}
-		if m := colorFieldRe.FindStringSubmatch(text); m != nil && out.Color == "" {
-			out.Color = cleanScalar(m[1])
+		if m := colorFieldRe.FindStringSubmatch(text); m != nil && !colorSet {
+			out.Color, colorSet = cleanScalar(m[1]), true
 		}
-		if len(out.Tags) > 0 && out.Color != "" {
+		if tagsSet && colorSet {
 			break
 		}
 	}

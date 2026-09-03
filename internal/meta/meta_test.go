@@ -66,6 +66,25 @@ func TestRead(t *testing.T) {
 			want: Fields{},
 		},
 		{
+			// An explicit empty list is a declaration that the item has no
+			// tags, so a stale Meta block must not resurrect them.
+			name: "explicit empty tags list wins over the Meta block",
+			body: "---\ntags: []\n---\n\n# Item\n\n## Meta\n\n- **Tags:** `stale`\n",
+			want: Fields{},
+		},
+		{
+			name: "explicit empty color wins over the Meta block",
+			body: "---\ncolor: \"\"\n---\n\n# Item\n\n## Meta\n\n- **Color:** red\n",
+			want: Fields{},
+		},
+		{
+			// A `{placeholder}` is an unfilled template value rather than a
+			// decision, so unlike an explicit empty it still falls back.
+			name: "frontmatter placeholder still falls back to the Meta block",
+			body: "---\ncolor: \"{color}\"\n---\n\n# Item\n\n## Meta\n\n- **Color:** red\n",
+			want: Fields{Color: "red"},
+		},
+		{
 			name: "no metadata at all",
 			body: "# Item\n\nJust prose.\n",
 			want: Fields{},
