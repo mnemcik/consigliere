@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.15.0](https://github.com/mnemcik/consigliere/compare/v1.14.1...v1.15.0) (2026-09-03)
+
+
+### Features
+
+* **meta:** read item metadata from YAML frontmatter or a Meta block ([#93](https://github.com/mnemcik/consigliere/issues/93)) ([8fc03ee](https://github.com/mnemcik/consigliere/commit/8fc03ee54ba84d249afe3f5f7984911ddfb95c34))
+
 ## [1.14.1](https://github.com/mnemcik/consigliere/compare/v1.14.0...v1.14.1) (2026-09-02)
 
 
