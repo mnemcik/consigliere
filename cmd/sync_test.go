@@ -340,3 +340,86 @@ func TestApplySyncRejectsEscapingNoteID(t *testing.T) {
 		t.Error("a file was written outside the workspace")
 	}
 }
+
+// A symlinked note must not be written through. filepath.Rel only validates
+// the lexical path, so a link inside the workspace pointing at an external file
+// would otherwise pass the check and os.WriteFile would overwrite the target.
+func TestApplySyncRejectsSymlinkedNote(t *testing.T) {
+	base := t.TempDir()
+	dir := filepath.Join(base, "ws")
+	outside := filepath.Join(base, "outside.md")
+
+	if err := os.MkdirAll(filepath.Join(dir, "notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(dir, "CLAUDE.md"), "# CLAUDE.md\n")
+	const sentinel = "DO NOT OVERWRITE\n"
+	mustWrite(t, outside, sentinel)
+
+	notePath := filepath.Join(dir, "notes", "fw.md")
+	if err := os.Symlink(outside, notePath); err != nil {
+		t.Skipf("symlinks unavailable on this platform: %v", err)
+	}
+
+	mf := &manifest.Manifest{
+		SchemaVersion:    manifest.SchemaVersion,
+		FrameworkVersion: "1.0.0",
+		Sections:         map[string]manifest.Artifact{},
+		Notes:            map[string]manifest.Artifact{"notes/fw.md": {Hash: manifest.HashBody(sentinel)}},
+	}
+	if err := mf.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	fw := map[string][]byte{"notes/fw.md": []byte("framework v2\n")}
+	report, err := buildSyncReport(dir, mf, "# CLAUDE.md\n", hashesOf(fw))
+	if err != nil {
+		t.Fatalf("buildSyncReport: %v", err)
+	}
+	if _, _, aerr := applySync(dir, mf, report, nil, fw); aerr == nil {
+		t.Error("expected an error for a symlinked note")
+	}
+	if got := readFile(t, outside); got != sentinel {
+		t.Errorf("wrote through the symlink; outside file is now %q", got)
+	}
+}
+
+// A symlinked *directory* above the note is the same hazard one level up.
+func TestApplySyncRejectsSymlinkedParentDir(t *testing.T) {
+	base := t.TempDir()
+	dir := filepath.Join(base, "ws")
+	outsideDir := filepath.Join(base, "elsewhere")
+
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outsideDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(dir, "CLAUDE.md"), "# CLAUDE.md\n")
+	if err := os.Symlink(outsideDir, filepath.Join(dir, "notes")); err != nil {
+		t.Skipf("symlinks unavailable on this platform: %v", err)
+	}
+
+	mf := &manifest.Manifest{
+		SchemaVersion:    manifest.SchemaVersion,
+		FrameworkVersion: "1.0.0",
+		Sections:         map[string]manifest.Artifact{},
+		Notes:            map[string]manifest.Artifact{},
+	}
+	if err := mf.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	fw := map[string][]byte{"notes/fw.md": []byte("framework v2\n")}
+	report, err := buildSyncReport(dir, mf, "# CLAUDE.md\n", hashesOf(fw))
+	if err != nil {
+		t.Fatalf("buildSyncReport: %v", err)
+	}
+	if _, _, aerr := applySync(dir, mf, report, nil, fw); aerr == nil {
+		t.Error("expected an error for a note under a symlinked directory")
+	}
+	if _, serr := os.Stat(filepath.Join(outsideDir, "fw.md")); serr == nil {
+		t.Error("wrote into the symlinked directory's real target")
+	}
+}

@@ -275,3 +275,53 @@ func TestSplitFrontmatterAndHashBody(t *testing.T) {
 		t.Error("unterminated frontmatter should not split")
 	}
 }
+
+// Regression: the closing delimiter may sit at EOF with no trailing newline.
+// An earlier index-arithmetic implementation panicked here
+// ("slice bounds out of range [:17] with length 16"), which would have crashed
+// `cg sync` on such a note.
+func TestSplitFrontmatterEdgeCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		wantFM  string
+		wantHas bool
+	}{
+		{"closing delimiter at EOF", "---\ntitle: x\n---", "---\ntitle: x\n---", true},
+		{"closing delimiter at EOF with newline", "---\ntitle: x\n---\n", "---\ntitle: x\n---\n", true},
+		{"CRLF throughout", "---\r\ntitle: x\r\n---\r\n\r\n# N\r\n", "---\r\ntitle: x\r\n---\r\n", true},
+		{"CRLF closing at EOF", "---\r\ntitle: x\r\n---", "---\r\ntitle: x\r\n---", true},
+		{"unterminated block", "---\ntitle: x\nno end\n", "", false},
+		{"opening delimiter alone", "---", "", false},
+		{"opening delimiter then EOF newline", "---\n", "", false},
+		{"horizontal rule mid-document", "# N\n\n---\n\nafter\n", "", false},
+		{"no frontmatter", "# N\n\nbody\n", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fm, body := SplitFrontmatter(tt.in)
+			if (fm != "") != tt.wantHas {
+				t.Fatalf("frontmatter detected = %v, want %v (fm=%q)", fm != "", tt.wantHas, fm)
+			}
+			if fm != tt.wantFM {
+				t.Errorf("fm = %q, want %q", fm, tt.wantFM)
+			}
+			if fm+body != tt.in {
+				t.Errorf("not lossless: %q + %q != %q", fm, body, tt.in)
+			}
+		})
+	}
+}
+
+// A CRLF note must hash the same with and without frontmatter, just as an LF
+// one does -- otherwise a Windows checkout reads every note as edited.
+func TestHashBodyCRLF(t *testing.T) {
+	body := "# Note\r\n\r\n## Meta\r\n\r\n- **Tags:** `a`\r\n"
+	withFM := "---\r\ntitle: \"Note\"\r\n---\r\n\r\n" + body
+	if HashBody(body) != HashBody(withFM) {
+		t.Error("CRLF note hashes differently with and without frontmatter")
+	}
+	if HashBody(body) != HashContent(body) {
+		t.Error("HashBody != HashContent for a CRLF note with no frontmatter")
+	}
+}
