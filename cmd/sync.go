@@ -186,10 +186,20 @@ func applySync(dir string, mf *manifest.Manifest, report syncpkg.Report, framewo
 		if mkErr := os.MkdirAll(filepath.Dir(notePath), 0o755); mkErr != nil {
 			return nil, nil, fmt.Errorf("creating dir for %s: %w", it.ID, mkErr)
 		}
-		if werr := os.WriteFile(notePath, body, 0o644); werr != nil {
+		// The framework owns the body; any frontmatter on the note belongs to
+		// the workspace (a derived `title:`, tags for an editor's tag pane).
+		// Carry it across, or a body update would silently delete it.
+		out := body
+		if existing, rerr := os.ReadFile(notePath); rerr == nil { //nolint:gosec // path from workspace layout
+			if fm, _ := manifest.SplitFrontmatter(string(existing)); fm != "" {
+				_, newBody := manifest.SplitFrontmatter(string(body))
+				out = []byte(fm + newBody)
+			}
+		}
+		if werr := os.WriteFile(notePath, out, 0o644); werr != nil {
 			return nil, nil, fmt.Errorf("writing %s: %w", it.ID, werr)
 		}
-		mf.Notes[it.ID] = manifest.Artifact{Hash: manifest.HashContent(string(body))}
+		mf.Notes[it.ID] = manifest.Artifact{Hash: manifest.HashBody(string(out))}
 		appliedNotes = append(appliedNotes, it.ID)
 	}
 
@@ -354,7 +364,7 @@ func onDiskNoteHashes(dir string, recorded, framework map[string]string) map[str
 			if err != nil {
 				continue // missing on disk
 			}
-			out[relPath] = manifest.HashContent(string(data))
+			out[relPath] = manifest.HashBody(string(data))
 		}
 	}
 	return out

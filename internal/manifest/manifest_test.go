@@ -223,3 +223,55 @@ func TestLoadReturnsNilWhenAbsent(t *testing.T) {
 		t.Errorf("expected nil manifest for empty dir, got %+v", m)
 	}
 }
+
+func TestSplitFrontmatterAndHashBody(t *testing.T) {
+	const body = "# Note\n\n## Meta\n\n- **Tags:** `a`, `b`\n\n## Summary\n\ntext\n"
+
+	bare := body
+	withFM := "---\ntitle: \"Note\"\ntags: [a, b]\n---\n\n" + body
+
+	// The whole point: a workspace adding frontmatter to a framework note must
+	// not register as drift, so both forms must hash identically.
+	if HashBody(bare) != HashBody(withFM) {
+		t.Error("HashBody differs with and without frontmatter; a locally-added property would read as drift")
+	}
+	// ...while a real body edit still changes the hash.
+	if HashBody(bare) == HashBody(bare+"\nedited\n") {
+		t.Error("HashBody ignored a body change")
+	}
+	// And it must not collapse to hashing nothing.
+	if HashBody(bare) == HashContent("") {
+		t.Error("HashBody hashed an empty body")
+	}
+
+	// Backward compatibility: manifests written before body-hashing existed
+	// hold HashContent of the whole file. For a note with no frontmatter the
+	// two must agree exactly, or upgrading would mark every note as drifted.
+	if HashBody(bare) != HashContent(bare) {
+		t.Error("HashBody != HashContent for a note with no frontmatter; legacy manifests would all read as drift")
+	}
+
+	// SplitFrontmatter is deliberately lossless -- the body keeps the blank
+	// line that followed the block -- so losslessness, not equality with the
+	// bare body, is the invariant to assert here.
+	fm, rest := SplitFrontmatter(withFM)
+	if fm == "" {
+		t.Error("SplitFrontmatter found no frontmatter")
+	}
+	if fm+rest != withFM {
+		t.Error("SplitFrontmatter is not lossless")
+	}
+	if strings.TrimSpace(rest) != strings.TrimSpace(body) {
+		t.Errorf("body content changed: got %q", rest)
+	}
+
+	// A horizontal rule mid-document must not be mistaken for frontmatter.
+	hr := "# Note\n\n---\n\nafter the rule\n"
+	if fm, rest := SplitFrontmatter(hr); fm != "" || rest != hr {
+		t.Errorf("mid-document horizontal rule treated as frontmatter: fm=%q", fm)
+	}
+	// An unterminated block is not frontmatter either.
+	if fm, _ := SplitFrontmatter("---\ntitle: x\nno terminator\n"); fm != "" {
+		t.Error("unterminated frontmatter should not split")
+	}
+}

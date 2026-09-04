@@ -160,3 +160,26 @@ func TestReadHandlesVeryLongMetaLines(t *testing.T) {
 		t.Errorf("Color = %q, want cyan -- a long preceding line must not stop the scan", got.Color)
 	}
 }
+
+// Every field this package reads is a controlled vocabulary, so values are
+// normalised to lower case: a stray `Defining` among lowercase peers silently
+// splits grouping, and `Bright-Cyan` fails to resolve against the colour map.
+func TestReadNormalisesCase(t *testing.T) {
+	cases := map[string]Fields{
+		"## Meta\n\n- **Color:** Bright-Cyan\n":         {Color: "bright-cyan"},
+		"## Meta\n\n- **Tags:** `Slack`, `MCP`\n":       {Tags: []string{"slack", "mcp"}},
+		"---\ncolor: RED\ntags: [Git, GitHub]\n---\n\n": {Color: "red", Tags: []string{"git", "github"}},
+	}
+	for body, want := range cases {
+		got, err := Read(write(t, body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Color != want.Color {
+			t.Errorf("Color = %q, want %q (from %q)", got.Color, want.Color, body)
+		}
+		if want.Tags != nil && !reflect.DeepEqual(got.Tags, want.Tags) {
+			t.Errorf("Tags = %#v, want %#v (from %q)", got.Tags, want.Tags, body)
+		}
+	}
+}

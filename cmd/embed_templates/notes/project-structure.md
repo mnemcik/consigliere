@@ -3,7 +3,7 @@
 ## Meta
 
 - **Category:** process
-- **Tags:** `project-structure`, `knowledge-base-structure`, `workflow`
+- **Tags:** `project-structure`, `knowledge-base-structure`, `workflow`, `ai-instructions`
 - **Framework note:** shipped by Consigliere and loaded on demand when creating a project or working with project files. Safe to edit for your workspace.
 
 ## Summary

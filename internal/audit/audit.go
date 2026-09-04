@@ -36,10 +36,9 @@ func Tags(root string) ([]TagCount, error) {
 		if err != nil {
 			continue
 		}
-		for _, raw := range fields.Tags {
-			if tag := strings.ToLower(strings.TrimSpace(raw)); tag != "" {
-				byTag[tag] = append(byTag[tag], slug)
-			}
+		// internal/meta already trims and lower-cases each value.
+		for _, tag := range fields.Tags {
+			byTag[tag] = append(byTag[tag], slug)
 		}
 	}
 

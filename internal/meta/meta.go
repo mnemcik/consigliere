@@ -201,12 +201,20 @@ func clean(in []string) []string {
 	return out
 }
 
-// cleanScalar trims whitespace and backticks, and discards unfilled template
-// placeholders like `{color}` so a freshly-copied template reads as unset.
+// cleanScalar trims whitespace and backticks, discards unfilled template
+// placeholders like `{color}` so a freshly-copied template reads as unset, and
+// lower-cases the result.
+//
+// Case is normalised because every field this package reads is a controlled
+// vocabulary, not prose: colours key into a fixed map, and tags are counted by
+// `cg tags`. Authors write them inconsistently -- a single `Defining` among
+// ninety-nine `defining` values silently splits any grouping, and `Bright-Cyan`
+// simply fails to resolve. Normalising on read makes the vocabulary
+// case-insensitive at the one point every consumer shares.
 func cleanScalar(v string) string {
 	v = strings.TrimSpace(strings.Trim(strings.TrimSpace(v), "`"))
 	if v == "" || placeholderRe.MatchString(v) {
 		return ""
 	}
-	return v
+	return strings.ToLower(v)
 }

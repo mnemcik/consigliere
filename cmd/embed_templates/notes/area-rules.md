@@ -3,7 +3,7 @@
 ## Meta
 
 - **Category:** process
-- **Tags:** `area-rules`, `knowledge-base-structure`, `workflow`
+- **Tags:** `area-rules`, `knowledge-base-structure`, `workflow`, `ai-instructions`
 - **Framework note:** shipped by Consigliere and loaded on demand when linking items to areas, creating an area, or starting work on an external repo. Safe to edit for your workspace.
 
 ## Summary

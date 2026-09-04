@@ -66,6 +66,50 @@ func HashContent(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// SplitFrontmatter separates a leading YAML frontmatter block from the rest of
+// a markdown document. Only a `---` on the very first line opens frontmatter,
+// so a horizontal rule mid-document is never mistaken for one. When there is
+// none, fm is empty and body is s unchanged.
+func SplitFrontmatter(s string) (fm, body string) {
+	if !strings.HasPrefix(s, "---\n") {
+		return "", s
+	}
+	end := strings.Index(s[3:], "\n---")
+	if end < 0 {
+		return "", s
+	}
+	end += 3
+	rest := s[end+len("\n---"):]
+	if i := strings.IndexByte(rest, '\n'); i >= 0 {
+		rest = rest[i+1:]
+	} else {
+		rest = ""
+	}
+	return s[:end+len("\n---")+1], rest
+}
+
+// HashBody returns the SHA-256 (hex) of s with any leading YAML frontmatter
+// removed.
+//
+// Framework notes are tracked by content hash so `cg sync` can tell an
+// untouched artifact from a user-edited one. Hashing the frontmatter too would
+// make any locally-added property -- a tag, a generated `title:`, anything a
+// workspace derives for its editor -- read as drift on every single sync, and
+// there is no way for the user to resolve that short of deleting the property.
+// The body is what the framework actually owns; frontmatter on a framework note
+// belongs to the workspace.
+func HashBody(s string) string {
+	_, body := SplitFrontmatter(s)
+	// Strip only the single blank line that separated the block. Trimming more
+	// than that would break backward compatibility: manifests written by older
+	// versions hold a full-content hash, and for a note with no frontmatter
+	// HashBody must still equal HashContent(s) exactly, or every previously
+	// recorded note would read as drifted on the first sync after upgrading.
+	// Removing just the separator also makes the with- and without-frontmatter
+	// forms of the same note hash identically, which is the point.
+	return HashContent(strings.TrimPrefix(body, "\n"))
+}
+
 // ParseSections extracts every framework `cg:section` block from CLAUDE.md
 // content, returning a map of section id to its inner content (surrounding
 // newlines trimmed). A start marker with no matching end marker is skipped.
@@ -165,7 +209,7 @@ func NotesFromFS(fsys fs.FS, destPrefix string) (map[string]Artifact, error) {
 		if rerr != nil {
 			return rerr
 		}
-		out[path.Join(destPrefix, p)] = Artifact{Hash: HashContent(string(data))}
+		out[path.Join(destPrefix, p)] = Artifact{Hash: HashBody(string(data))}
 		return nil
 	})
 	if err != nil {

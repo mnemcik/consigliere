@@ -3,7 +3,7 @@
 ## Meta
 
 - **Category:** process
-- **Tags:** `pr-review-loop`, `pull-requests`, `workflow`
+- **Tags:** `pr-review-loop`, `pull-requests`, `workflow`, `ai-instructions`
 - **Framework note:** shipped by Consigliere and loaded on demand after opening a pull request. Safe to edit for your workspace.
 
 ## Summary
