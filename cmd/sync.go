@@ -183,6 +183,13 @@ func applySync(dir string, mf *manifest.Manifest, report syncpkg.Report, framewo
 			continue
 		}
 		notePath := filepath.Join(dir, filepath.FromSlash(it.ID))
+		// Note ids come from the manifest and the framework listing, so confirm
+		// the joined path is still inside the workspace before writing to it.
+		// An id like "../../etc/x.md" would otherwise escape.
+		if rel, relErr := filepath.Rel(dir, notePath); relErr != nil ||
+			rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return nil, nil, fmt.Errorf("note id %q resolves outside the workspace", it.ID)
+		}
 		if mkErr := os.MkdirAll(filepath.Dir(notePath), 0o755); mkErr != nil {
 			return nil, nil, fmt.Errorf("creating dir for %s: %w", it.ID, mkErr)
 		}
@@ -190,13 +197,20 @@ func applySync(dir string, mf *manifest.Manifest, report syncpkg.Report, framewo
 		// the workspace (a derived `title:`, tags for an editor's tag pane).
 		// Carry it across, or a body update would silently delete it.
 		out := body
-		if existing, rerr := os.ReadFile(notePath); rerr == nil { //nolint:gosec // path from workspace layout
+		if existing, rerr := os.ReadFile(notePath); rerr == nil { //nolint:gosec // notePath is confirmed inside dir above
 			if fm, _ := manifest.SplitFrontmatter(string(existing)); fm != "" {
 				_, newBody := manifest.SplitFrontmatter(string(body))
-				out = []byte(fm + newBody)
+				// Keep the blank line between the block and the body. fm ends
+				// at the closing `---` newline, so without this every synced
+				// note would slowly lose its separator.
+				sep := "\n"
+				if strings.HasPrefix(newBody, "\n") {
+					sep = ""
+				}
+				out = []byte(fm + sep + newBody)
 			}
 		}
-		if werr := os.WriteFile(notePath, out, 0o644); werr != nil {
+		if werr := os.WriteFile(notePath, out, 0o644); werr != nil { //nolint:gosec // notePath is confirmed inside dir above
 			return nil, nil, fmt.Errorf("writing %s: %w", it.ID, werr)
 		}
 		mf.Notes[it.ID] = manifest.Artifact{Hash: manifest.HashBody(string(out))}

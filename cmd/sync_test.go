@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mnemcik/consigliere/internal/manifest"
@@ -261,4 +262,81 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("reading %s: %v", path, err)
 	}
 	return string(data)
+}
+
+// A body update must not silently delete frontmatter the workspace added to a
+// framework note -- applySync rewrites the whole file, so the block has to be
+// carried across.
+func TestApplySyncPreservesWorkspaceFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "CLAUDE.md"), "# CLAUDE.md\n")
+	if err := os.MkdirAll(filepath.Join(dir, "notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	const v1Body = "# Note\n\n## Meta\n\n- **Tags:** `a`\n"
+	const frontmatter = "---\ntitle: \"Note\"\ntags: [a, ai-instructions]\n---\n\n"
+	mustWrite(t, filepath.Join(dir, "notes", "fw.md"), frontmatter+v1Body)
+
+	mf := &manifest.Manifest{
+		SchemaVersion:    manifest.SchemaVersion,
+		FrameworkVersion: "1.0.0",
+		Sections:         map[string]manifest.Artifact{},
+		// Recorded as the bare body: the note is untouched as far as cg is
+		// concerned, because frontmatter is not part of the tracked content.
+		Notes: map[string]manifest.Artifact{"notes/fw.md": {Hash: manifest.HashBody(v1Body)}},
+	}
+	if err := mf.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	const v2Body = "# Note\n\n## Meta\n\n- **Tags:** `a`, `ai-instructions`\n"
+	fw := map[string][]byte{"notes/fw.md": []byte(v2Body)}
+
+	report, err := buildSyncReport(dir, mf, "# CLAUDE.md\n", hashesOf(fw))
+	if err != nil {
+		t.Fatalf("buildSyncReport: %v", err)
+	}
+	if _, appliedN, aerr := applySync(dir, mf, report, nil, fw); aerr != nil {
+		t.Fatalf("applySync: %v", aerr)
+	} else if !contains(appliedN, "notes/fw.md") {
+		t.Fatalf("note was not updated; appliedNotes = %v -- frontmatter must not block a body update", appliedN)
+	}
+
+	got := readFile(t, filepath.Join(dir, "notes", "fw.md"))
+	if !strings.HasPrefix(got, frontmatter) {
+		t.Errorf("workspace frontmatter was lost on update:\n%q", got)
+	}
+	if !strings.Contains(got, "`a`, `ai-instructions`") {
+		t.Errorf("framework body was not applied:\n%q", got)
+	}
+}
+
+// Note ids come from the manifest and the framework listing; one that escapes
+// the workspace must be refused rather than written.
+func TestApplySyncRejectsEscapingNoteID(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "CLAUDE.md"), "# CLAUDE.md\n")
+	mf := &manifest.Manifest{
+		SchemaVersion:    manifest.SchemaVersion,
+		FrameworkVersion: "1.0.0",
+		Sections:         map[string]manifest.Artifact{},
+		Notes:            map[string]manifest.Artifact{},
+	}
+	if err := mf.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	escaping := "../escaped.md"
+	fw := map[string][]byte{escaping: []byte("pwned")}
+	report, err := buildSyncReport(dir, mf, "# CLAUDE.md\n", hashesOf(fw))
+	if err != nil {
+		t.Fatalf("buildSyncReport: %v", err)
+	}
+	if _, _, aerr := applySync(dir, mf, report, nil, fw); aerr == nil {
+		t.Error("expected an error for a note id resolving outside the workspace")
+	}
+	if _, serr := os.Stat(filepath.Join(filepath.Dir(dir), "escaped.md")); serr == nil {
+		t.Error("a file was written outside the workspace")
+	}
 }
