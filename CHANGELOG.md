@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.16.0](https://github.com/mnemcik/consigliere/compare/v1.15.0...v1.16.0) (2026-09-05)
+
+
+### Features
+
+* **sync:** hash note bodies, ship ai-instructions, normalise value case ([#95](https://github.com/mnemcik/consigliere/issues/95)) ([dadf8e2](https://github.com/mnemcik/consigliere/commit/dadf8e21b1170665ffb24d67eb294cb3a33e9f7d))
+
 ## [1.15.0](https://github.com/mnemcik/consigliere/compare/v1.14.1...v1.15.0) (2026-09-03)
 
 
