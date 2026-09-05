@@ -3,7 +3,7 @@
 ## Meta
 
 - **Category:** process
-- **Tags:** `debugging`, `evidence`, `workflow`
+- **Tags:** `debugging`, `evidence`, `workflow`, `ai-instructions`
 - **Framework note:** shipped by Consigliere and loaded on demand when a non-trivial bug is reported. Safe to edit for your workspace.
 
 ## Summary

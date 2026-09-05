@@ -3,7 +3,7 @@
 ## Meta
 
 - **Category:** process
-- **Tags:** `pull-requests`, `code-review`, `workflow`
+- **Tags:** `pull-requests`, `code-review`, `workflow`, `ai-instructions`
 - **Framework note:** shipped by Consigliere and loaded on demand when a PR Claude opened receives CI / bot / human review findings. Safe to edit for your workspace.
 
 ## Summary

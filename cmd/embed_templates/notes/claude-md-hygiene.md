@@ -3,7 +3,7 @@
 ## Meta
 
 - **Category:** workflow
-- **Tags:** `claude-md`, `documentation`, `context-window`, `knowledge-base-structure`
+- **Tags:** `claude-md`, `documentation`, `context-window`, `knowledge-base-structure`, `ai-instructions`
 - **Framework note:** shipped by Consigliere and loaded on demand when editing CLAUDE.md. Safe to edit for your workspace.
 
 ## Summary

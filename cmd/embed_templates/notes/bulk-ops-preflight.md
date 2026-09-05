@@ -3,7 +3,7 @@
 ## Meta
 
 - **Category:** process
-- **Tags:** `shared-state`, `safety`, `workflow`, `shell`
+- **Tags:** `shared-state`, `safety`, `workflow`, `shell`, `ai-instructions`
 - **Framework note:** shipped by Consigliere and loaded on demand before running a command that touches many entities. Safe to edit for your workspace.
 
 ## Summary

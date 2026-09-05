@@ -131,8 +131,44 @@ func printHookNormalizeApplied(normalized []string) {
 // modified — they are reported (by the caller) for the user or the /cg-sync
 // skill to resolve. It is idempotent: a second run finds everything up to date.
 // Framework content is passed in (not read from the embed) so apply is testable.
+// resolveInside returns the real path of target, confirming it stays inside
+// realRoot. A lexical filepath.Rel check is not enough on its own: a symlinked
+// note -- or a symlinked directory anywhere above it -- would pass the lexical
+// test while os.WriteFile followed the link and overwrote a file outside the
+// workspace. EvalSymlinks is applied to the deepest existing ancestor, since a
+// brand-new note does not exist yet.
+func resolveInside(realRoot, target string) (string, error) {
+	probe := target
+	var trailing []string
+	for {
+		resolved, err := filepath.EvalSymlinks(probe)
+		if err == nil {
+			full := filepath.Join(append([]string{resolved}, trailing...)...)
+			rel, relErr := filepath.Rel(realRoot, full)
+			if relErr != nil || rel == ".." ||
+				strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				return "", fmt.Errorf("%q resolves outside the workspace", target)
+			}
+			return full, nil
+		}
+		parent := filepath.Dir(probe)
+		if parent == probe {
+			return "", fmt.Errorf("resolving %q: %w", target, err)
+		}
+		trailing = append([]string{filepath.Base(probe)}, trailing...)
+		probe = parent
+	}
+}
+
 func applySync(dir string, mf *manifest.Manifest, report syncpkg.Report, frameworkSections map[string]string, frameworkNoteBytes map[string][]byte) (appliedSections, appliedNotes []string, err error) {
 	// Sections: batch all edits to CLAUDE.md, write once.
+	// Resolve the workspace root once so note paths can be checked against a
+	// symlink-free root (a macOS /tmp workspace is itself behind a symlink).
+	realRoot, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolving workspace root: %w", err)
+	}
+
 	claudePath := filepath.Join(dir, "CLAUDE.md")
 	content, err := readFileAllowMissing(claudePath)
 	if err != nil {
@@ -183,13 +219,42 @@ func applySync(dir string, mf *manifest.Manifest, report syncpkg.Report, framewo
 			continue
 		}
 		notePath := filepath.Join(dir, filepath.FromSlash(it.ID))
+		// Note ids come from the manifest and the framework listing, so refuse
+		// anything that lands outside the workspace -- an id like
+		// "../../etc/x.md", or a path reached through a symlink.
+		if _, resErr := resolveInside(realRoot, filepath.Dir(notePath)); resErr != nil {
+			return nil, nil, fmt.Errorf("note id %q: %w", it.ID, resErr)
+		}
+		// A symlink at the note itself would be followed by os.WriteFile,
+		// overwriting the link target rather than the note.
+		if fi, lstatErr := os.Lstat(notePath); lstatErr == nil &&
+			fi.Mode()&os.ModeSymlink != 0 {
+			return nil, nil, fmt.Errorf("note %q is a symlink; refusing to write through it", it.ID)
+		}
 		if mkErr := os.MkdirAll(filepath.Dir(notePath), 0o755); mkErr != nil {
 			return nil, nil, fmt.Errorf("creating dir for %s: %w", it.ID, mkErr)
 		}
-		if werr := os.WriteFile(notePath, body, 0o644); werr != nil {
+		// The framework owns the body; any frontmatter on the note belongs to
+		// the workspace (a derived `title:`, tags for an editor's tag pane).
+		// Carry it across, or a body update would silently delete it.
+		out := body
+		if existing, rerr := os.ReadFile(notePath); rerr == nil { //nolint:gosec // notePath is confirmed inside dir above
+			if fm, _ := manifest.SplitFrontmatter(string(existing)); fm != "" {
+				_, newBody := manifest.SplitFrontmatter(string(body))
+				// Keep the blank line between the block and the body. fm ends
+				// at the closing `---` newline, so without this every synced
+				// note would slowly lose its separator.
+				sep := "\n"
+				if strings.HasPrefix(newBody, "\n") {
+					sep = ""
+				}
+				out = []byte(fm + sep + newBody)
+			}
+		}
+		if werr := os.WriteFile(notePath, out, 0o644); werr != nil { //nolint:gosec // notePath is confirmed inside dir above
 			return nil, nil, fmt.Errorf("writing %s: %w", it.ID, werr)
 		}
-		mf.Notes[it.ID] = manifest.Artifact{Hash: manifest.HashContent(string(body))}
+		mf.Notes[it.ID] = manifest.Artifact{Hash: manifest.HashBody(string(out))}
 		appliedNotes = append(appliedNotes, it.ID)
 	}
 
@@ -354,7 +419,7 @@ func onDiskNoteHashes(dir string, recorded, framework map[string]string) map[str
 			if err != nil {
 				continue // missing on disk
 			}
-			out[relPath] = manifest.HashContent(string(data))
+			out[relPath] = manifest.HashBody(string(data))
 		}
 	}
 	return out
