@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.16.1](https://github.com/mnemcik/consigliere/compare/v1.16.0...v1.16.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **worktree:** exit 2 with a named cause when remove hits a dirty tree ([#100](https://github.com/mnemcik/consigliere/issues/100)) ([66c7940](https://github.com/mnemcik/consigliere/commit/66c79402ab8f52ed77b4fd4f174d7878e37fd424))
+
 ## [1.16.0](https://github.com/mnemcik/consigliere/compare/v1.15.0...v1.16.0) (2026-09-05)
 
 
