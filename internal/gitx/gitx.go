@@ -249,6 +249,15 @@ func IsClean(ctx context.Context, dir string) bool {
 	return ok(ctx, dir, "diff", "--quiet") && ok(ctx, dir, "diff", "--cached", "--quiet")
 }
 
+// StatusPorcelain returns `git status --porcelain` for dir: one line per
+// modified, staged, deleted or untracked path, empty when the working tree is
+// clean. Unlike IsClean it reports untracked files, which is what
+// `git worktree remove` refuses on. Ignored files are excluded, matching that
+// command's own notion of dirty.
+func StatusPorcelain(ctx context.Context, dir string) (string, error) {
+	return Run(ctx, dir, "status", "--porcelain")
+}
+
 // MergeFFOnly fast-forward-merges ref into the current branch of dir, failing
 // (rather than creating a merge commit) when a fast-forward isn't possible.
 func MergeFFOnly(ctx context.Context, dir, ref string) error {

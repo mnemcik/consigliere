@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mnemcik/consigliere/internal/cgerr"
@@ -77,5 +79,64 @@ func TestRemoveMissingIsNoOp(t *testing.T) {
 	// Never created — remove should succeed (nothing to do), not error.
 	if err := Remove(ctx, "ghost", defaultOpts(root), &log); err != nil {
 		t.Fatalf("Remove of nonexistent worktree should be a no-op, got %v", err)
+	}
+}
+
+func TestRemoveDirtyWorktreeBlocksThenForce(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	var log bytes.Buffer
+
+	wt, err := Create(ctx, "rm-dirty", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// Branch is landed (fresh, sits at origin/main) — only the working tree is
+	// dirty, so this isolates the dirty guard from the unlanded-commits one.
+	if err := os.WriteFile(filepath.Join(wt, "untracked.txt"), []byte("scratch\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	err = Remove(ctx, "rm-dirty", defaultOpts(root), &log)
+	var coded *cgerr.CodedError
+	if !errors.As(err, &coded) || coded.ExitCode() != cgerr.ExitDirty {
+		t.Fatalf("expected ExitDirty for a dirty worktree, got %v", err)
+	}
+	if _, statErr := os.Stat(wt); statErr != nil {
+		t.Errorf("worktree %s should survive a refused removal: %v", wt, statErr)
+	}
+	if !strings.Contains(log.String(), "untracked.txt") {
+		t.Errorf("log should name the offending file, got:\n%s", log.String())
+	}
+
+	// --force removes it, discarding the untracked file with it.
+	forced := defaultOpts(root)
+	forced.Force = true
+	if err := Remove(ctx, "rm-dirty", forced, &log); err != nil {
+		t.Fatalf("Remove --force: %v\nlog: %s", err, log.String())
+	}
+	if _, statErr := os.Stat(wt); !os.IsNotExist(statErr) {
+		t.Errorf("worktree dir %s should be gone after --force", wt)
+	}
+}
+
+func TestRemoveStagedOnlyIsDirty(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	var log bytes.Buffer
+
+	wt, err := Create(ctx, "rm-staged", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// Staged but uncommitted: invisible to `git diff --quiet`, so this guards
+	// against a future switch to gitx.IsClean, which would miss it.
+	if err := os.WriteFile(filepath.Join(wt, "staged.txt"), []byte("staged\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	mustGit(t, ctx, wt, "add", "staged.txt")
+
+	err = Remove(ctx, "rm-staged", defaultOpts(root), &log)
+	var coded *cgerr.CodedError
+	if !errors.As(err, &coded) || coded.ExitCode() != cgerr.ExitDirty {
+		t.Fatalf("expected ExitDirty for staged-only changes, got %v", err)
 	}
 }

@@ -14,12 +14,11 @@ import (
 // unless opt.Force. It will not run from inside the worktree being removed.
 //
 // A dirty working tree (modified, staged or untracked files) is a second,
-// independent refusal: opt.Force is passed through to git worktree remove, so
-// without it git itself refuses and its error surfaces unwrapped — exit 128
-// rather than ExitDirty. With it, those files are deleted along with the
-// worktree. Callers should treat an unforced success as evidence that the
-// worktree was both landed and clean, and must not infer from "the branch is
-// landed" alone that removal is lossless.
+// independent refusal, also ExitDirty and also overridden by opt.Force — which
+// then deletes those files along with the worktree. Callers should treat an
+// unforced success as evidence that the worktree was both landed and clean,
+// and must not infer from "the branch is landed" alone that removal is
+// lossless.
 //
 // Ports remove-session-worktree.sh. Status goes to logw.
 func Remove(ctx context.Context, slug string, opt Options, logw io.Writer) error {
@@ -63,6 +62,20 @@ func Remove(ctx context.Context, slug string, opt Options, logw io.Writer) error
 		return err
 	}
 	if containsPath(paths, worktreePath) {
+		// Safety: block on a dirty working tree unless forced. git refuses this
+		// too, but its message arrives as an opaque exit 128; checking first
+		// lets us name the files and exit ExitDirty like the unlanded path.
+		if !opt.Force {
+			dirty, err := gitx.StatusPorcelain(ctx, worktreePath)
+			if err != nil {
+				return err
+			}
+			if dirty != "" {
+				logf("worktree %s has uncommitted changes:\n%s\n", worktreePath, dirty)
+				logf("commit or discard them, or re-run with --force to delete them\n")
+				return cgerr.New(cgerr.ExitDirty, "uncommitted changes in worktree %s", worktreePath)
+			}
+		}
 		logf("removing worktree %s\n", worktreePath)
 		if err := gitx.WorktreeRemove(ctx, opt.Root, worktreePath, opt.Force); err != nil {
 			return err
