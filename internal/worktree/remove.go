@@ -12,6 +12,15 @@ import (
 // Remove deletes the session worktree for slug and its local branch, refusing
 // (ExitDirty) when the branch has commits not yet landed on the landing branch
 // unless opt.Force. It will not run from inside the worktree being removed.
+//
+// A dirty working tree (modified, staged or untracked files) is a second,
+// independent refusal: opt.Force is passed through to git worktree remove, so
+// without it git itself refuses and its error surfaces unwrapped — exit 128
+// rather than ExitDirty. With it, those files are deleted along with the
+// worktree. Callers should treat an unforced success as evidence that the
+// worktree was both landed and clean, and must not infer from "the branch is
+// landed" alone that removal is lossless.
+//
 // Ports remove-session-worktree.sh. Status goes to logw.
 func Remove(ctx context.Context, slug string, opt Options, logw io.Writer) error {
 	if !ValidSlug(slug) {
