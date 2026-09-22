@@ -3,7 +3,7 @@
 ## Meta
 
 - **Category:** process
-- **Tags:** `session-end`, `knowledge-base-structure`, `workflow`
+- **Tags:** `session-end`, `knowledge-base-structure`, `workflow`, `ai-instructions`
 - **Framework note:** shipped by Consigliere and loaded on demand at session end when capturing notes and insights. Safe to edit for your workspace.
 
 ## Summary

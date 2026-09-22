@@ -3,7 +3,7 @@
 ## Meta
 
 - **Category:** reference
-- **Tags:** `mcp`, `tooling`, `integration`, `policy`
+- **Tags:** `mcp`, `tooling`, `integration`, `policy`, `ai-instructions`
 - **Framework note:** shipped by Consigliere and loaded on demand when a task needs external-system integration. Safe to edit for your workspace.
 
 ## When to load this note

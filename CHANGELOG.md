@@ -4,6 +4,46 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.16.0](https://github.com/mnemcik/consigliere/compare/v1.15.0...v1.16.0) (2026-09-05)
+
+
+### Features
+
+* **sync:** hash note bodies, ship ai-instructions, normalise value case ([#95](https://github.com/mnemcik/consigliere/issues/95)) ([dadf8e2](https://github.com/mnemcik/consigliere/commit/dadf8e21b1170665ffb24d67eb294cb3a33e9f7d))
+
+## [1.15.0](https://github.com/mnemcik/consigliere/compare/v1.14.1...v1.15.0) (2026-09-03)
+
+
+### Features
+
+* **meta:** read item metadata from YAML frontmatter or a Meta block ([#93](https://github.com/mnemcik/consigliere/issues/93)) ([8fc03ee](https://github.com/mnemcik/consigliere/commit/8fc03ee54ba84d249afe3f5f7984911ddfb95c34))
+
+## [1.14.1](https://github.com/mnemcik/consigliere/compare/v1.14.0...v1.14.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* resolve project folder slug from a file-targeted index link ([#91](https://github.com/mnemcik/consigliere/issues/91)) ([c98a10e](https://github.com/mnemcik/consigliere/commit/c98a10e4d546a754136a3feee93882ad50b0af07))
+
+## [1.14.0](https://github.com/mnemcik/consigliere/compare/v1.13.0...v1.14.0) (2026-08-13)
+
+
+### Features
+
+* **area-rules:** document reverse lookup when no project slug matches ([#86](https://github.com/mnemcik/consigliere/issues/86)) ([9352cf3](https://github.com/mnemcik/consigliere/commit/9352cf3bad3b47058424888189e1e62f33f6084f))
+
+
+### Bug Fixes
+
+* **sync:** dry-run footer said apply was unimplemented ([#85](https://github.com/mnemcik/consigliere/issues/85)) ([7f7c3c2](https://github.com/mnemcik/consigliere/commit/7f7c3c24e2b9fd0e2eea264abe38b713fc5fe21c))
+
+## [1.13.0](https://github.com/mnemcik/consigliere/compare/v1.12.1...v1.13.0) (2026-08-12)
+
+
+### Features
+
+* **wrap:** point wrap skill at cg worktree, ship resume.md template ([#83](https://github.com/mnemcik/consigliere/issues/83)) ([397467c](https://github.com/mnemcik/consigliere/commit/397467c1a78610d89a3eade285933bc63e7b670b))
+
 ## [1.12.1](https://github.com/mnemcik/consigliere/compare/v1.12.0...v1.12.1) (2026-07-03)
 
 

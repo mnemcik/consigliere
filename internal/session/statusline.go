@@ -1,16 +1,15 @@
 package session
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"hash/fnv"
-	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
+
+	"github.com/mnemcik/consigliere/internal/meta"
 )
 
 // StatuslineInput is the statusLine hook payload the renderer consumes.
@@ -112,12 +111,12 @@ var colorCodes = map[string]int{
 // **Color:**, then a deterministic hash of the slug.
 func resolveColor(root string, c *Context) int {
 	if c.Project != "" {
-		if code, ok := colorCodes[readColorField(filepath.Join(root, "projects", c.Project, "README.md"))]; ok {
+		if code, ok := colorCodes[readColor(filepath.Join(root, "projects", c.Project, "README.md"))]; ok {
 			return code
 		}
 	}
 	if c.Area != "" {
-		if code, ok := colorCodes[readColorField(filepath.Join(root, "areas", c.Area+".md"))]; ok {
+		if code, ok := colorCodes[readColor(filepath.Join(root, "areas", c.Area+".md"))]; ok {
 			return code
 		}
 	}
@@ -128,29 +127,15 @@ func resolveColor(root string, c *Context) int {
 	return colorFromSlug(slug)
 }
 
-var colorFieldRe = regexp.MustCompile(`^(?:- )?\*\*Color:\*\*\s*(.+?)\s*$`)
-
-// readColorField reads "**Color:** <name>" from the first 40 lines of a
-// markdown file, returning "" when absent or a {placeholder}.
-func readColorField(file string) string {
-	f, err := os.Open(file) //nolint:gosec // file path derived from workspace layout
+// readColor returns the badge colour declared by a project README or area
+// file, or "" when unset. Metadata parsing lives in internal/meta, which
+// accepts both YAML frontmatter and a `## Meta` block.
+func readColor(file string) string {
+	f, err := meta.Read(file)
 	if err != nil {
 		return ""
 	}
-	defer func() { _ = f.Close() }()
-	sc := bufio.NewScanner(f)
-	for line := 0; line < 40 && sc.Scan(); line++ {
-		m := colorFieldRe.FindStringSubmatch(sc.Text())
-		if m == nil {
-			continue
-		}
-		val := strings.Trim(m[1], "`")
-		if strings.HasPrefix(val, "{") && strings.HasSuffix(val, "}") {
-			return "" // template placeholder counts as unset
-		}
-		return val
-	}
-	return ""
+	return f.Color
 }
 
 // brightPalette is the deterministic fallback color set (ANSI bright + normal).

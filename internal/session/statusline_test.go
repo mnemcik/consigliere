@@ -106,7 +106,7 @@ func TestStatuslineUpstreamThenBadge(t *testing.T) {
 	}
 }
 
-func TestReadColorField(t *testing.T) {
+func TestReadColor(t *testing.T) {
 	dir := t.TempDir()
 	cases := map[string]string{
 		"- **Color:** bright-cyan\n": "bright-cyan",
@@ -114,6 +114,10 @@ func TestReadColorField(t *testing.T) {
 		"- **Color:** `blue`\n":      "blue",
 		"- **Color:** {color}\n":     "", // placeholder
 		"no color here\n":            "",
+		// Frontmatter is now read too, and wins over a `## Meta` block.
+		"---\ncolor: green\n---\n\n- **Color:** red\n": "green",
+		// Frontmatter without a color still falls back to the Meta block.
+		"---\ntags: [a]\n---\n\n- **Color:** magenta\n": "magenta",
 	}
 	i := 0
 	for content, want := range cases {
@@ -122,8 +126,8 @@ func TestReadColorField(t *testing.T) {
 		if err := os.WriteFile(f, []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if got := readColorField(f); got != want {
-			t.Errorf("readColorField(%q) = %q, want %q", content, got, want)
+		if got := readColor(f); got != want {
+			t.Errorf("readColor(%q) = %q, want %q", content, got, want)
 		}
 	}
 }
