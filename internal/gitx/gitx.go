@@ -249,6 +249,21 @@ func IsClean(ctx context.Context, dir string) bool {
 	return ok(ctx, dir, "diff", "--quiet") && ok(ctx, dir, "diff", "--cached", "--quiet")
 }
 
+// StatusPorcelain returns `git status --porcelain` for dir: one line per
+// modified, staged, deleted or untracked path, empty when the working tree is
+// clean. Unlike IsClean it reports untracked files. Ignored files are excluded.
+//
+// --untracked-files=all is explicit and load-bearing, not a default worth
+// relying on: status.showUntrackedFiles=no suppresses untracked paths, and
+// `git worktree remove` honours that setting too — so under that config an
+// untracked-only worktree is deleted silently, exit 0, with no warning from
+// git. Overriding it here makes this the reliable check rather than a nicer
+// wrapper around one. "all" (not "normal") so individual files inside an
+// untracked directory are named, instead of just the directory.
+func StatusPorcelain(ctx context.Context, dir string) (string, error) {
+	return Run(ctx, dir, "status", "--porcelain", "--untracked-files=all")
+}
+
 // MergeFFOnly fast-forward-merges ref into the current branch of dir, failing
 // (rather than creating a merge commit) when a fast-forward isn't possible.
 func MergeFFOnly(ctx context.Context, dir, ref string) error {
