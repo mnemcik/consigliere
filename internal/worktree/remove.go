@@ -14,12 +14,15 @@ import (
 // unless opt.Force. It will not run from inside the worktree being removed.
 //
 // A dirty working tree (modified, staged or untracked files) is a second,
-// independent refusal: opt.Force is passed through to git worktree remove, so
-// without it git itself refuses and its error surfaces unwrapped — exit 128
-// rather than ExitDirty. With it, those files are deleted along with the
-// worktree. Callers should treat an unforced success as evidence that the
-// worktree was both landed and clean, and must not infer from "the branch is
-// landed" alone that removal is lossless.
+// independent refusal, also ExitDirty and also overridden by opt.Force — which
+// then deletes those files along with the worktree. Callers should treat an
+// unforced success as evidence that the worktree was both landed and clean,
+// and must not infer from "the branch is landed" alone that removal is
+// lossless.
+//
+// That guarantee is this function's, not git's: git worktree remove honours
+// status.showUntrackedFiles, so before this check existed an untracked-only
+// worktree could be deleted silently under `=no`.
 //
 // Ports remove-session-worktree.sh. Status goes to logw.
 func Remove(ctx context.Context, slug string, opt Options, logw io.Writer) error {
@@ -63,6 +66,22 @@ func Remove(ctx context.Context, slug string, opt Options, logw io.Writer) error
 		return err
 	}
 	if containsPath(paths, worktreePath) {
+		// Safety: block on a dirty working tree unless forced. This is the
+		// authoritative check, not a friendlier wrapper around git's: git's own
+		// refusal honours status.showUntrackedFiles, so under `=no` it deletes
+		// an untracked-only worktree silently with exit 0. StatusPorcelain
+		// overrides that, and reports the paths so the message can name them.
+		if !opt.Force {
+			dirty, err := gitx.StatusPorcelain(ctx, worktreePath)
+			if err != nil {
+				return err
+			}
+			if dirty != "" {
+				logf("worktree %s has uncommitted changes:\n%s\n", worktreePath, dirty)
+				logf("commit or discard them, or re-run with --force to delete them\n")
+				return cgerr.New(cgerr.ExitDirty, "uncommitted changes in worktree %s", worktreePath)
+			}
+		}
 		logf("removing worktree %s\n", worktreePath)
 		if err := gitx.WorktreeRemove(ctx, opt.Root, worktreePath, opt.Force); err != nil {
 			return err

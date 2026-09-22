@@ -172,12 +172,18 @@ var worktreeRemoveCmd = &cobra.Command{
 	Short: "Remove a session worktree and delete its branch",
 	Long: `Remove the worktree for <slug> and delete its local branch.
 
-Refuses in two independent cases, both of which --force overrides:
+Refuses (exit 2) in two independent cases, both of which --force overrides:
 
-  * unlanded commits — the branch has commits not on the landing branch
-    (exit 2); --force discards them.
+  * unlanded commits — the branch has commits not on the landing branch;
+    --force discards them.
   * a dirty working tree — the worktree contains modified, staged or
-    untracked files (git refuses, exit 128); --force deletes them.
+    untracked files; --force deletes them.
+
+Both list what they found before exiting.
+
+The dirty check is cg's own, not a relay of git's: git worktree remove
+honours status.showUntrackedFiles, so with that set to "no" it deletes an
+untracked-only worktree silently. cg always looks for untracked files.
 
 A successful unforced removal is therefore positive evidence that the
 worktree was both landed and clean. "Landed" alone is not sufficient
