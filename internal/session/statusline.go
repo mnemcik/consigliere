@@ -1,15 +1,15 @@
 package session
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"hash/fnv"
-	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
+	"time"
+
+	"github.com/mnemcik/consigliere/internal/meta"
 )
 
 // StatuslineInput is the statusLine hook payload the renderer consumes.
@@ -44,12 +44,33 @@ func Statusline(ctx context.Context, root string, in StatuslineInput, upstream, 
 	return base + "\n" + badge
 }
 
+// upstreamTimeout bounds how long the configured upstream may run before the
+// status line falls back to the badge alone. Generous enough for a git-driven
+// status line, short enough that a hung command never blocks the CLI. A var (not
+// a const) so tests can shorten it.
+var upstreamTimeout = 2 * time.Second
+
+// runUpstream executes the configured upstream as a shell command, forwarding
+// the hook's stdin JSON, and returns its stdout. upstream is a command string
+// (run via "bash -c"), so it can reproduce whatever the user's prior statusLine
+// was — "bash ~/.claude/statusline.sh", "node line.js", or a bare executable
+// path (which still runs, e.g. "bash -c /abs/path.sh"). Any error — including the
+// timeout below — yields "" so a broken or slow upstream never breaks the status
+// line.
 func runUpstream(ctx context.Context, upstream string, input []byte) string {
 	if upstream == "" {
 		return ""
 	}
-	// #nosec G204 -- upstream path comes from workspace config, not user input.
-	cmd := exec.CommandContext(ctx, "bash", upstream)
+	ctx, cancel := context.WithTimeout(ctx, upstreamTimeout)
+	defer cancel()
+	// #nosec G204 -- upstream is trusted workspace config (.cg.json), the same
+	// trust level as the .claude/settings.json statusLine command and hook
+	// wrappers Claude Code already executes. The shell ("bash -c") is required so
+	// the value can be a full command (e.g. "bash ~/.claude/statusline.sh"), not
+	// only a bare path. A malicious workspace could run code here exactly as it
+	// could via settings.json, so the real trust boundary is opening an untrusted
+	// workspace, not this call.
+	cmd := exec.CommandContext(ctx, "bash", "-c", upstream)
 	cmd.Stdin = strings.NewReader(string(input))
 	out, err := cmd.Output()
 	if err != nil {
@@ -90,12 +111,12 @@ var colorCodes = map[string]int{
 // **Color:**, then a deterministic hash of the slug.
 func resolveColor(root string, c *Context) int {
 	if c.Project != "" {
-		if code, ok := colorCodes[readColorField(filepath.Join(root, "projects", c.Project, "README.md"))]; ok {
+		if code, ok := colorCodes[readColor(filepath.Join(root, "projects", c.Project, "README.md"))]; ok {
 			return code
 		}
 	}
 	if c.Area != "" {
-		if code, ok := colorCodes[readColorField(filepath.Join(root, "areas", c.Area+".md"))]; ok {
+		if code, ok := colorCodes[readColor(filepath.Join(root, "areas", c.Area+".md"))]; ok {
 			return code
 		}
 	}
@@ -106,29 +127,15 @@ func resolveColor(root string, c *Context) int {
 	return colorFromSlug(slug)
 }
 
-var colorFieldRe = regexp.MustCompile(`^(?:- )?\*\*Color:\*\*\s*(.+?)\s*$`)
-
-// readColorField reads "**Color:** <name>" from the first 40 lines of a
-// markdown file, returning "" when absent or a {placeholder}.
-func readColorField(file string) string {
-	f, err := os.Open(file) //nolint:gosec // file path derived from workspace layout
+// readColor returns the badge colour declared by a project README or area
+// file, or "" when unset. Metadata parsing lives in internal/meta, which
+// accepts both YAML frontmatter and a `## Meta` block.
+func readColor(file string) string {
+	f, err := meta.Read(file)
 	if err != nil {
 		return ""
 	}
-	defer func() { _ = f.Close() }()
-	sc := bufio.NewScanner(f)
-	for line := 0; line < 40 && sc.Scan(); line++ {
-		m := colorFieldRe.FindStringSubmatch(sc.Text())
-		if m == nil {
-			continue
-		}
-		val := strings.Trim(m[1], "`")
-		if strings.HasPrefix(val, "{") && strings.HasSuffix(val, "}") {
-			return "" // template placeholder counts as unset
-		}
-		return val
-	}
-	return ""
+	return f.Color
 }
 
 // brightPalette is the deterministic fallback color set (ANSI bright + normal).

@@ -78,7 +78,10 @@ unchanged.
     "pruneDays": 7,                      // stale session-context cleanup age
     "gateTemplate": "",                  // path to a user-owned gate template;
                                           //   "" = built-in framework-neutral text
-    "statuslineUpstream": "",            // path to an upstream statusline to wrap
+    "statuslineUpstream": "",            // shell command (run via `bash -c`) whose
+                                          //   stdout is prepended to the badge; `cg
+                                          //   init` seeds it from the user's prior
+                                          //   statusLine command. "" = badge only
     "badgeFormat": "[{area}/{project}]"  // status-line badge format
   },
 

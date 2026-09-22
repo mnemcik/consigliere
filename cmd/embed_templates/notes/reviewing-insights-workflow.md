@@ -3,7 +3,7 @@
 ## Meta
 
 - **Category:** process
-- **Tags:** `insights`, `claude-md`, `triage`, `review-process`
+- **Tags:** `insights`, `claude-md`, `triage`, `review-process`, `ai-instructions`
 - **Framework note:** shipped by Consigliere and loaded on demand when reviewing draft insights for promotion. Safe to edit for your workspace.
 
 ## Summary
