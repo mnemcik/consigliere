@@ -25,7 +25,7 @@ func init() {
 	worktreeLandCmd.Flags().StringVar(&worktreeLandStrategy, "strategy", "",
 		"landing strategy: direct-to-main or pr (default: from .cg.json, else direct-to-main)")
 	worktreeRemoveCmd.Flags().BoolVar(&worktreeRemoveForce, "force", false,
-		"remove even when the branch has unlanded commits (discards them)")
+		"remove despite unlanded commits or a dirty working tree (discards both)")
 	worktreeCmd.AddCommand(worktreeCreateCmd)
 	worktreeCmd.AddCommand(worktreeLandCmd)
 	worktreeCmd.AddCommand(worktreeRemoveCmd)
@@ -172,8 +172,23 @@ var worktreeRemoveCmd = &cobra.Command{
 	Short: "Remove a session worktree and delete its branch",
 	Long: `Remove the worktree for <slug> and delete its local branch.
 
-Refuses (exit 2) when the branch has commits not yet landed on the landing
-branch; re-run with --force to remove anyway (discarding the unlanded work).
+Refuses (exit 2) in two independent cases, both of which --force overrides:
+
+  * unlanded commits — the branch has commits not on the landing branch;
+    --force discards them.
+  * a dirty working tree — the worktree contains modified, staged or
+    untracked files; --force deletes them.
+
+Both list what they found before exiting.
+
+The dirty check is cg's own, not a relay of git's: git worktree remove
+honours status.showUntrackedFiles, so with that set to "no" it deletes an
+untracked-only worktree silently. cg always looks for untracked files.
+
+A successful unforced removal is therefore positive evidence that the
+worktree was both landed and clean. "Landed" alone is not sufficient
+grounds to remove a worktree, and this command does not treat it as such.
+
 Will not run from inside the worktree being removed.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runWorktreeRemove,
