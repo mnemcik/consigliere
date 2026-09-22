@@ -66,6 +66,74 @@ func HashContent(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// cutLine splits s at the first newline, returning the line without it and the
+// remainder. At EOF the whole of s is the line and rest is empty.
+func cutLine(s string) (line, rest string) {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i], s[i+1:]
+	}
+	return s, ""
+}
+
+// isFrontmatterDelim reports whether a line is a `---` delimiter, tolerating a
+// CRLF line ending.
+func isFrontmatterDelim(line string) bool {
+	return strings.TrimRight(line, "\r") == "---"
+}
+
+// SplitFrontmatter separates a leading YAML frontmatter block from the rest of
+// a markdown document. Only a delimiter on the very first line opens
+// frontmatter, so a horizontal rule mid-document is never mistaken for one.
+// When there is none -- including an unterminated block, or an opening
+// delimiter with nothing after it -- fm is empty and body is s unchanged.
+//
+// It is line-based rather than index arithmetic, and lossless: fm+body == s.
+// Both LF and CRLF endings are accepted, and the closing delimiter may sit at
+// EOF with no trailing newline.
+func SplitFrontmatter(s string) (fm, body string) {
+	first, rest := cutLine(s)
+	if !isFrontmatterDelim(first) {
+		return "", s
+	}
+	// An opening delimiter with no following line is just a document that
+	// happens to start with a horizontal rule.
+	if rest == "" && !strings.HasSuffix(s, "\n") {
+		return "", s
+	}
+	for rest != "" {
+		line, next := cutLine(rest)
+		if isFrontmatterDelim(line) {
+			return s[:len(s)-len(next)], next
+		}
+		rest = next
+	}
+	return "", s
+}
+
+// HashBody returns the SHA-256 (hex) of s with any leading YAML frontmatter
+// removed.
+//
+// Framework notes are tracked by content hash so `cg sync` can tell an
+// untouched artifact from a user-edited one. Hashing the frontmatter too would
+// make any locally-added property -- a tag, a generated `title:`, anything a
+// workspace derives for its editor -- read as drift on every single sync, and
+// there is no way for the user to resolve that short of deleting the property.
+// The body is what the framework actually owns; frontmatter on a framework note
+// belongs to the workspace.
+func HashBody(s string) string {
+	_, body := SplitFrontmatter(s)
+	// Strip only the single blank line that separated the block. Trimming more
+	// than that would break backward compatibility: manifests written by older
+	// versions hold a full-content hash, and for a note with no frontmatter
+	// HashBody must still equal HashContent(s) exactly, or every previously
+	// recorded note would read as drifted on the first sync after upgrading.
+	// Removing just the separator also makes the with- and without-frontmatter
+	// forms of the same note hash identically, which is the point.
+	body = strings.TrimPrefix(body, "\r\n")
+	body = strings.TrimPrefix(body, "\n")
+	return HashContent(body)
+}
+
 // ParseSections extracts every framework `cg:section` block from CLAUDE.md
 // content, returning a map of section id to its inner content (surrounding
 // newlines trimmed). A start marker with no matching end marker is skipped.
@@ -165,7 +233,7 @@ func NotesFromFS(fsys fs.FS, destPrefix string) (map[string]Artifact, error) {
 		if rerr != nil {
 			return rerr
 		}
-		out[path.Join(destPrefix, p)] = Artifact{Hash: HashContent(string(data))}
+		out[path.Join(destPrefix, p)] = Artifact{Hash: HashBody(string(data))}
 		return nil
 	})
 	if err != nil {
