@@ -140,3 +140,30 @@ func TestRemoveStagedOnlyIsDirty(t *testing.T) {
 		t.Fatalf("expected ExitDirty for staged-only changes, got %v", err)
 	}
 }
+
+func TestRemoveDirtyWithShowUntrackedFilesNo(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	var log bytes.Buffer
+
+	wt, err := Create(ctx, "rm-uno", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// A user with status.showUntrackedFiles=no makes plain `git status
+	// --porcelain` silent about untracked files — the dirty check must not
+	// inherit that, or an untracked-only worktree falls through to git's raw
+	// refusal (exit 128) instead of ExitDirty.
+	mustGit(t, ctx, wt, "config", "status.showUntrackedFiles", "no")
+	if err := os.WriteFile(filepath.Join(wt, "hidden.txt"), []byte("scratch\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	err = Remove(ctx, "rm-uno", defaultOpts(root), &log)
+	var coded *cgerr.CodedError
+	if !errors.As(err, &coded) || coded.ExitCode() != cgerr.ExitDirty {
+		t.Fatalf("expected ExitDirty despite status.showUntrackedFiles=no, got %v", err)
+	}
+	if !strings.Contains(log.String(), "hidden.txt") {
+		t.Errorf("log should name the untracked file, got:\n%s", log.String())
+	}
+}

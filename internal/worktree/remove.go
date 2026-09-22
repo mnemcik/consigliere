@@ -20,6 +20,10 @@ import (
 // and must not infer from "the branch is landed" alone that removal is
 // lossless.
 //
+// That guarantee is this function's, not git's: git worktree remove honours
+// status.showUntrackedFiles, so before this check existed an untracked-only
+// worktree could be deleted silently under `=no`.
+//
 // Ports remove-session-worktree.sh. Status goes to logw.
 func Remove(ctx context.Context, slug string, opt Options, logw io.Writer) error {
 	if !ValidSlug(slug) {
@@ -62,9 +66,11 @@ func Remove(ctx context.Context, slug string, opt Options, logw io.Writer) error
 		return err
 	}
 	if containsPath(paths, worktreePath) {
-		// Safety: block on a dirty working tree unless forced. git refuses this
-		// too, but its message arrives as an opaque exit 128; checking first
-		// lets us name the files and exit ExitDirty like the unlanded path.
+		// Safety: block on a dirty working tree unless forced. This is the
+		// authoritative check, not a friendlier wrapper around git's: git's own
+		// refusal honours status.showUntrackedFiles, so under `=no` it deletes
+		// an untracked-only worktree silently with exit 0. StatusPorcelain
+		// overrides that, and reports the paths so the message can name them.
 		if !opt.Force {
 			dirty, err := gitx.StatusPorcelain(ctx, worktreePath)
 			if err != nil {

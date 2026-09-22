@@ -181,6 +181,10 @@ Refuses (exit 2) in two independent cases, both of which --force overrides:
 
 Both list what they found before exiting.
 
+The dirty check is cg's own, not a relay of git's: git worktree remove
+honours status.showUntrackedFiles, so with that set to "no" it deletes an
+untracked-only worktree silently. cg always looks for untracked files.
+
 A successful unforced removal is therefore positive evidence that the
 worktree was both landed and clean. "Landed" alone is not sufficient
 grounds to remove a worktree, and this command does not treat it as such.
