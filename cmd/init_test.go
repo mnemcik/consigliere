@@ -311,7 +311,10 @@ func TestInitSeedsManifest(t *testing.T) {
 // mtimes), so the seeded .gitignore must keep them out of history.
 func TestInitGitignoreExcludesSessionContext(t *testing.T) {
 	dir := t.TempDir()
-	origDir, _ := os.Getwd()
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
 	defer chdir(t, origDir)
 	chdir(t, dir)
 
