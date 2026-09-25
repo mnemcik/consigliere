@@ -6,6 +6,7 @@
 package session
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -73,7 +74,11 @@ func WriteContext(root, sessionID, area, project string) error {
 	data, err := os.ReadFile(path)
 	switch {
 	case err == nil:
-		if err := json.Unmarshal(data, &m); err != nil {
+		// UseNumber keeps numeric fields written by other tools exact instead
+		// of round-tripping them through float64.
+		dec := json.NewDecoder(bytes.NewReader(data))
+		dec.UseNumber()
+		if err := dec.Decode(&m); err != nil {
 			return err
 		}
 		if m == nil {

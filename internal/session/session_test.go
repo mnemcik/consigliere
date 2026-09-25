@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -102,7 +103,7 @@ func TestWriteContext(t *testing.T) {
 	}
 
 	// Existing file → area/project replaced, dirty and unknown fields preserved.
-	writeCtx(t, root, "s2", `{"area":"old","project":"old","dirty":true,"note":"keep me"}`)
+	writeCtx(t, root, "s2", `{"area":"old","project":"old","dirty":true,"note":"keep me","big":9007199254740993}`)
 	if err := WriteContext(root, "s2", "new-area", "new-project"); err != nil {
 		t.Fatal(err)
 	}
@@ -116,6 +117,9 @@ func TestWriteContext(t *testing.T) {
 	}
 	if m["dirty"] != true || m["note"] != "keep me" {
 		t.Errorf("existing fields not preserved: %+v", m)
+	}
+	if !strings.Contains(string(data), `"big": 9007199254740993`) {
+		t.Errorf("large integer not preserved exactly:\n%s", data)
 	}
 }
 
