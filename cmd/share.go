@@ -20,7 +20,7 @@ import (
 func init() {
 	shareExportCmd.Flags().String("out", "", "directory to write the export to (must not exist or be empty)")
 	shareExportCmd.Flags().StringSlice("include", nil, "extra file in the project folder to export (repeatable)")
-	shareExportCmd.Flags().String("owner", "", "owner display name for the mirror header (default: git user.name)")
+	shareExportCmd.Flags().String("owner", "", "owner display name for the mirror header (default: the share block's owner, else git user.name)")
 	shareExportCmd.Flags().Bool("check", false, "render and scan only: report findings, write nothing")
 	shareExportCmd.Flags().StringSlice("ack", nil, "acknowledge a finding judged safe, as rule:hash from the report (repeatable)")
 	shareExportCmd.Flags().String("audience", "", "render as shared with this audience from the .cg.json share block")
@@ -51,7 +51,9 @@ The rendered output is scanned for credentials (token formats, private keys,
 JWTs, high-entropy assignments), local paths, op:// references and leftover
 template placeholders. Any finding stops the export before anything is
 written. Resolve a finding by fixing the source, wrapping the passage in
-exclusion markers, or, for a false positive, passing --ack rule:hash.
+exclusion markers, or, for a false positive, passing --ack rule:hash (record
+it in the project's "acknowledged" entry in .cg.json to unblock status and
+publish, which take no --ack).
 --check runs the scan without writing.
 
 The share block in .cg.json supplies the owner and the denylist. With
@@ -485,5 +487,5 @@ func printFindings(w io.Writer, findings []share.Finding) {
 	for _, f := range findings {
 		_, _ = fmt.Fprintf(w, "  %s:%d  %-22s %s  [ack: %s:%s]\n", f.File, f.Line, f.Rule, f.Match, f.Rule, f.Hash)
 	}
-	_, _ = fmt.Fprintln(w, "Fix the source, exclude the passage with share:exclude markers, or --ack a false positive.")
+	_, _ = fmt.Fprintln(w, "Fix the source, exclude the passage with share:exclude markers, or acknowledge a false positive:\n--ack rule:hash for this export, or the project's \"acknowledged\" entry in .cg.json to unblock publish.")
 }

@@ -125,7 +125,8 @@ the stamped source commit always describes exactly what was exported.
   authoritative source: Status and Areas, plus Started, Output type and Origin
   from the README. Origin survives only when it is external (a ticket key or
   URL). Priority, Repository and every other field are dropped.
-- **`[You]`** is replaced with the owner: `--owner`, else git `user.name`.
+- **`[You]`** is replaced with the owner: `--owner`, else the `share` block's
+  `owner`, else git `user.name`.
 
 ### Links
 
@@ -171,7 +172,7 @@ stops the export before anything is written.**
 | `local-path` | paths naming a user account: `/Users/<name>/…`, `/home/<name>/…` (also after `file://` or in a `PATH`-style list), `C:\Users\<name>` or `C:/Users/<name>` (any case) |
 | `vault-reference` | 1Password references `op://<vault>/<item>…` |
 | `placeholder` | leftover template placeholders such as `{Project Title}`, and `[You]` |
-| `denylist` | owner-defined terms (customer names, codenames); configured with the planned `share` block |
+| `denylist` | owner-defined terms (customer names, codenames), from the `share` block's `denylist` |
 
 The rules match values, not words: *"send the client_id/secret via API
 management"* describes a credential without containing one, and passes.
@@ -186,7 +187,9 @@ File names are scanned too, and a finding in one is reported as line 0.
 
 Resolve each finding by fixing the source, wrapping the passage in exclusion
 markers, or, for a false positive, acknowledging it with the `rule:hash` the
-report prints:
+report prints. `--ack` on the command line affects only that export; to
+unblock `cg share status` and `cg share publish`, record the acknowledgement
+under `audiences.<name>.projects.<slug>.acknowledged` in the `share` block:
 
 ```
 cg share export my-project --check --ack local-path:6c54c54b471a3e54
@@ -199,9 +202,18 @@ another. A `private-key` finding cannot be acknowledged: only the key's header
 line is matched, so acknowledging it would let the key body through.
 
 No pattern can judge whether prose is sensitive, such as a colleague's name in
-meeting notes. That is covered by `log.md` being opt-in and, once publishing
-lands, by requiring the owner to review the full content on the first publish
-to each audience.
+meeting notes. That is covered by `log.md` being opt-in, and by the owner
+reviewing the full staged content before the first publish of each project to
+an audience (see `cg share publish`). Later changes to an already-published
+project get only a `[y/N]` confirmation, and existing files can gain new
+sensitive prose just as a newly included file can. Before confirming a
+republish, review what changed in the source since the last publish with
+`git diff <published commit> -- projects/<slug>` (`cg share status` prints the
+published commit; every file shows as changed on a republish because its
+header names the source commit, so the source diff is what matters). Read any
+added file in full by rendering the project with
+`cg share export <slug> --audience <name> --out <dir>`, which is exactly what
+the publish would push.
 
 ## `cg share publish`
 
@@ -243,21 +255,23 @@ to its share repo. For each audience:
    - The first publish of a project to an audience, or one that replaces
      content cg did not write, must be confirmed **at an interactive terminal**
      by typing the audience name. Review the staged copy first. `--yes` is
-     refused for it. When Claude drives the session, run it yourself with
-     `! cg share publish <name>`.
+     refused for it. When Claude drives the session, run it yourself in a
+     separate terminal of your own, not through Claude: the prompt needs a
+     real terminal on stdin.
    - Later publishes ask `[y/N]`, or accept `--yes`.
    - `--dry-run` stops before committing.
 7. **Commit and push.** The commit is authored by the audience's
-   `authorName`/`authorEmail`, else this workspace's git identity, and carries
+   `authorName`/`authorEmail`, else this workspace's `user.name`/`user.email`
+   (the name falls back to the owner; a missing email is refused), and carries
    the `Cg-Share-Publish` trailer. Your global git hooks and commit signing do
    not run in cg's clone: a hook could drop the trailer (which would lock you
    out of the next publish) or block the push, and signing could prompt. A
    share repo that requires signed commits cannot be published to yet. A
    global gitignore does not affect what is published, and the staged tree is
    checked against the rendered files before anything is committed. Ctrl-C at
-   the prompt cancels cleanly and removes the staged copy. The push is fast-forward only: if someone
-   published meanwhile, it is rejected, and you run `cg share status` and
-   retry.
+   the prompt cancels cleanly and removes the staged copy. The push is
+   fast-forward only: if someone published meanwhile, it is rejected, and you
+   run `cg share status` and retry.
 
 ## `cg share status`
 
@@ -277,7 +291,7 @@ shared project and compares it with the share repo's manifest
 | `blocked` | open scan findings; run `cg share export <slug> --audience <name> --check` |
 | `error` | the export cannot run, e.g. uncommitted changes in the project |
 | `removed` | published, but no longer in the config; the next publish deletes it |
-| `unknown` | the share repo could not be read (the error is shown) |
+| `unknown` | the share repo could not be read, or holds another audience's copy (the reason is shown); a project that is `blocked` or `error` shows that instead |
 
 Staleness compares a hash of the rendered content, not only the source
 commit, so an edit that lives outside the project folder (a status change in
@@ -285,7 +299,25 @@ commit, so an edit that lives outside the project folder (a status change in
 branch, reads as nothing published. Only the branch tip is fetched, git never
 prompts (credential prompts are disabled, and ssh runs in batch mode unless
 you have set your own `GIT_SSH_COMMAND`, `GIT_SSH` or `core.sshCommand`), and
-each read times out after 60 seconds: an unreachable or unauthorised repo reads as
-`unknown` with the error shown. Credentials embedded in a repo URL are
-redacted from all output. A manifest written for a different audience
-is not compared against.
+each read times out after 60 seconds: an unreachable or unauthorised repo
+reads as `unknown` with the error shown. Credentials embedded in a repo URL
+are redacted from all output. A manifest written for a different audience is
+not compared against.
+
+## When a publish is refused
+
+| Message | What it means | What to do |
+|---|---|---|
+| `uncommitted changes under …` | the project folder or index has uncommitted edits, so the stamp would lie | commit them, then publish |
+| `… open finding(s)` | the scan found something in a shared project | `cg share export <slug> --audience <name> --check`, then fix the source, exclude the passage, or record an acknowledgement under `audiences.<name>.projects.<slug>.acknowledged` (a command-line `--ack` does not reach publish) |
+| `… a separate repo` | the share repo shares history with this workspace | point the audience at a new, separate repo |
+| `… shallow clone …` | the workspace's real history is unknown | `git fetch --unshallow`, then publish |
+| `… commits cg did not make …` | someone changed the share repo after the last publish | resolve it in the share repo; cg never force-pushes |
+| `… another audience` | the branch holds a different audience's copy | give each audience its own repo or branch |
+| `… was rejected …` | someone published between cg's read and push | `cg share status`, then publish again |
+| `a first publish must be confirmed at an interactive terminal` | the first publish needs a person at a real terminal | run `cg share publish <name>` yourself, in your own terminal |
+| `--yes is refused for a first publish` | a first publish always needs the typed confirmation | run it without `--yes`, in your own terminal |
+| `not an interactive terminal; pass --yes to confirm this republish` | a republish needs a confirmation | confirm at a terminal, or pass `--yes`, and only on the owner's explicit go-ahead |
+| `no author email for the publish commit` | no `authorEmail` and no workspace `user.email` | the owner sets `authorEmail` on the audience, or git `user.email` in the workspace |
+| `… newer than this cg understands` | the share repo was published by a newer cg | update cg |
+| `… has no row in the project index` | the shared project is not in `projects/TODO.md` | add it to the index, or remove it from the audience |
