@@ -63,24 +63,38 @@ func TestScanTruePositives(t *testing.T) {
 // one, or are conventional paths and syntax that identify nobody.
 func TestScanTrueNegatives(t *testing.T) {
 	for name, line := range map[string]string{
-		"pilot handoff line": "provide staging URL/curl + Visma Connect client_id/secret via API management; schedule follow-up",
-		"prose secret":       "the secret: stored in the vault, never in the repo",
-		"placeholder value":  "API_KEY=<your-key-here>",
-		"env reference":      "token=${GITHUB_TOKEN}",
-		"low-entropy value":  "token=aaaaaaaaaaaaaaaa1",
-		"tilde path":         "edit ~/.claude/settings.json and ~/source/repo",
-		"ellipsis user path": "paths like /Users/… are private",
-		"op syntax mention":  "use op://... references, the op:// syntax",
-		"api path param":     "GET /sets/{setId}/parameters/{paramKey}",
-		"double-brace tmpl":  "Your request for {{Rejection reason}} was declined",
-		"git sha":            "merged as 30e43b8f2c1d",
-		"web route users":    "GET /Users/me returns the profile",
-		"web route home":     "redirects to /home/dashboard",
-		"resource path":      "secret: projects/idella-prod/secrets/db-2024",
-		"url placeholder":    "postgres://user:pass@localhost/app",
-		"url env password":   "postgres://app:${DB_PASSWORD}@db/app",
-		"bearer placeholder": "Authorization: Bearer <token>",
-		"bearer challenge":   `WWW-Authenticate: Bearer authorization_uri="https://login.example.com/x"`,
+		"pilot handoff line":      "provide staging URL/curl + Visma Connect client_id/secret via API management; schedule follow-up",
+		"prose secret":            "the secret: stored in the vault, never in the repo",
+		"placeholder value":       "API_KEY=<your-key-here>",
+		"env reference":           "token=${GITHUB_TOKEN}",
+		"low-entropy value":       "token=aaaaaaaaaaaaaaaa1",
+		"tilde path":              "edit ~/.claude/settings.json and ~/source/repo",
+		"ellipsis user path":      "paths like /Users/… are private",
+		"op syntax mention":       "use op://... references, the op:// syntax",
+		"api path param":          "GET /sets/{setId}/parameters/{paramKey}",
+		"double-brace tmpl":       "Your request for {{Rejection reason}} was declined",
+		"git sha":                 "merged as 30e43b8f2c1d",
+		"web route users":         "GET /Users/me returns the profile",
+		"web route home":          "redirects to /home/dashboard",
+		"resource path":           "secret: projects/idella-prod/secrets/db-2024",
+		"url placeholder":         "postgres://user:pass@localhost/app",
+		"url env password":        "postgres://app:${DB_PASSWORD}@db/app",
+		"bearer placeholder":      "Authorization: Bearer <token>",
+		"bearer challenge":        `WWW-Authenticate: Bearer authorization_uri="https://login.example.com/x"`,
+		"bearer placeholder word": "Authorization: Bearer YOUR_ACCESS_TOKEN_HERE",
+		"bearer prose":            "use Bearer authorization/authentication flows",
+		"assignee":                "assignee: jane.doe2@idella.com",
+		"monkey":                  "monkey=banana2024xyzQ",
+		"authority url":           "authority=https://login.microsoftonline.com/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0/v2.0",
+		"key vault uri":           "keyVaultUri=https://kv-idella-prod-01.vault.azure.net/",
+		"idempotency uuid":        "idempotency_key: 0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+		"primary key column":      "primary_key_column=customer_id2024x",
+		"compass":                 "compass_key=north2south",
+		"passport number":         "passport_number=AB1234567",
+		"asia word":               "ASIAPACIFICDATACENTER region",
+		"password placeholder":    "password=$DB_PASSWORD",
+		"windows env ref":         "password=%DB_PASSWORD%",
+		"api web route":           "GET /api/Users/me/settings",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got := scanOne(line, ScanOptions{}); len(got) != 0 {
@@ -211,5 +225,38 @@ func TestResultWriteRefusesFindings(t *testing.T) {
 	}
 	if _, err := os.Stat(out); !os.IsNotExist(err) {
 		t.Errorf("output directory was created despite findings")
+	}
+}
+
+func TestScanDedupesAcrossPatternRules(t *testing.T) {
+	for _, line := range []string{
+		"Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+		"Authorization: Bearer ghp_" + strings.Repeat("a1B2", 9),
+		"token: op://Employee/github-token2/credential",
+	} {
+		if got := scanOne(line, ScanOptions{}); len(got) != 1 {
+			t.Errorf("%q: want one finding, got %+v", line, got)
+		}
+	}
+}
+
+func TestScanChecksFileNames(t *testing.T) {
+	got := Scan(map[string]string{"p/ACME-notes.md": "nothing here\n"}, ScanOptions{Denylist: []string{"acme"}})
+	if len(got) != 1 || got[0].Line != 0 || got[0].Rule != RuleDenylist {
+		t.Fatalf("want a line-0 denylist finding for the file name, got %+v", got)
+	}
+}
+
+func TestCredentialKind(t *testing.T) {
+	for name, want := range map[string]int{
+		"SMTP_PASS": kindPassword, "PGPASSWORD": kindPassword, "db-passwd": kindPassword,
+		"clientSecret": kindSecret, "AZURE_CLIENT_SECRET": kindSecret, "auth_token": kindSecret, "sig": kindSecret,
+		"api_key": kindKey, "Ocp-Apim-Subscription-Key": kindKey,
+		"compass": kindNone, "assignee": kindNone, "authority": kindNone, "passport_number": kindNone,
+		"primary_key_column": kindNone, "keyVaultUri": kindNone, "monkey": kindNone,
+	} {
+		if got := credentialKind(name); got != want {
+			t.Errorf("credentialKind(%q) = %d, want %d", name, got, want)
+		}
 	}
 }

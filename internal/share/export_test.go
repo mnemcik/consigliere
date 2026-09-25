@@ -178,17 +178,17 @@ func TestExportRejectsBadSlug(t *testing.T) {
 	}
 }
 
-func TestWriteTo(t *testing.T) {
+func TestWriteFiles(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "out")
 	files := map[string]string{"pilot/README.md": "r\n", "pilot/decisions.md": "d\n"}
-	if err := WriteTo(out, files); err != nil {
-		t.Fatalf("WriteTo: %v", err)
+	if err := writeFiles(out, files); err != nil {
+		t.Fatalf("writeFiles: %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(out, "pilot", "README.md"))
 	if err != nil || string(data) != "r\n" {
 		t.Fatalf("README not written: %q %v", data, err)
 	}
-	if err := WriteTo(out, files); err == nil || !strings.Contains(err.Error(), "not empty") {
+	if err := writeFiles(out, files); err == nil || !strings.Contains(err.Error(), "not empty") {
 		t.Errorf("want not-empty error on a second write, got %v", err)
 	}
 }

@@ -191,12 +191,12 @@ func (r *Result) Write(out string) error {
 	if len(r.Findings) > 0 {
 		return fmt.Errorf("%d open scan finding(s); refusing to write the export", len(r.Findings))
 	}
-	return WriteTo(out, r.Files)
+	return writeFiles(out, r.Files)
 }
 
-// WriteTo writes rendered files under out, which must not exist yet or be an
+// writeFiles writes rendered files under out, which must not exist yet or be an
 // empty directory, so an export never overwrites or mixes with existing files.
-func WriteTo(out string, files map[string]string) error {
+func writeFiles(out string, files map[string]string) error {
 	entries, err := os.ReadDir(out)
 	switch {
 	case err == nil && len(entries) > 0:

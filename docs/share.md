@@ -90,12 +90,12 @@ stops the export before anything is written.**
 
 | Rule | Matches |
 |---|---|
-| `token` | GitHub, GitLab, Slack, AWS (incl. STS), Stripe, Google, npm and `sk-` key formats; Slack webhook URLs; `Bearer <token>` |
-| `url-credential` | a password embedded in a URL (`scheme://user:<password>@host`) |
+| `token` | GitHub, GitLab, Slack, AWS (incl. STS), Stripe, Google, npm and `sk-` key formats; Slack webhook URLs; `Bearer <token>`; `Basic <base64 user:pass>` |
+| `url-credential` | a password in a URL (`scheme://user:<password>@host`, including an empty user and an `@` inside the password) or in `curl -u user:<password>` |
 | `private-key` | `-----BEGIN … PRIVATE KEY-----`, including PGP key blocks |
 | `jwt` | three-part `eyJ…` tokens |
-| `credential-assignment` | a credential-named key assigned a value, including prefixed names (`GITHUB_TOKEN=`, `db_password:`, `AZURE_CLIENT_SECRET=`, SAS `sig=`). Password keys count any value mixing letters and digits; other keys need a high-entropy value. Placeholders (`<your-key>`, `${VAR}`, `***`) and lowercase resource paths never count |
-| `local-path` | paths naming a user account: `/Users/<name>/…`, `/home/<name>/…`, `C:\Users\<name>` (any case) |
+| `credential-assignment` | a credential-named key assigned a value (`name=`, `name:`), and `--password <value>`. Names are judged by their segments, split on `_`, `-` and camelCase: `SMTP_PASS`, `PGPASSWORD`, `clientSecret`, `auth_token`, SAS `sig`, and a trailing `key` (`Ocp-Apim-Subscription-Key`) count; `compass`, `assignee`, `authority` and `primary_key_column` do not. A password counts when it is 8+ characters mixing letters and digits, and runs to whitespace or a quote. Other values need 12+ characters mixing letters and digits, and either hex or entropy scaled to their length. Placeholders (`<your-key>`, `${VAR}`, `$VAR`, `%VAR%`, `***`, `...`), URLs, lowercase resource paths and, for a bare `key`, UUIDs never count |
+| `local-path` | paths naming a user account: `/Users/<name>/…`, `/home/<name>/…` (also after `file://` or in a `PATH`-style list), `C:\Users\<name>` or `C:/Users/<name>` (any case) |
 | `vault-reference` | 1Password references `op://<vault>/<item>…` |
 | `placeholder` | leftover template placeholders such as `{Project Title}`, and `[You]` |
 | `denylist` | owner-defined terms (customer names, codenames); configured with the planned `share` block |
@@ -109,6 +109,7 @@ Reports reach terminals and AI transcripts, so a secret's value is never
 printed: a token shows only its public prefix (`ghp_…(40 chars)`), a password
 or other value only its length (`***(17 chars)`). Other matches are cut to a
 readable length. One value is reported once, even when two rules match it.
+File names are scanned too, and a finding in one is reported as line 0.
 
 Resolve each finding by fixing the source, wrapping the passage in exclusion
 markers, or, for a false positive, acknowledging it with the `rule:hash` the
