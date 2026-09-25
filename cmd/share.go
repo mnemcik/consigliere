@@ -20,7 +20,7 @@ import (
 func init() {
 	shareExportCmd.Flags().String("out", "", "directory to write the export to (must not exist or be empty)")
 	shareExportCmd.Flags().StringSlice("include", nil, "extra file in the project folder to export (repeatable)")
-	shareExportCmd.Flags().String("owner", "", "owner display name for the mirror header (default: git user.name)")
+	shareExportCmd.Flags().String("owner", "", "owner display name for the mirror header (default: the share block's owner, else git user.name)")
 	shareExportCmd.Flags().Bool("check", false, "render and scan only: report findings, write nothing")
 	shareExportCmd.Flags().StringSlice("ack", nil, "acknowledge a finding judged safe, as rule:hash from the report (repeatable)")
 	shareExportCmd.Flags().String("audience", "", "render as shared with this audience from the .cg.json share block")

@@ -250,10 +250,11 @@ For any command that iterates over many entities (bulk permission changes, mass 
 
 For the per-step pre-flight, the default exclusion set, the shell-splitting tells, and the reversibility carve-out, load [`notes/bulk-ops-preflight.md`](notes/bulk-ops-preflight.md).
 <!-- cg:section:end=bulk-ops-preflight -->
+
 <!-- cg:section:start=sharing-projects -->
 ## Sharing Projects Read-Only
 
-When the user asks to share, send, export or publish a project, or before running any `cg share` command or editing the `share` block in `.cg.json`, load [`notes/sharing-projects.md`](notes/sharing-projects.md). In short: never invent an audience, repo or recipient, and never create a share repo or grant access; resolve scan findings with the owner and never paste a secret's value; the first publish is the owner's to run at their terminal (`! cg share publish <audience>`), and any republish needs their explicit go-ahead.
+When the user asks to share, send, export or publish a project, or before running any `cg share` command or editing the `share` block in `.cg.json`, load [`notes/sharing-projects.md`](notes/sharing-projects.md). In short: never invent an audience, repo or recipient, and never create a share repo or grant access; resolve scan findings with the owner and never paste a secret's value; the owner runs the first publish in their own terminal, not through Claude, and any republish needs their explicit go-ahead.
 <!-- cg:section:end=sharing-projects -->
 
 <!-- cg:section:start=continuous-improvement -->

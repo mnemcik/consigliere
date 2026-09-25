@@ -201,8 +201,10 @@ line is matched, so acknowledging it would let the key body through.
 
 No pattern can judge whether prose is sensitive, such as a colleague's name in
 meeting notes. That is covered by `log.md` being opt-in, and by the owner
-reviewing the full staged content before the first publish to each audience
-(see `cg share publish`).
+reviewing the full staged content before the first publish of each project to
+an audience (see `cg share publish`). Later changes to an already-published
+project, a newly included file among them, get only a `[y/N]` confirmation, so
+review the staged copy yourself when the summary shows added files.
 
 ## `cg share publish`
 
@@ -244,12 +246,14 @@ to its share repo. For each audience:
    - The first publish of a project to an audience, or one that replaces
      content cg did not write, must be confirmed **at an interactive terminal**
      by typing the audience name. Review the staged copy first. `--yes` is
-     refused for it. When Claude drives the session, run it yourself with
-     `! cg share publish <name>`.
+     refused for it. When Claude drives the session, run it yourself in a
+     separate terminal of your own, not through Claude: the prompt needs a
+     real terminal on stdin.
    - Later publishes ask `[y/N]`, or accept `--yes`.
    - `--dry-run` stops before committing.
 7. **Commit and push.** The commit is authored by the audience's
-   `authorName`/`authorEmail`, else this workspace's git identity, and carries
+   `authorName`/`authorEmail`, else this workspace's `user.name`/`user.email`
+   (the name falls back to the owner; a missing email is refused), and carries
    the `Cg-Share-Publish` trailer. Your global git hooks and commit signing do
    not run in cg's clone: a hook could drop the trailer (which would lock you
    out of the next publish) or block the push, and signing could prompt. A
@@ -278,7 +282,7 @@ shared project and compares it with the share repo's manifest
 | `blocked` | open scan findings; run `cg share export <slug> --audience <name> --check` |
 | `error` | the export cannot run, e.g. uncommitted changes in the project |
 | `removed` | published, but no longer in the config; the next publish deletes it |
-| `unknown` | the share repo could not be read (the error is shown) |
+| `unknown` | the share repo could not be read (the error is shown); a project that is `blocked` or `error` shows that instead |
 
 Staleness compares a hash of the rendered content, not only the source
 commit, so an edit that lives outside the project folder (a status change in
@@ -302,4 +306,9 @@ not compared against.
 | `… commits cg did not make …` | someone changed the share repo after the last publish | resolve it in the share repo; cg never force-pushes |
 | `… another audience` | the branch holds a different audience's copy | give each audience its own repo or branch |
 | `… was rejected …` | someone published between cg's read and push | `cg share status`, then publish again |
-| `a first publish must be confirmed at an interactive terminal` | the first publish needs a person | run `cg share publish <name>` yourself |
+| `a first publish must be confirmed at an interactive terminal` | the first publish needs a person at a real terminal | run `cg share publish <name>` yourself, in your own terminal |
+| `--yes is refused for a first publish` | a first publish always needs the typed confirmation | run it without `--yes`, in your own terminal |
+| `not an interactive terminal; pass --yes to confirm this republish` | a republish needs a confirmation | confirm at a terminal, or pass `--yes`, and only on the owner's explicit go-ahead |
+| `no author email for the publish commit` | no `authorEmail` and no workspace `user.email` | set `authorEmail` on the audience, or git `user.email` in the workspace |
+| `… newer than this cg understands` | the share repo was published by a newer cg | update cg |
+| `… has no row in the project index` | the shared project is not in `projects/TODO.md` | add it to the index, or remove it from the audience |
