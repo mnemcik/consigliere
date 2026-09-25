@@ -11,11 +11,52 @@ no per-path read permission. `cg share` therefore exports one project at a
 time, keeps only what was meant to leave, and stamps the result as a mirror of
 the owner's copy.
 
-Status: `cg share export` (render + scan) is available. Publishing to a share
-repo per audience (`cg share publish`, `cg share status`, and the `share` block
-in `.cg.json`) is planned.
+Status: `cg share export` (render + scan), the `share` block in `.cg.json`
+and `cg share status` are available. Publishing to the share repo
+(`cg share publish`) is planned; until then a share repo is only read.
 
-## `cg share export`
+## Configuration: the `share` block
+
+Sharing is configured in `.cg.json`. The block holds no state: what has been
+published is read from each share repo, never stored in the workspace.
+
+```json
+"share": {
+  "owner": "Ada Owner",
+  "denylist": ["acme corp", "project-bluebird"],
+  "audiences": {
+    "prdcfg-team": {
+      "repo": "git@github.com:<org>/<share-repo>.git",
+      "branch": "main",
+      "authorName": "Ada Owner",
+      "authorEmail": "ada@example.com",
+      "projects": {
+        "product-config-api": {
+          "include": ["value-serialization-analysis.md"],
+          "acknowledged": [{ "rule": "local-path", "hash": "6c54c54b471a3e54" }]
+        },
+        "product-config-ui": {}
+      }
+    }
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `owner` | Display name in the mirror header; `--owner` overrides it, git `user.name` is the fallback. |
+| `denylist` | Terms that must never leave, matched case-insensitively in every export, with or without an audience. |
+| `audiences.<name>` | One set of recipients. Names are lowercase letters, digits, `.`, `_` and `-`. |
+| `repo`, `branch` | The share repo cg owns, and the branch published to (default `main`). |
+| `authorName`, `authorEmail` | Author of publish commits, e.g. a work identity on a machine whose global git identity is personal. |
+| `projects.<slug>.include` | Files beyond the default allowlist, as `--include`. |
+| `projects.<slug>.acknowledged` | Findings judged safe, as `--ack`; copy `rule` and `hash` from the report. |
+
+A malformed block (an audience without a repo or projects, a bad name, an
+incomplete acknowledgement) is an error for every `cg share` command, so a
+typo never silently shares less or more than meant. `.cg.json` itself never
+leaves the workspace: it is not in any project folder.
+
 
 ```
 cg share export <slug> --out <dir> [--include <file>]... [--owner <name>] [--ack <rule:hash>]...
@@ -24,6 +65,11 @@ cg share export <slug> --check [--include <file>]... [--ack <rule:hash>]...
 
 Renders `projects/<slug>/` into `<dir>/<slug>/`. `<dir>` must not exist or must
 be empty. `--check` renders and scans without writing anything.
+
+`--audience <name>` renders the project as shared with that audience: the
+project must be one it shares, its `include` and `acknowledged` entries are
+merged with the flags, and links to the audience's other projects are
+rewritten to their published copies instead of being de-linked.
 
 The project folder and the project index must have no uncommitted changes, so
 the stamped source commit always describes exactly what was exported.
@@ -129,3 +175,28 @@ No pattern can judge whether prose is sensitive, such as a colleague's name in
 meeting notes. That is covered by `log.md` being opt-in and, once publishing
 lands, by requiring the owner to review the full content on the first publish
 to each audience.
+
+## `cg share status`
+
+```
+cg share status [<audience>]
+```
+
+Read-only. For every audience (or the one named), renders and scans each
+shared project and compares it with the share repo's manifest
+(`.cg-share.json` on the audience's branch):
+
+| State | Meaning |
+|---|---|
+| `up to date` | the published copy matches what would be published now |
+| `stale` | the next publish would change it |
+| `not published` | the audience shares it, the share repo does not have it yet |
+| `blocked` | open scan findings; run `cg share export <slug> --audience <name> --check` |
+| `error` | the export cannot run, e.g. uncommitted changes in the project |
+| `removed` | published, but no longer in the config; the next publish deletes it |
+| `unknown` | the share repo could not be read (the error is shown) |
+
+Staleness compares a hash of the rendered content, not only the source
+commit, so an edit that lives outside the project folder (a status change in
+`projects/TODO.md`) still counts. An empty share repo, or one without the
+branch, reads as nothing published.

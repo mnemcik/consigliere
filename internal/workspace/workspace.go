@@ -55,6 +55,10 @@ type Config struct {
 	// unambiguous; there is no bare-name resolution and no first-match search.
 	// `cg init` seeds the public registry under the "cg" alias.
 	Registries map[string]string `json:"registries,omitempty"`
+
+	// v1.4 additive block: read-only project sharing. Nil means nothing is
+	// shared. See ShareConfig and docs/share.md.
+	Share *ShareConfig `json:"share,omitempty"`
 }
 
 // ExtensionRef records an installed extension in .cg.json (schema v1.2). The

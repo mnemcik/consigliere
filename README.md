@@ -132,6 +132,7 @@ The CLAUDE.md rules instruct AI assistants to:
 | `cg update check` | 🔎 Check whether a newer `cg` release is available |
 | `cg update upgrade` | ⬆️ Download, verify, and install the latest release in place |
 | `cg share export <slug> --out <dir>` | 📤 Render a project into a read-only copy that can leave the workspace, after a confidentiality scan ([docs](docs/share.md)) |
+| `cg share status [<audience>]` | 🔭 Compare each shared project with what its audience's share repo holds ([docs](docs/share.md)) |
 
 ### Examples
 

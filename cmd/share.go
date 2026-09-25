@@ -19,7 +19,9 @@ func init() {
 	shareExportCmd.Flags().String("owner", "", "owner display name for the mirror header (default: git user.name)")
 	shareExportCmd.Flags().Bool("check", false, "render and scan only: report findings, write nothing")
 	shareExportCmd.Flags().StringSlice("ack", nil, "acknowledge a finding judged safe, as rule:hash from the report (repeatable)")
+	shareExportCmd.Flags().String("audience", "", "render as shared with this audience from the .cg.json share block")
 	shareCmd.AddCommand(shareExportCmd)
+	shareCmd.AddCommand(shareStatusCmd)
 	rootCmd.AddCommand(shareCmd)
 }
 
@@ -46,7 +48,12 @@ JWTs, high-entropy assignments), local paths, op:// references and leftover
 template placeholders. Any finding stops the export before anything is
 written. Resolve a finding by fixing the source, wrapping the passage in
 exclusion markers, or, for a false positive, passing --ack rule:hash.
---check runs the scan without writing.`,
+--check runs the scan without writing.
+
+The share block in .cg.json supplies the owner and the denylist. With
+--audience, that audience's per-project include and acknowledged entries are
+merged with the flags, and links to the other projects shared with the same
+audience are kept instead of de-linked.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runShareExport,
 }
@@ -59,6 +66,7 @@ func runShareExport(cmd *cobra.Command, args []string) error {
 	owner, _ := cmd.Flags().GetString("owner")
 	check, _ := cmd.Flags().GetBool("check")
 	ackFlags, _ := cmd.Flags().GetStringSlice("ack")
+	audience, _ := cmd.Flags().GetString("audience")
 	if out == "" && !check {
 		return fmt.Errorf("--out is required unless --check is given")
 	}
@@ -67,34 +75,15 @@ func runShareExport(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	root, err := workspaceRoot(cmd)
+	env, err := loadShareEnv(cmd)
 	if err != nil {
 		return err
 	}
-	cfg, err := workspace.Detect(root)
+	opts, err := env.exportOptions(slug, audience, include, acks, owner)
 	if err != nil {
 		return err
 	}
-	indexPath := indexProjectsPath
-	if cfg != nil {
-		if p, ok := cfg.Indexes[dirProjects]; ok {
-			indexPath = p
-		}
-	}
-
-	project, err := indexedProject(filepath.Join(root, filepath.FromSlash(indexPath)), slug)
-	if err != nil {
-		return err
-	}
-
-	res, err := share.Export(cmd.Context(), &share.Options{
-		Root:      root,
-		Project:   project,
-		IndexPath: filepath.ToSlash(indexPath),
-		Include:   include,
-		Owner:     owner,
-		Scan:      share.ScanOptions{Acknowledged: acks},
-	})
+	res, err := share.Export(cmd.Context(), opts)
 	if err != nil {
 		return err
 	}
@@ -121,6 +110,203 @@ func runShareExport(cmd *cobra.Command, args []string) error {
 		_, _ = fmt.Fprintf(w, "  %s\n", filepath.Join(out, filepath.FromSlash(p)))
 	}
 	return nil
+}
+
+// shareEnv is the workspace context every share command needs.
+type shareEnv struct {
+	root      string
+	indexPath string // workspace-relative, slash-separated
+	share     *workspace.ShareConfig
+}
+
+func loadShareEnv(cmd *cobra.Command) (*shareEnv, error) {
+	root, err := workspaceRoot(cmd)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := workspace.Detect(root)
+	if err != nil {
+		return nil, err
+	}
+	env := &shareEnv{root: root, indexPath: indexProjectsPath}
+	if cfg != nil {
+		if p, ok := cfg.Indexes[dirProjects]; ok {
+			env.indexPath = filepath.ToSlash(p)
+		}
+		if err := cfg.Share.Validate(); err != nil {
+			return nil, err
+		}
+		env.share = cfg.Share
+	}
+	return env, nil
+}
+
+// exportOptions merges the share block with the command-line overrides. The
+// owner flag wins over the configured owner; includes and acknowledgements
+// are the union of both; the denylist always applies. With an audience, the
+// project must be one it shares, and the audience's other projects become
+// link targets.
+func (e *shareEnv) exportOptions(slug, audience string, include []string, acks []share.Ack, owner string) (*share.Options, error) {
+	project, err := indexedProject(filepath.Join(e.root, filepath.FromSlash(e.indexPath)), slug)
+	if err != nil {
+		return nil, err
+	}
+	opts := &share.Options{
+		Root:      e.root,
+		Project:   project,
+		IndexPath: e.indexPath,
+		Include:   include,
+		Owner:     owner,
+		Scan:      share.ScanOptions{Acknowledged: acks},
+	}
+	if e.share != nil {
+		if opts.Owner == "" {
+			opts.Owner = e.share.Owner
+		}
+		opts.Scan.Denylist = e.share.Denylist
+	}
+	if audience == "" {
+		return opts, nil
+	}
+
+	a, ok := e.audience(audience)
+	if !ok {
+		return nil, fmt.Errorf("audience %q is not in the .cg.json share block", audience)
+	}
+	p, ok := a.Projects[slug]
+	if !ok {
+		return nil, fmt.Errorf("audience %q does not share project %q", audience, slug)
+	}
+	opts.Include = append(append([]string(nil), p.Include...), include...)
+	for _, ack := range p.Acknowledged {
+		opts.Scan.Acknowledged = append(opts.Scan.Acknowledged, share.Ack{Rule: ack.Rule, Hash: ack.Hash})
+	}
+	opts.Shared = map[string]string{}
+	for _, other := range a.ProjectSlugs() {
+		if other == slug {
+			continue
+		}
+		dir := filepath.Join(e.root, dirProjects, other)
+		names, err := share.ExportedNames(dir, a.Projects[other].Include)
+		if err != nil {
+			return nil, fmt.Errorf("audience %q, project %q: %w", audience, other, err)
+		}
+		for _, n := range names {
+			opts.Shared[dirProjects+"/"+other+"/"+n] = other + "/" + n
+		}
+	}
+	return opts, nil
+}
+
+func (e *shareEnv) audience(name string) (workspace.ShareAudience, bool) {
+	if e.share == nil {
+		return workspace.ShareAudience{}, false
+	}
+	a, ok := e.share.Audiences[name]
+	return a, ok
+}
+
+var shareStatusCmd = &cobra.Command{
+	Use:   "status [<audience>]",
+	Short: "Show what each audience has, against what it would get now",
+	Long: `For every audience in the .cg.json share block (or just the one named),
+render each shared project, scan it, and compare it with the copy recorded in
+the share repo's manifest. Read-only: nothing is written or pushed.
+
+States: up to date, stale (the next publish would change it), not published,
+blocked (open scan findings), error (the export cannot run, e.g. uncommitted
+changes), and removed (published, but no longer in the config).`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runShareStatus,
+}
+
+func runShareStatus(cmd *cobra.Command, args []string) error {
+	cmd.SilenceUsage = true
+	env, err := loadShareEnv(cmd)
+	if err != nil {
+		return err
+	}
+	names := env.share.AudienceNames()
+	if len(args) == 1 {
+		if _, ok := env.audience(args[0]); !ok {
+			return fmt.Errorf("audience %q is not in the .cg.json share block", args[0])
+		}
+		names = []string{args[0]}
+	}
+	w := cmd.OutOrStdout()
+	if len(names) == 0 {
+		_, _ = fmt.Fprintln(w, "No audiences in the .cg.json share block; nothing is shared. See docs/share.md.")
+		return nil
+	}
+	for i, name := range names {
+		if i > 0 {
+			_, _ = fmt.Fprintln(w)
+		}
+		env.printAudienceStatus(cmd, w, name)
+	}
+	return nil
+}
+
+func (e *shareEnv) printAudienceStatus(cmd *cobra.Command, w io.Writer, name string) {
+	a, _ := e.audience(name)
+	_, _ = fmt.Fprintf(w, "%s → %s (%s)\n", name, a.Repo, a.BranchOrDefault())
+	manifest, err := share.ReadPublished(cmd.Context(), a.Repo, a.BranchOrDefault())
+	if err != nil {
+		_, _ = fmt.Fprintf(w, "  cannot read the share repo: %s\n", firstLine(err.Error()))
+	}
+	published := map[string]share.PublishedProject{}
+	if manifest != nil {
+		published = manifest.Projects
+	}
+
+	for _, slug := range a.ProjectSlugs() {
+		state, detail := e.projectStatus(cmd, name, slug, published, err == nil)
+		_, _ = fmt.Fprintf(w, "  %-32s %-16s %s\n", slug, state, detail)
+	}
+	var removed []string
+	for slug := range published {
+		if _, ok := a.Projects[slug]; !ok {
+			removed = append(removed, slug)
+		}
+	}
+	sort.Strings(removed)
+	for _, slug := range removed {
+		_, _ = fmt.Fprintf(w, "  %-32s %-16s %s\n", slug, "removed", "published, no longer in the config; the next publish deletes it")
+	}
+}
+
+func (e *shareEnv) projectStatus(cmd *cobra.Command, audience, slug string, published map[string]share.PublishedProject, repoRead bool) (state, detail string) {
+	opts, err := e.exportOptions(slug, audience, nil, nil, "")
+	if err != nil {
+		return "error", firstLine(err.Error())
+	}
+	res, err := share.Export(cmd.Context(), opts)
+	if err != nil {
+		return "error", firstLine(err.Error())
+	}
+	current := fmt.Sprintf("current %.12s (%s)", res.Stamp.SHA, res.Stamp.Date)
+	if n := len(res.Findings); n > 0 {
+		return "blocked", fmt.Sprintf("%d open finding(s); run cg share export %s --audience %s --check; %s", n, slug, audience, current)
+	}
+	if !repoRead {
+		return "unknown", current
+	}
+	p, ok := published[slug]
+	switch {
+	case !ok:
+		return "not published", current
+	case p.ContentHash == share.ContentHash(res.Files):
+		return "up to date", fmt.Sprintf("published %.12s (%s)", p.SourceCommit, p.SourceDate)
+	default:
+		return "stale", fmt.Sprintf("published %.12s (%s), %s", p.SourceCommit, p.SourceDate, current)
+	}
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // indexedProject looks the slug up in the project index, which is the
