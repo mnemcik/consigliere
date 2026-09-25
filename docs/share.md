@@ -125,7 +125,8 @@ the stamped source commit always describes exactly what was exported.
   authoritative source: Status and Areas, plus Started, Output type and Origin
   from the README. Origin survives only when it is external (a ticket key or
   URL). Priority, Repository and every other field are dropped.
-- **`[You]`** is replaced with the owner: `--owner`, else git `user.name`.
+- **`[You]`** is replaced with the owner: `--owner`, else the `share` block's
+  `owner`, else git `user.name`.
 
 ### Links
 
@@ -171,7 +172,7 @@ stops the export before anything is written.**
 | `local-path` | paths naming a user account: `/Users/<name>/…`, `/home/<name>/…` (also after `file://` or in a `PATH`-style list), `C:\Users\<name>` or `C:/Users/<name>` (any case) |
 | `vault-reference` | 1Password references `op://<vault>/<item>…` |
 | `placeholder` | leftover template placeholders such as `{Project Title}`, and `[You]` |
-| `denylist` | owner-defined terms (customer names, codenames); configured with the planned `share` block |
+| `denylist` | owner-defined terms (customer names, codenames), from the `share` block's `denylist` |
 
 The rules match values, not words: *"send the client_id/secret via API
 management"* describes a credential without containing one, and passes.
@@ -199,9 +200,9 @@ another. A `private-key` finding cannot be acknowledged: only the key's header
 line is matched, so acknowledging it would let the key body through.
 
 No pattern can judge whether prose is sensitive, such as a colleague's name in
-meeting notes. That is covered by `log.md` being opt-in and, once publishing
-lands, by requiring the owner to review the full content on the first publish
-to each audience.
+meeting notes. That is covered by `log.md` being opt-in, and by the owner
+reviewing the full staged content before the first publish to each audience
+(see `cg share publish`).
 
 ## `cg share publish`
 
@@ -255,9 +256,9 @@ to its share repo. For each audience:
    share repo that requires signed commits cannot be published to yet. A
    global gitignore does not affect what is published, and the staged tree is
    checked against the rendered files before anything is committed. Ctrl-C at
-   the prompt cancels cleanly and removes the staged copy. The push is fast-forward only: if someone
-   published meanwhile, it is rejected, and you run `cg share status` and
-   retry.
+   the prompt cancels cleanly and removes the staged copy. The push is
+   fast-forward only: if someone published meanwhile, it is rejected, and you
+   run `cg share status` and retry.
 
 ## `cg share status`
 
@@ -285,7 +286,20 @@ commit, so an edit that lives outside the project folder (a status change in
 branch, reads as nothing published. Only the branch tip is fetched, git never
 prompts (credential prompts are disabled, and ssh runs in batch mode unless
 you have set your own `GIT_SSH_COMMAND`, `GIT_SSH` or `core.sshCommand`), and
-each read times out after 60 seconds: an unreachable or unauthorised repo reads as
-`unknown` with the error shown. Credentials embedded in a repo URL are
-redacted from all output. A manifest written for a different audience
-is not compared against.
+each read times out after 60 seconds: an unreachable or unauthorised repo
+reads as `unknown` with the error shown. Credentials embedded in a repo URL
+are redacted from all output. A manifest written for a different audience is
+not compared against.
+
+## When a publish is refused
+
+| Message | What it means | What to do |
+|---|---|---|
+| `uncommitted changes under …` | the project folder or index has uncommitted edits, so the stamp would lie | commit them, then publish |
+| `… open finding(s)` | the scan found something in a shared project | `cg share export <slug> --audience <name> --check`, then fix, exclude or `--ack` |
+| `… a separate repo` | the share repo shares history with this workspace | point the audience at a new, separate repo |
+| `… shallow clone …` | the workspace's real history is unknown | `git fetch --unshallow`, then publish |
+| `… commits cg did not make …` | someone changed the share repo after the last publish | resolve it in the share repo; cg never force-pushes |
+| `… another audience` | the branch holds a different audience's copy | give each audience its own repo or branch |
+| `… was rejected …` | someone published between cg's read and push | `cg share status`, then publish again |
+| `a first publish must be confirmed at an interactive terminal` | the first publish needs a person | run `cg share publish <name>` yourself |
