@@ -70,25 +70,33 @@ var shareBranchRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._/-]*$`)
 
 // usableBranch applies a conservative subset of git's ref-name rules
 // (git check-ref-format --branch): ASCII only, no leading '-', no "..", no
-// "//", no component starting with '.', no ".lock" or '.' or '/' ending, and
+// "//", no component starting with '.' or ending ".lock", no '.' or '/' ending, and
 // not HEAD.
 func usableBranch(b string) bool {
 	if !shareBranchRe.MatchString(b) || b == "HEAD" ||
 		strings.Contains(b, "..") || strings.Contains(b, "//") || strings.Contains(b, "/.") ||
-		strings.HasSuffix(b, "/") || strings.HasSuffix(b, ".") || strings.HasSuffix(b, ".lock") {
+		strings.HasSuffix(b, "/") || strings.HasSuffix(b, ".") {
 		return false
+	}
+	for _, c := range strings.Split(b, "/") {
+		if strings.HasSuffix(c, ".lock") {
+			return false
+		}
 	}
 	return true
 }
 
 // NormalizeRepo reduces a git URL to a comparable form: trimmed, without a
 // trailing "/" or ".git", and lowercased when it is a URL (hosts and GitHub
-// paths are case-insensitive) but not when it is a local path, which may be
-// case-sensitive. It catches the same repo written twice in one style; an SSH
+// paths are case-insensitive) but not when it is a local path or file:// URL,
+// which may be case-sensitive. On a case-insensitive filesystem two local
+// paths differing only in case are the same repo but are not detected as
+// such — a deliberate tradeoff, documented in docs/share.md. It catches the same repo written twice in one style; an SSH
 // alias and an https URL for one repo still differ.
 func NormalizeRepo(repo string) string {
 	r := strings.TrimSpace(repo)
-	if strings.Contains(r, "://") || scpLikeRe.MatchString(r) {
+	isFile := strings.HasPrefix(strings.ToLower(r), "file://")
+	if !isFile && (strings.Contains(r, "://") || scpLikeRe.MatchString(r)) {
 		r = strings.ToLower(r)
 	}
 	r = strings.TrimSuffix(r, "/")
@@ -96,7 +104,10 @@ func NormalizeRepo(repo string) string {
 }
 
 // scpLikeRe matches git's scp-like form, user@host:path.
-var scpLikeRe = regexp.MustCompile(`^[^/@\s]+@[^/:\s]+:`)
+// The user part is optional (github-work:Org/Repo via an ssh Host alias); the
+// host must be at least two characters, so a Windows drive (C:\share) is not
+// mistaken for one.
+var scpLikeRe = regexp.MustCompile(`^(?:[^/@\s]+@)?[^/:\s\\]{2,}:[^\\]`)
 
 // Validate reports the first structural problem in the share block, so a
 // typo fails loudly instead of silently sharing less (or more) than meant.

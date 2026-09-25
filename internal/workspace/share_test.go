@@ -84,6 +84,7 @@ func TestShareConfigValidate(t *testing.T) {
 		"dot component":  {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Branch: "a/.b", Projects: map[string]ShareProject{"p": ok}}}}, "not a usable branch"},
 		"HEAD branch":    {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Branch: "HEAD", Projects: map[string]ShareProject{"p": ok}}}}, "not a usable branch"},
 		"release branch": {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Branch: "release/1.0", Projects: map[string]ShareProject{"p": ok}}}}, ""},
+		"lock component": {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Branch: "foo.lock/bar", Projects: map[string]ShareProject{"p": ok}}}}, "not a usable branch"},
 		"local paths differ by case": {&ShareConfig{Audiences: map[string]ShareAudience{
 			"a": {Repo: "/srv/Share", Projects: map[string]ShareProject{"p": ok}},
 			"b": {Repo: "/srv/share", Projects: map[string]ShareProject{"q": ok}},
@@ -103,5 +104,20 @@ func TestShareConfigValidate(t *testing.T) {
 				t.Fatalf("want error containing %q, got %v", tc.wantErr, err)
 			}
 		})
+	}
+}
+
+func TestNormalizeRepo(t *testing.T) {
+	for in, want := range map[string]string{
+		"git@github.com:Org/Repo.git":  "git@github.com:org/repo",
+		"github-work:Org/Repo":         "github-work:org/repo",
+		"https://GitHub.com/Org/Repo/": "https://github.com/org/repo",
+		"/srv/Share.git":               "/srv/Share",
+		"file:///srv/Share":            "file:///srv/Share",
+		`C:\Share`:                     `C:\Share`,
+	} {
+		if got := NormalizeRepo(in); got != want {
+			t.Errorf("NormalizeRepo(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

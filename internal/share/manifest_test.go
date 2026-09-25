@@ -127,3 +127,37 @@ func TestReadPublishedRedactsAndRefusesOptions(t *testing.T) {
 		t.Errorf("want an error with the secret redacted, got %v", err)
 	}
 }
+
+func TestRedactURLPasswordWithAt(t *testing.T) {
+	if got := RedactURL("https://user:p@ss@host/x"); got != "https://***@host/x" {
+		t.Errorf("a password containing @ must be hidden whole, got %q", got)
+	}
+}
+
+func TestReadEnvRespectsUserSSH(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "none"))
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	has := func(env []string) bool {
+		for _, e := range env {
+			if strings.HasPrefix(e, "GIT_SSH_COMMAND=") {
+				return true
+			}
+		}
+		return false
+	}
+	t.Setenv("GIT_SSH_COMMAND", "")
+	t.Setenv("GIT_SSH", "")
+	if !has(readEnv(ctx)) {
+		t.Error("with no user ssh setting, batch mode must be set")
+	}
+	t.Setenv("GIT_SSH", "/usr/local/bin/my-ssh")
+	if has(readEnv(ctx)) {
+		t.Error("a user's GIT_SSH must not be overridden")
+	}
+	t.Setenv("GIT_SSH", "")
+	t.Setenv("GIT_SSH_COMMAND", "ssh -i key")
+	if has(readEnv(ctx)) {
+		t.Error("a user's GIT_SSH_COMMAND must not be overridden")
+	}
+}

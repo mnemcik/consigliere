@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -120,6 +121,8 @@ type shareEnv struct {
 	root      string
 	indexPath string // workspace-relative, slash-separated
 	share     *workspace.ShareConfig
+	// publishable caches publishableFiles per audience and owner.
+	publishable map[string]map[string]string
 }
 
 func loadShareEnv(cmd *cobra.Command) (*shareEnv, error) {
@@ -153,47 +156,109 @@ func loadShareEnv(cmd *cobra.Command) (*shareEnv, error) {
 // project must be one it shares, and the audience's other projects become
 // link targets.
 func (e *shareEnv) exportOptions(ctx context.Context, slug, audience string, include []string, acks []share.Ack, owner string) (*share.Options, error) {
-	opts, a, err := e.baseOptions(slug, audience, include, acks, owner)
+	opts, err := e.baseOptions(slug, audience, include, acks, owner)
 	if err != nil || audience == "" {
 		return opts, err
 	}
-	indexed, err := indexedSlugs(filepath.Join(e.root, filepath.FromSlash(e.indexPath)))
+	publishable, err := e.publishableFiles(ctx, audience, opts.Owner)
 	if err != nil {
 		return nil, err
 	}
-	opts.Shared = map[string]string{}
-	for _, other := range a.ProjectSlugs() {
-		if other == slug || !indexed[other] {
-			continue
-		}
-		// A link to a sibling stays live only if the sibling itself would be
-		// published: its export must run and come out clean. Anything else
-		// (open findings, uncommitted changes, a broken marker or include)
-		// would leave a dangling link, so the sibling stays private. The
-		// sibling is rendered without its own siblings, which cannot change
-		// the outcome: rewritten links are relative paths no rule matches.
-		sibling, _, err := e.baseOptions(other, audience, nil, nil, owner)
-		if err != nil {
-			continue
-		}
-		res, err := share.Export(ctx, sibling)
-		if err != nil || len(res.Findings) > 0 {
-			continue
-		}
-		for p := range res.Files {
-			opts.Shared[dirProjects+"/"+p] = p
+	opts.Shared = make(map[string]string, len(publishable))
+	for ws, pub := range publishable {
+		if !strings.HasPrefix(pub, slug+"/") {
+			opts.Shared[ws] = pub
 		}
 	}
 	return opts, nil
 }
 
+// publishableFiles returns, as a Shared map, the files of the audience's
+// projects that would publish cleanly — judged with the same links each would
+// really get. A project's findings can depend on which sibling links are live
+// (a rewritten link keeps its #fragment and title; acknowledgements hash whole
+// lines), so the set is found by iteration: start from every indexed project
+// whose export runs, render each with the current set's links, drop those that
+// fail or have findings, and repeat until nothing changes. Dropping is
+// monotone, so it terminates; it is conservative — a project dropped early is
+// not re-added even if it would pass against the final, smaller set, which
+// only ever turns a link into plain text, never a live link into a dangling
+// one. The result is cached per audience and owner for the command's lifetime.
+func (e *shareEnv) publishableFiles(ctx context.Context, audience, owner string) (map[string]string, error) {
+	key := audience + "\x00" + owner
+	if m, ok := e.publishable[key]; ok {
+		return m, nil
+	}
+	a, _ := e.audience(audience)
+	indexed, err := indexedSlugs(filepath.Join(e.root, filepath.FromSlash(e.indexPath)))
+	if err != nil {
+		return nil, err
+	}
+
+	candidates := map[string]*share.Options{}
+	files := map[string][]string{}
+	for _, slug := range a.ProjectSlugs() {
+		if !indexed[slug] {
+			continue
+		}
+		opts, err := e.baseOptions(slug, audience, nil, nil, owner)
+		if err != nil {
+			continue
+		}
+		// Which files a project exports does not depend on sibling links, so
+		// one render learns them; an export that cannot run at all (e.g.
+		// uncommitted changes) will not run with links either.
+		res, err := share.Export(ctx, opts)
+		if err != nil {
+			continue
+		}
+		candidates[slug] = opts
+		for p := range res.Files {
+			files[slug] = append(files[slug], p)
+		}
+	}
+
+	shared := func() map[string]string {
+		m := map[string]string{}
+		for slug := range candidates {
+			for _, p := range files[slug] {
+				m[dirProjects+"/"+p] = p
+			}
+		}
+		return m
+	}
+	for {
+		current := shared()
+		var drop []string
+		for slug, opts := range candidates {
+			opts.Shared = current
+			res, err := share.Export(ctx, opts)
+			if err != nil || len(res.Findings) > 0 {
+				drop = append(drop, slug)
+			}
+		}
+		if len(drop) == 0 {
+			break
+		}
+		for _, slug := range drop {
+			delete(candidates, slug)
+		}
+	}
+
+	result := shared()
+	if e.publishable == nil {
+		e.publishable = map[string]map[string]string{}
+	}
+	e.publishable[key] = result
+	return result, nil
+}
+
 // baseOptions merges the share block with the command-line overrides, without
-// sibling links. It returns the audience when one is named.
-func (e *shareEnv) baseOptions(slug, audience string, include []string, acks []share.Ack, owner string) (*share.Options, workspace.ShareAudience, error) {
-	var none workspace.ShareAudience
+// sibling links.
+func (e *shareEnv) baseOptions(slug, audience string, include []string, acks []share.Ack, owner string) (*share.Options, error) {
 	project, err := indexedProject(filepath.Join(e.root, filepath.FromSlash(e.indexPath)), slug)
 	if err != nil {
-		return nil, none, err
+		return nil, err
 	}
 	opts := &share.Options{
 		Root:      e.root,
@@ -211,22 +276,22 @@ func (e *shareEnv) baseOptions(slug, audience string, include []string, acks []s
 		opts.Scan.Denylist = e.share.Denylist
 	}
 	if audience == "" {
-		return opts, none, nil
+		return opts, nil
 	}
 
 	a, ok := e.audience(audience)
 	if !ok {
-		return nil, none, fmt.Errorf("audience %q is not in the .cg.json share block", audience)
+		return nil, fmt.Errorf("audience %q is not in the .cg.json share block", audience)
 	}
 	p, ok := a.Projects[slug]
 	if !ok {
-		return nil, none, fmt.Errorf("audience %q does not share project %q", audience, slug)
+		return nil, fmt.Errorf("audience %q does not share project %q", audience, slug)
 	}
 	opts.Include = append(append([]string(nil), p.Include...), include...)
 	for _, ack := range p.Acknowledged {
 		opts.Scan.Acknowledged = append(opts.Scan.Acknowledged, share.Ack{Rule: ack.Rule, Hash: ack.Hash})
 	}
-	return opts, a, nil
+	return opts, nil
 }
 
 // indexedSlugs returns the project slugs that have a row in the index.
@@ -318,8 +383,12 @@ func (e *shareEnv) printAudienceStatus(cmd *cobra.Command, w io.Writer, name str
 	_, _ = fmt.Fprintf(w, "%s → %s (%s)\n", name, share.RedactURL(a.Repo), a.BranchOrDefault())
 	ctx, cancel := context.WithTimeout(cmd.Context(), shareReadTimeout)
 	manifest, err := share.ReadPublished(ctx, a.Repo, a.BranchOrDefault())
+	timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
 	cancel()
-	if err != nil {
+	switch {
+	case err != nil && timedOut:
+		_, _ = fmt.Fprintf(w, "  cannot read the share repo: timed out after %s\n", shareReadTimeout)
+	case err != nil:
 		_, _ = fmt.Fprintf(w, "  cannot read the share repo: %s\n", firstLine(err.Error()))
 	}
 	if manifest != nil && manifest.Audience != name {

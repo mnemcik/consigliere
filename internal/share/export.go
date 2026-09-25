@@ -97,6 +97,9 @@ func selectFiles(dir string, include []string) ([]string, error) {
 		// there, as on a case-sensitive filesystem; only an explicit include
 		// is fatal when its spelling does not match.
 		if checkExactName(dir, name) != nil {
+			if name == readmeFile {
+				return nil, fmt.Errorf("project has no %s (a file differing only in letter case exists; rename it to %s)", readmeFile, readmeFile)
+			}
 			continue
 		}
 		if err := checkContained(realDir, dir, name); err != nil {

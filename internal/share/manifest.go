@@ -82,7 +82,9 @@ func PublishedEntry(res *Result) PublishedProject {
 }
 
 // userinfoRe matches the userinfo of a URL (scheme://user:secret@).
-var userinfoRe = regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*://)[^/@\s]+@`)
+// It runs to the last '@' before the path, so a password that itself
+// contains '@' is hidden whole.
+var userinfoRe = regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*://)[^/?#\s]+@`)
 
 // RedactURL hides URL userinfo in s, so a token embedded in a repo URL never
 // reaches a terminal or an error message.
@@ -92,12 +94,14 @@ func RedactURL(s string) string {
 
 // readEnv makes remote reads fail instead of waiting on a prompt: no
 // credential prompt over https, and ssh in batch mode (an unknown host key or
-// a key passphrase fails). A user's own GIT_SSH_COMMAND or core.sshCommand is
-// left alone, since overriding it could bypass their key or agent setup.
+// a key passphrase fails). A user's own GIT_SSH_COMMAND, GIT_SSH or
+// core.sshCommand is left alone, since overriding it could bypass their key or agent setup.
 func readEnv(ctx context.Context) []string {
 	env := make([]string, 0, 3)
 	env = append(env, "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=never")
-	if os.Getenv("GIT_SSH_COMMAND") != "" {
+	// GIT_SSH_COMMAND outranks GIT_SSH, so setting it would bypass a
+	// GIT_SSH wrapper too.
+	if os.Getenv("GIT_SSH_COMMAND") != "" || os.Getenv("GIT_SSH") != "" {
 		return env
 	}
 	if cmd, _ := gitx.Run(ctx, "", "config", "--get", "core.sshCommand"); cmd != "" {

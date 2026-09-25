@@ -372,3 +372,66 @@ func TestShareSiblingThatWouldNotPublishStaysPrivate(t *testing.T) {
 		t.Errorf("a blocked sibling must stay private:\n%s", readme)
 	}
 }
+
+// addGamma adds a third indexed project, gamma, to the "team" audience.
+func addGamma(t *testing.T, root string, beta workspace.ShareProject) {
+	t.Helper()
+	cfg, err := workspace.Detect(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := cfg.Share.Audiences["team"]
+	a.Projects["gamma"] = workspace.ShareProject{}
+	a.Projects["beta"] = beta
+	cfg.Share.Audiences["team"] = a
+	if err := cfg.Save(root); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, root, "projects/TODO.md", "| # | Project | Status | Areas | Folder |\n|---|---|---|---|---|\n"+
+		"| 1 | Alpha | In Progress | `a` | [alpha](alpha/README.md) |\n| 2 | Beta | Defining | `a` | [beta](beta/README.md) |\n"+
+		"| 3 | Gamma | Defining | `a` | [gamma](gamma/README.md) |\n")
+	writeFile(t, root, "projects/gamma/README.md", "# Gamma\n")
+}
+
+// A sibling's verdict must come from the export it would really get. Here
+// beta's link to gamma is rewritten with its #fragment intact, and the
+// fragment trips the denylist, so beta can never publish; rendered without
+// sibling links the fragment would be dropped and beta would look clean.
+func TestShareSiblingJudgedWithItsRealLinks(t *testing.T) {
+	root, _ := shareWorkspace(t)
+	addGamma(t, root, workspace.ShareProject{})
+	writeFile(t, root, "projects/beta/README.md", "# Beta\n\nSee [g](../gamma/README.md#acme-kickoff).\n")
+	mustGit(t, context.Background(), root, "add", ".")
+	mustGit(t, context.Background(), root, "commit", "-qm", "fragment")
+
+	readme := exportFor(t, root, "alpha").Files["alpha/README.md"]
+	if !strings.Contains(readme, "beta *(private)*") {
+		t.Errorf("beta cannot publish, so alpha's link to it must be private:\n%s", readme)
+	}
+}
+
+// The mirror case: beta's finding is acknowledged against its real render, so
+// beta publishes; alpha's link to it must therefore be live.
+func TestShareSiblingWithAcknowledgedFindingIsLinked(t *testing.T) {
+	root, _ := shareWorkspace(t)
+	addGamma(t, root, workspace.ShareProject{})
+	writeFile(t, root, "projects/beta/README.md", "# Beta\n\nACME kickoff, see [g](../gamma/README.md).\n")
+	mustGit(t, context.Background(), root, "add", ".")
+	mustGit(t, context.Background(), root, "commit", "-qm", "acme")
+
+	blocked := exportFor(t, root, "beta")
+	if len(blocked.Findings) != 1 {
+		t.Fatalf("setup: want one denylist finding on beta, got %+v", blocked.Findings)
+	}
+	f := blocked.Findings[0]
+	addGamma(t, root, workspace.ShareProject{Acknowledged: []workspace.ShareAck{{Rule: f.Rule, Hash: f.Hash}}})
+	mustGit(t, context.Background(), root, "commit", "-qam", "ack")
+
+	if res := exportFor(t, root, "beta"); len(res.Findings) != 0 {
+		t.Fatalf("setup: the ack must clear beta, got %+v", res.Findings)
+	}
+	readme := exportFor(t, root, "alpha").Files["alpha/README.md"]
+	if !strings.Contains(readme, "[beta](../beta/README.md)") {
+		t.Errorf("beta publishes, so alpha's link to it must be live:\n%s", readme)
+	}
+}

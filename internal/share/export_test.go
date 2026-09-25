@@ -300,3 +300,12 @@ func TestExportSkipsMiscasedDefault(t *testing.T) {
 		t.Error("a miscased default must not be exported under the default name")
 	}
 }
+
+func TestExportExplainsMiscasedReadme(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "readme.md", "r\n")
+	_, err := selectFiles(dir, nil)
+	if err == nil || !strings.Contains(err.Error(), "no README.md") {
+		t.Fatalf("want a no-README error, got %v", err)
+	}
+}

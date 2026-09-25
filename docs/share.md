@@ -58,7 +58,7 @@ silently shares less or more than meant. That covers:
 - an audience without a repo or projects;
 - a bad audience name, project slug or branch name;
 - an empty include entry or an incomplete acknowledgement;
-- two audiences on the same repo and branch (each would read the other's projects as removed);
+- two audiences on the same repo and branch (each would read the other's projects as removed). URLs are compared case-insensitively; local paths and `file://` URLs are compared exactly, so on a case-insensitive filesystem two spellings of one local path are not detected;
 - an audience pointing at the workspace's own repo.
 
 `.cg.json` itself never leaves the workspace: it is not in any project folder.
@@ -80,6 +80,11 @@ rewritten to their published copies instead of being de-linked. Only a
 sibling that would itself publish cleanly gets live links: one with no row in
 the project index, uncommitted changes, open scan findings or a broken include
 or marker is left out, and links to it stay private rather than dangling.
+Each sibling is judged with the links it would really get, since those can
+change its findings (a rewritten link keeps its `#fragment`), so the set of
+publishable siblings is settled by repeatedly dropping the ones that fail.
+This errs on the side of privacy: a sibling dropped early stays private even
+if it would pass against the final set.
 
 The project folder and the project index must have no uncommitted changes, so
 the stamped source commit always describes exactly what was exported.
@@ -212,8 +217,8 @@ commit, so an edit that lives outside the project folder (a status change in
 `projects/TODO.md`) still counts. An empty share repo, or one without the
 branch, reads as nothing published. Only the branch tip is fetched, git never
 prompts (credential prompts are disabled, and ssh runs in batch mode unless
-you have set your own `GIT_SSH_COMMAND` or `core.sshCommand`), and each read
-times out after 60 seconds: an unreachable or unauthorised repo reads as
+you have set your own `GIT_SSH_COMMAND`, `GIT_SSH` or `core.sshCommand`), and
+each read times out after 60 seconds: an unreachable or unauthorised repo reads as
 `unknown` with the error shown. Credentials embedded in a repo URL are
 redacted from all output. A manifest written for a different audience
 is not compared against.
