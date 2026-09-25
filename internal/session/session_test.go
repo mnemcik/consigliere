@@ -85,3 +85,48 @@ func TestMarkDirty(t *testing.T) {
 		t.Errorf("unknown/known fields not preserved: %+v", m)
 	}
 }
+
+func TestWriteContext(t *testing.T) {
+	root := t.TempDir()
+
+	// Missing directory and file → both created, dirty defaults to false.
+	if err := WriteContext(root, "s1", "platform", "api-gateway"); err != nil {
+		t.Fatalf("WriteContext on fresh workspace: %v", err)
+	}
+	c, err := ReadContext(root, "s1")
+	if err != nil || c == nil {
+		t.Fatalf("ReadContext after write: (%+v, %v)", c, err)
+	}
+	if c.Area != "platform" || c.Project != "api-gateway" || c.Dirty {
+		t.Errorf("unexpected context: %+v", c)
+	}
+
+	// Existing file → area/project replaced, dirty and unknown fields preserved.
+	writeCtx(t, root, "s2", `{"area":"old","project":"old","dirty":true,"note":"keep me"}`)
+	if err := WriteContext(root, "s2", "new-area", "new-project"); err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	data, _ := os.ReadFile(ContextFile(root, "s2"))
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["area"] != "new-area" || m["project"] != "new-project" {
+		t.Errorf("area/project not updated: %+v", m)
+	}
+	if m["dirty"] != true || m["note"] != "keep me" {
+		t.Errorf("existing fields not preserved: %+v", m)
+	}
+}
+
+func TestWriteContextRejectsUnsafeSessionID(t *testing.T) {
+	root := t.TempDir()
+	for _, id := range []string{"", ".", "..", "../escape", "a/b", `a\b`} {
+		if err := WriteContext(root, id, "a", "p"); err == nil {
+			t.Errorf("WriteContext(%q) should fail", id)
+		}
+	}
+	if _, err := os.Stat(ContextDir(root)); !os.IsNotExist(err) {
+		t.Error("rejected session IDs must not create the context directory")
+	}
+}

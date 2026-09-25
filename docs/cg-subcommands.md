@@ -28,6 +28,7 @@ template.
 | `cg session mark-dirty` | `mark-session-dirty.sh` | **shipped** |
 | `cg session pull-latest` | `pull-latest-main.sh` | **shipped** |
 | `cg session statusline` | `statusline.sh` | **shipped** |
+| `cg session set-context --session-id … --area … --project …` | manual badge-file write | **shipped** |
 | `cg push-policy lookup <owner/repo>` | `lookup-push-policy.sh` | **shipped** |
 | `cg push-policy gate` | `external-repo-push-policy.sh` | **shipped** |
 | `cg active [--slugs\|--json]` | `active-projects.sh` | **shipped** |

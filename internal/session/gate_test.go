@@ -25,7 +25,7 @@ func TestGateEmitsDefault(t *testing.T) {
 	if !emit {
 		t.Fatal("expected the gate to emit for a normal prompt")
 	}
-	for _, want := range []string{"SESSION-START", "sess-123", ContextFile(root, "sess-123"), "<user-prompt-submit-hook>"} {
+	for _, want := range []string{"SESSION-START", "sess-123", ContextFile(root, "sess-123"), "cg session set-context --session-id sess-123", "<user-prompt-submit-hook>"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("gate output missing %q:\n%s", want, text)
 		}

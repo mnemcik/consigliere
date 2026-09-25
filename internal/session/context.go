@@ -8,6 +8,7 @@ package session
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -48,6 +49,45 @@ func ReadContext(root, sessionID string) (*Context, error) {
 		return nil, err
 	}
 	return &c, nil
+}
+
+// ValidSessionID reports whether id is safe to use as a badge file name: it
+// must be non-empty and must not contain path separators or dot-dot segments.
+func ValidSessionID(id string) bool {
+	return id != "" && id != "." && !strings.ContainsAny(id, `/\`) && !strings.Contains(id, "..")
+}
+
+// WriteContext records the area and project for a session in its badge state
+// file, creating the session-context directory and file when absent. Fields
+// already present (dirty, or keys added by other tools) are preserved, so it
+// is safe to call again when a session switches area or project.
+func WriteContext(root, sessionID, area, project string) error {
+	if !ValidSessionID(sessionID) {
+		return fmt.Errorf("invalid session id %q", sessionID)
+	}
+	if err := os.MkdirAll(ContextDir(root), 0o755); err != nil {
+		return err
+	}
+	path := ContextFile(root, sessionID)
+	m := map[string]any{}
+	data, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		if err := json.Unmarshal(data, &m); err != nil {
+			return err
+		}
+		if m == nil {
+			m = map[string]any{}
+		}
+	case !errors.Is(err, fs.ErrNotExist):
+		return err
+	}
+	m["area"] = area
+	m["project"] = project
+	if _, ok := m["dirty"]; !ok {
+		m["dirty"] = false
+	}
+	return writeJSONAtomic(path, m)
 }
 
 // IsContextPath reports whether p targets the session-context directory (or a
