@@ -146,6 +146,9 @@ func (s *ShareConfig) Validate() error {
 			if !shareNameRe.MatchString(slug) {
 				return fmt.Errorf("share: audience %q: %q is not a project slug", name, slug)
 			}
+			if strings.EqualFold(slug, "readme.md") {
+				return fmt.Errorf("share: audience %q: %q is reserved for the share repo's index", name, slug)
+			}
 			for _, inc := range p.Include {
 				if strings.TrimSpace(inc) == "" {
 					return fmt.Errorf("share: audience %q, project %q: include has an empty entry", name, slug)

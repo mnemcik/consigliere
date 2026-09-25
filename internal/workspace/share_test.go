@@ -84,6 +84,7 @@ func TestShareConfigValidate(t *testing.T) {
 		"dot component":  {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Branch: "a/.b", Projects: map[string]ShareProject{"p": ok}}}}, "not a usable branch"},
 		"HEAD branch":    {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Branch: "HEAD", Projects: map[string]ShareProject{"p": ok}}}}, "not a usable branch"},
 		"release branch": {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Branch: "release/1.0", Projects: map[string]ShareProject{"p": ok}}}}, ""},
+		"reserved slug":  {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Projects: map[string]ShareProject{"readme.md": ok}}}}, "reserved"},
 		"lock component": {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Branch: "foo.lock/bar", Projects: map[string]ShareProject{"p": ok}}}}, "not a usable branch"},
 		"local paths differ by case": {&ShareConfig{Audiences: map[string]ShareAudience{
 			"a": {Repo: "/srv/Share", Projects: map[string]ShareProject{"p": ok}},

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -125,7 +127,7 @@ func writeFile(t *testing.T, root, rel, body string) {
 func runShare(t *testing.T, dir string, args ...string) (string, error) {
 	t.Helper()
 	t.Chdir(dir)
-	for _, c := range []*cobra.Command{shareExportCmd, shareStatusCmd} {
+	for _, c := range []*cobra.Command{shareExportCmd, shareStatusCmd, sharePublishCmd} {
 		c.Flags().VisitAll(func(f *pflag.Flag) {
 			if sv, ok := f.Value.(pflag.SliceValue); ok {
 				_ = sv.Replace(nil)
@@ -433,5 +435,130 @@ func TestShareSiblingWithAcknowledgedFindingIsLinked(t *testing.T) {
 	readme := exportFor(t, root, "alpha").Files["alpha/README.md"]
 	if !strings.Contains(readme, "[beta](../beta/README.md)") {
 		t.Errorf("beta publishes, so alpha's link to it must be live:\n%s", readme)
+	}
+}
+
+// fakeConsent stands in for a terminal in publish tests.
+type fakeConsent struct {
+	interactive bool
+	answer      string
+	asked       int
+}
+
+func (f *fakeConsent) Interactive() bool { return f.interactive }
+
+func (f *fakeConsent) Ask(_ context.Context, w io.Writer, prompt string) (string, error) {
+	f.asked++
+	_, _ = fmt.Fprint(w, prompt)
+	return f.answer, nil
+}
+
+func withConsent(t *testing.T, c *fakeConsent) {
+	t.Helper()
+	prev := consent
+	consent = c
+	t.Cleanup(func() { consent = prev })
+}
+
+func shareTip(t *testing.T, bare string) string {
+	t.Helper()
+	out, err := gitx.Run(context.Background(), bare, "rev-parse", "--verify", "--quiet", "refs/heads/main")
+	if err != nil {
+		return ""
+	}
+	return out
+}
+
+func resetPublishFlags() {
+	sharePublishCmd.Flags().VisitAll(func(f *pflag.Flag) { _ = f.Value.Set(f.DefValue); f.Changed = false })
+}
+
+func TestSharePublishFirstPublishGate(t *testing.T) {
+	root, bare := shareWorkspace(t)
+
+	withConsent(t, &fakeConsent{interactive: false})
+	resetPublishFlags()
+	if out, err := runShare(t, root, "publish", "team"); err == nil || !strings.Contains(out, "interactive terminal") {
+		t.Fatalf("a first publish without a terminal must be refused, got err=%v\n%s", err, out)
+	}
+	resetPublishFlags()
+	if out, err := runShare(t, root, "publish", "team", "--yes"); err == nil || !strings.Contains(out, "--yes is refused") {
+		t.Fatalf("--yes must be refused for a first publish, got err=%v\n%s", err, out)
+	}
+	wrong := &fakeConsent{interactive: true, answer: "y"}
+	withConsent(t, wrong)
+	resetPublishFlags()
+	if out, err := runShare(t, root, "publish", "team"); err == nil || !strings.Contains(out, "cancelled") || wrong.asked != 1 {
+		t.Fatalf("anything but the audience name must cancel, got err=%v\n%s", err, out)
+	}
+	if shareTip(t, bare) != "" {
+		t.Fatal("nothing may be pushed before confirmation")
+	}
+
+	withConsent(t, &fakeConsent{interactive: true, answer: "team"})
+	resetPublishFlags()
+	out, err := runShare(t, root, "publish", "team")
+	if err != nil || !strings.Contains(out, "FIRST PUBLISH") || !strings.Contains(out, "published") {
+		t.Fatalf("typing the audience name must publish, got err=%v\n%s", err, out)
+	}
+	if shareTip(t, bare) == "" {
+		t.Fatal("confirmed publish pushed nothing")
+	}
+
+	resetPublishFlags()
+	out, _ = runShare(t, root, "status")
+	if strings.Count(out, "up to date") != 2 {
+		t.Errorf("after publishing, status must read up to date for both projects:\n%s", out)
+	}
+}
+
+func TestSharePublishRepublishDryRunAndBlocked(t *testing.T) {
+	root, bare := shareWorkspace(t)
+	withConsent(t, &fakeConsent{interactive: true, answer: "team"})
+	resetPublishFlags()
+	if out, err := runShare(t, root, "publish", "team"); err != nil {
+		t.Fatalf("first publish: %v\n%s", err, out)
+	}
+	tip := shareTip(t, bare)
+
+	resetPublishFlags()
+	if out, _ := runShare(t, root, "publish", "team"); !strings.Contains(out, "up to date; nothing to publish") {
+		t.Errorf("an unchanged republish must be a no-op:\n%s", out)
+	}
+
+	writeFile(t, root, "projects/beta/README.md", "# Beta\n\nUpdated.\n")
+	mustGit(t, context.Background(), root, "commit", "-qam", "beta update")
+	resetPublishFlags()
+	if out, err := runShare(t, root, "publish", "team", "--dry-run"); err != nil || !strings.Contains(out, "dry run") || shareTip(t, bare) != tip {
+		t.Fatalf("a dry run must push nothing, got err=%v\n%s", err, out)
+	}
+
+	withConsent(t, &fakeConsent{interactive: false})
+	resetPublishFlags()
+	if out, err := runShare(t, root, "publish", "team"); err == nil || !strings.Contains(out, "pass --yes") {
+		t.Fatalf("a non-interactive republish needs --yes, got err=%v\n%s", err, out)
+	}
+	resetPublishFlags()
+	out, err := runShare(t, root, "publish", "team", "--yes")
+	if err != nil || !strings.Contains(out, "beta") || !strings.Contains(out, "changed") || shareTip(t, bare) == tip {
+		t.Fatalf("--yes republish must push the change, got err=%v\n%s", err, out)
+	}
+	tip = shareTip(t, bare)
+
+	writeFile(t, root, "projects/beta/README.md", "# Beta\n\nop://Employee/item/field\n")
+	mustGit(t, context.Background(), root, "commit", "-qam", "vault ref")
+	resetPublishFlags()
+	if out, err := runShare(t, root, "publish", "team", "--yes"); err == nil || !strings.Contains(out, "open finding") || shareTip(t, bare) != tip {
+		t.Fatalf("an audience with a blocked project must publish nothing, got err=%v\n%s", err, out)
+	}
+}
+
+func TestPublishSummaryNamesCompletedAudiences(t *testing.T) {
+	err := publishSummary([]string{"a"}, []string{"b", "c"}, "interrupted")
+	if err == nil || err.Error() != "interrupted; not published: b, c; completed: a" {
+		t.Errorf("a partial run must say what already went out, got %v", err)
+	}
+	if err := publishSummary(nil, []string{"b"}, ""); err == nil || err.Error() != "not published: b" {
+		t.Errorf("got %v", err)
 	}
 }
