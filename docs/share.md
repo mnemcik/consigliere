@@ -259,7 +259,7 @@ to its share repo. For each audience:
      `--yes` is refused for these. When Claude drives the session, run it yourself in a
      separate terminal of your own, not through Claude: the prompt needs a
      real terminal on stdin.
-   - Later publishes ask `[y/N]`, or accept `--yes`.
+   - Other republishes (changed files only) ask `[y/N]`, or accept `--yes`.
    - `--dry-run` stops before committing.
 7. **Commit and push.** The commit is authored by the audience's
    `authorName`/`authorEmail`, else this workspace's `user.name`/`user.email`

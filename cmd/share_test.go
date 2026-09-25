@@ -585,6 +585,10 @@ func TestSharePublishAddedFileGate(t *testing.T) {
 	mustGit(t, context.Background(), root, "commit", "-qm", "include notes")
 
 	resetPublishFlags()
+	if out, err := runShare(t, root, "publish", "team", "--dry-run"); err != nil || !strings.Contains(out, "needs the owner's review") {
+		t.Fatalf("a dry run must say the real publish needs the terminal review, got err=%v\n%s", err, out)
+	}
+	resetPublishFlags()
 	if out, err := runShare(t, root, "publish", "team", "--yes"); err == nil || !strings.Contains(out, "adds files") || shareTip(t, bare) != tip {
 		t.Fatalf("--yes must be refused when a publish adds files, got err=%v\n%s", err, out)
 	}

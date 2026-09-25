@@ -197,6 +197,9 @@ func (e *shareEnv) publishAudience(ctx context.Context, w io.Writer, name string
 	}
 	if dryRun {
 		_, _ = fmt.Fprintln(w, "  dry run: nothing committed or pushed")
+		if plan.NeedsReview() {
+			_, _ = fmt.Fprintln(w, "  the real publish needs the owner's review at an interactive terminal; --yes will be refused")
+		}
 		return nil
 	}
 	if err := confirmPublish(ctx, w, plan, yes); err != nil {
@@ -235,11 +238,12 @@ func (e *shareEnv) publishAuthor(ctx context.Context, name, email, owner string)
 // Claude runs), so the gate lives here.
 func confirmPublish(ctx context.Context, w io.Writer, plan *share.PublishPlan, yes bool) error {
 	if plan.NeedsReview() {
-		what := "a first publish"
-		heading := "FIRST PUBLISH"
-		if !plan.FirstPublish() {
-			what = "a publish that adds files"
-			heading = "NEW FILES"
+		what, heading := "a first publish", "FIRST PUBLISH"
+		switch {
+		case plan.FirstPublish() && plan.AddsFiles():
+			what, heading = "a first publish that also adds files", "FIRST PUBLISH and NEW FILES"
+		case !plan.FirstPublish():
+			what, heading = "a publish that adds files", "NEW FILES"
 		}
 		if yes {
 			return fmt.Errorf("--yes is refused for %s; run it at a terminal and review the content first", what)
