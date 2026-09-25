@@ -90,11 +90,12 @@ stops the export before anything is written.**
 
 | Rule | Matches |
 |---|---|
-| `token` | GitHub, Slack, AWS and `sk-` API key formats; Slack webhook URLs |
-| `private-key` | `-----BEGIN … PRIVATE KEY-----` |
+| `token` | GitHub, GitLab, Slack, AWS (incl. STS), Stripe, Google, npm and `sk-` key formats; Slack webhook URLs; `Bearer <token>` |
+| `url-credential` | a password embedded in a URL (`scheme://user:<password>@host`) |
+| `private-key` | `-----BEGIN … PRIVATE KEY-----`, including PGP key blocks |
 | `jwt` | three-part `eyJ…` tokens |
-| `credential-assignment` | `secret=`, `api_key:`, `password=` and similar, when the value is high-entropy and not a placeholder such as `<your-key>` or `${VAR}` |
-| `local-path` | paths naming a user account: `/Users/<name>`, `/home/<name>`, `C:\Users\<name>` |
+| `credential-assignment` | a credential-named key assigned a value, including prefixed names (`GITHUB_TOKEN=`, `db_password:`, `AZURE_CLIENT_SECRET=`, SAS `sig=`). Password keys count any value mixing letters and digits; other keys need a high-entropy value. Placeholders (`<your-key>`, `${VAR}`, `***`) and lowercase resource paths never count |
+| `local-path` | paths naming a user account: `/Users/<name>/…`, `/home/<name>/…`, `C:\Users\<name>` (any case) |
 | `vault-reference` | 1Password references `op://<vault>/<item>…` |
 | `placeholder` | leftover template placeholders such as `{Project Title}`, and `[You]` |
 | `denylist` | owner-defined terms (customer names, codenames); configured with the planned `share` block |
@@ -102,7 +103,12 @@ stops the export before anything is written.**
 The rules match values, not words: *"send the client_id/secret via API
 management"* describes a credential without containing one, and passes.
 Conventional paths such as `~/.config` identify neither the owner nor the
-machine, and are not flagged. Secret matches are masked in the report.
+machine, and are not flagged; nor is a web route such as `GET /Users/me`.
+
+Reports reach terminals and AI transcripts, so a secret's value is never
+printed: a token shows only its public prefix (`ghp_…(40 chars)`), a password
+or other value only its length (`***(17 chars)`). Other matches are cut to a
+readable length. One value is reported once, even when two rules match it.
 
 Resolve each finding by fixing the source, wrapping the passage in exclusion
 markers, or, for a false positive, acknowledging it with the `rule:hash` the
@@ -112,8 +118,11 @@ report prints:
 cg share export my-project --check --ack local-path:6c54c54b471a3e54
 ```
 
-An acknowledgement names one rule and one line. Editing the line brings the
-finding back.
+An acknowledgement names one rule and the hash of one trimmed line, so it
+covers every identical line in the export, in any file. Editing the line
+brings the finding back, and an acknowledgement for one rule never clears
+another. A `private-key` finding cannot be acknowledged: only the key's header
+line is matched, so acknowledging it would let the key body through.
 
 No pattern can judge whether prose is sensitive, such as a colleague's name in
 meeting notes. That is covered by `log.md` being opt-in and, once publishing

@@ -185,6 +185,15 @@ func resolveStamp(ctx context.Context, opts *Options, rel string) (Stamp, error)
 	return Stamp{Owner: owner, SHA: sha, Date: date}, nil
 }
 
+// Write writes the export under out. It refuses while any scan finding is
+// open, so no caller can write an export the scan has not cleared.
+func (r *Result) Write(out string) error {
+	if len(r.Findings) > 0 {
+		return fmt.Errorf("%d open scan finding(s); refusing to write the export", len(r.Findings))
+	}
+	return WriteTo(out, r.Files)
+}
+
 // WriteTo writes rendered files under out, which must not exist yet or be an
 // empty directory, so an export never overwrites or mixes with existing files.
 func WriteTo(out string, files map[string]string) error {

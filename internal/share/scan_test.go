@@ -1,8 +1,11 @@
 package share
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func scanOne(line string, opts ScanOptions) []Finding {
@@ -27,6 +30,24 @@ func TestScanTruePositives(t *testing.T) {
 		"vault reference":  {"op://Employee/github-token/credential", RuleVaultRef},
 		"placeholder":      {"# Decisions — {Project Title}", RulePlaceholder},
 		"owner leftover":   {"| Owner | [You] |", RulePlaceholder},
+		// Independent-review cases: prefixed names, where \b cannot match.
+		"prefixed env name":   {"GITHUB_TOKEN=Zx9Qw2Er7Ty4Ui1Op6As", RuleAssignment},
+		"db password":         {"DB_PASSWORD=Summer2024!!", RuleAssignment},
+		"secret key":          {"SECRET_KEY=Zx9Qw2Er7Ty4Ui1Op6As", RuleAssignment},
+		"auth token yaml":     {"auth_token: Zx9Qw2Er7Ty4Ui1Op6As", RuleAssignment},
+		"azure client secret": {"AZURE_CLIENT_SECRET=abc8Q~Zx9Qw2Er7Ty4Ui1Op6", RuleAssignment},
+		"aws secret key":      {"aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", RuleAssignment},
+		"sas signature":       {"?sv=2022-11-02&sig=Zx9Qw2Er7Ty4Ui1Op6AsDf%3D&se=2026", RuleAssignment},
+		"url credential":      {"postgres://admin:Zx9Qw2Er7Ty4@db.internal:5432/app", RuleURLCredential},
+		"bearer token":        {"Authorization: Bearer Zx9Qw2Er7Ty4Ui1Op6AsQq", RuleToken},
+		"stripe key":          {"sk_live_" + strings.Repeat("Ab3", 8), RuleToken},
+		"gitlab token":        {"glpat-" + strings.Repeat("Ab3", 8), RuleToken},
+		"google api key":      {"AIza" + strings.Repeat("Ab3", 11) + "xy", RuleToken},
+		"npm token":           {"npm_" + strings.Repeat("Ab3", 12), RuleToken},
+		"aws sts key id":      {"ASIAABCDEFGHIJKLMNOP", RuleToken},
+		"slack app token":     {"xapp-1-A0123-4567-abcdef", RuleToken},
+		"pgp private key":     {"-----BEGIN PGP PRIVATE KEY BLOCK-----", RulePrivateKey},
+		"lowercase windows":   {`c:\users\jane\notes`, RuleLocalPath},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -46,13 +67,20 @@ func TestScanTrueNegatives(t *testing.T) {
 		"prose secret":       "the secret: stored in the vault, never in the repo",
 		"placeholder value":  "API_KEY=<your-key-here>",
 		"env reference":      "token=${GITHUB_TOKEN}",
-		"low-entropy value":  "password=aaaaaaaaaaaaaaaa1",
+		"low-entropy value":  "token=aaaaaaaaaaaaaaaa1",
 		"tilde path":         "edit ~/.claude/settings.json and ~/source/repo",
 		"ellipsis user path": "paths like /Users/… are private",
 		"op syntax mention":  "use op://... references, the op:// syntax",
 		"api path param":     "GET /sets/{setId}/parameters/{paramKey}",
 		"double-brace tmpl":  "Your request for {{Rejection reason}} was declined",
 		"git sha":            "merged as 30e43b8f2c1d",
+		"web route users":    "GET /Users/me returns the profile",
+		"web route home":     "redirects to /home/dashboard",
+		"resource path":      "secret: projects/idella-prod/secrets/db-2024",
+		"url placeholder":    "postgres://user:pass@localhost/app",
+		"url env password":   "postgres://app:${DB_PASSWORD}@db/app",
+		"bearer placeholder": "Authorization: Bearer <token>",
+		"bearer challenge":   `WWW-Authenticate: Bearer authorization_uri="https://login.example.com/x"`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got := scanOne(line, ScanOptions{}); len(got) != 0 {
@@ -99,8 +127,8 @@ func TestScanAcknowledgement(t *testing.T) {
 
 func TestScanOrdersFindings(t *testing.T) {
 	got := Scan(map[string]string{
-		"b/x.md": "/Users/a1\n",
-		"a/x.md": "ok\n{Project Title} /Users/b2\n",
+		"b/x.md": "/Users/a1/x\n",
+		"a/x.md": "ok\n{Project Title} /Users/b2/x\n",
 	}, ScanOptions{})
 	order := make([]string, 0, len(got))
 	for _, f := range got {
@@ -124,5 +152,64 @@ func TestExportReportsFindings(t *testing.T) {
 	}
 	if len(res.Findings) != 1 || res.Findings[0].Rule != RulePlaceholder || res.Findings[0].File != "pilot/decisions.md" {
 		t.Fatalf("want the placeholder finding, got %+v", res.Findings)
+	}
+}
+
+func TestScanShowsNoSecretValue(t *testing.T) {
+	for line, notShown := range map[string]string{
+		"DB_PASSWORD=aääääZx9Qw2Er7Ty4":           "aä",
+		"postgres://admin:Zx9Qw2Er7Ty4@db/app":    "Zx9",
+		"Authorization: Bearer Zx9Qw2Er7Ty4Ui1Op": "Zx9",
+	} {
+		got := scanOne(line, ScanOptions{})
+		if len(got) != 1 {
+			t.Fatalf("%q: want one finding, got %+v", line, got)
+		}
+		if m := got[0].Match; strings.Contains(m, notShown) || !utf8.ValidString(m) || !strings.HasPrefix(m, "***(") {
+			t.Errorf("%q: match %q shows part of the value or is not valid UTF-8", line, m)
+		}
+	}
+}
+
+func TestScanTruncatesNonSecretMatches(t *testing.T) {
+	got := scanOne(`C:\Users\jane notes token Zx9Qw2Er7Ty4Ui1Op6As`, ScanOptions{})
+	if len(got) != 1 || got[0].Match != `C:\Users\jane` {
+		t.Fatalf("want only the account path reported, got %+v", got)
+	}
+	if s := show(strings.Repeat("é", 100), showTruncated); !utf8.ValidString(s) || utf8.RuneCountInString(s) != maxShown+1 {
+		t.Errorf("show did not truncate by rune: %q", s)
+	}
+}
+
+func TestScanReportsOneFindingPerValue(t *testing.T) {
+	for _, line := range []string{
+		"token=ghp_" + strings.Repeat("a1B2", 9),
+		"token: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+	} {
+		if got := scanOne(line, ScanOptions{}); len(got) != 1 {
+			t.Errorf("%q: want one finding, got %+v", line, got)
+		}
+	}
+}
+
+func TestScanPrivateKeyCannotBeAcknowledged(t *testing.T) {
+	line := "-----BEGIN OPENSSH PRIVATE KEY-----"
+	f := scanOne(line, ScanOptions{})
+	if len(f) != 1 {
+		t.Fatalf("setup: %+v", f)
+	}
+	if got := scanOne(line, ScanOptions{Acknowledged: []Ack{{Rule: f[0].Rule, Hash: f[0].Hash}}}); len(got) != 1 {
+		t.Errorf("a private-key finding must survive an ack, got %+v", got)
+	}
+}
+
+func TestResultWriteRefusesFindings(t *testing.T) {
+	res := &Result{Files: map[string]string{"p/README.md": "x\n"}, Findings: []Finding{{Rule: RuleToken}}}
+	out := filepath.Join(t.TempDir(), "out")
+	if err := res.Write(out); err == nil || !strings.Contains(err.Error(), "refusing") {
+		t.Fatalf("want refusal, got %v", err)
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Errorf("output directory was created despite findings")
 	}
 }

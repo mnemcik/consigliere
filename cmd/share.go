@@ -107,7 +107,7 @@ func runShareExport(cmd *cobra.Command, args []string) error {
 		_, _ = fmt.Fprintf(w, "No findings in %s @ %.12s; %d file(s) would be exported.\n", slug, res.Stamp.SHA, len(res.Files))
 		return nil
 	}
-	if err := share.WriteTo(out, res.Files); err != nil {
+	if err := res.Write(out); err != nil {
 		return err
 	}
 
