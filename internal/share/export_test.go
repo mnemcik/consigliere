@@ -198,3 +198,43 @@ func sortedKeys(m map[string]string) []string {
 	sort.Strings(ks)
 	return ks
 }
+
+func TestExportRejectsSymlinks(t *testing.T) {
+	ctx, root := initWorkspace(t)
+	outside := filepath.Join(t.TempDir(), "secret")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, outside, "secret.md", "private\n")
+	proj := filepath.Join(root, "projects", "pilot")
+	if err := os.Symlink(outside, filepath.Join(proj, "linkdir")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "secret.md"), filepath.Join(proj, "direct.md")); err != nil {
+		t.Fatal(err)
+	}
+	git(t, ctx, root, "add", ".")
+	git(t, ctx, root, "commit", "-m", "links")
+
+	opts := pilotOptions(root)
+	for include, wantErr := range map[string]string{
+		"linkdir/secret.md": "resolves outside the project folder",
+		"direct.md":         "not a regular file",
+	} {
+		opts.Include = []string{include}
+		if _, err := Export(ctx, opts); err == nil || !strings.Contains(err.Error(), wantErr) {
+			t.Errorf("include %q: want error containing %q, got %v", include, wantErr, err)
+		}
+	}
+}
+
+func TestExportSeesUntrackedDespiteConfig(t *testing.T) {
+	ctx, root := initWorkspace(t)
+	git(t, ctx, root, "config", "status.showUntrackedFiles", "no")
+	write(t, root, "projects/pilot/new.md", "untracked\n")
+	opts := pilotOptions(root)
+	opts.Include = []string{"new.md"}
+	if _, err := Export(ctx, opts); err == nil || !strings.Contains(err.Error(), "uncommitted changes") {
+		t.Fatalf("want uncommitted-changes error for an untracked include, got %v", err)
+	}
+}

@@ -74,15 +74,26 @@ func Export(ctx context.Context, opts *Options) (*Result, error) {
 }
 
 // selectFiles returns the allowlisted file names present in dir: the defaults
-// that exist, plus every explicitly included file, which must exist.
+// that exist, plus every explicitly included file, which must exist. Every
+// selected file must be a regular file whose real path stays inside the real
+// project folder: a lexical check alone would let a symlink (or a symlinked
+// parent directory) pull content from elsewhere into the export.
 func selectFiles(dir string, include []string) ([]string, error) {
+	realDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, fmt.Errorf("resolving project folder: %w", err)
+	}
 	seen := map[string]bool{}
 	var names []string
 	for _, name := range DefaultFiles {
-		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
-			seen[name] = true
-			names = append(names, name)
+		if _, err := os.Lstat(filepath.Join(dir, name)); err != nil {
+			continue
 		}
+		if err := checkContained(realDir, dir, name); err != nil {
+			return nil, err
+		}
+		seen[name] = true
+		names = append(names, name)
 	}
 	if !seen[readmeFile] {
 		return nil, fmt.Errorf("project has no %s", readmeFile)
@@ -98,9 +109,11 @@ func selectFiles(dir string, include []string) ([]string, error) {
 		if seen[name] {
 			continue
 		}
-		info, err := os.Stat(filepath.Join(dir, filepath.FromSlash(name)))
-		if err != nil || !info.Mode().IsRegular() {
+		if _, err := os.Lstat(filepath.Join(dir, filepath.FromSlash(name))); err != nil {
 			return nil, fmt.Errorf("include %q: no such file in the project folder", raw)
+		}
+		if err := checkContained(realDir, dir, name); err != nil {
+			return nil, fmt.Errorf("include %q: %w", raw, err)
 		}
 		seen[name] = true
 		names = append(names, name)
@@ -109,12 +122,36 @@ func selectFiles(dir string, include []string) ([]string, error) {
 	return names, nil
 }
 
+// checkContained confirms dir/name is a regular file (not a symlink) whose
+// real path stays inside realDir.
+func checkContained(realDir, dir, name string) error {
+	full := filepath.Join(dir, filepath.FromSlash(name))
+	info, err := os.Lstat(full)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file", name)
+	}
+	resolved, err := filepath.EvalSymlinks(full)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(realDir, resolved)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("%s resolves outside the project folder", name)
+	}
+	return nil
+}
+
 func resolveStamp(ctx context.Context, opts *Options, rel string) (Stamp, error) {
 	paths := []string{rel}
 	if opts.IndexPath != "" {
 		paths = append(paths, opts.IndexPath)
 	}
-	status, err := gitx.Run(ctx, opts.Root, append([]string{"status", "--porcelain", "--"}, paths...)...)
+	// --untracked-files=all overrides a status.showUntrackedFiles=no config,
+	// which would otherwise hide an untracked file that --include selects.
+	status, err := gitx.Run(ctx, opts.Root, append([]string{"status", "--porcelain", "--untracked-files=all", "--"}, paths...)...)
 	if err != nil {
 		return Stamp{}, fmt.Errorf("checking for uncommitted changes: %w", err)
 	}

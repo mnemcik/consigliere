@@ -232,3 +232,45 @@ func TestCodeSpans(t *testing.T) {
 		t.Errorf("codeSpans = %v, want %v", got, want)
 	}
 }
+
+// Link shapes beyond the plain inline form: each must be rewritten, kept or
+// de-linked, and never leave a private path behind.
+func TestRenderLinkForms(t *testing.T) {
+	cases := map[string]struct{ in, want string }{
+		"angle-bracket private":   {"[a](<../../notes/x y.md>)", "a *(private)*"},
+		"angle-bracket exported":  {"[a](<decisions.md>)", "[a](<decisions.md>)"},
+		"parenthesized private":   {"[a](../../notes/x(1).md) z", "a *(private)* z"},
+		"titled private":          {`[a](../../notes/x.md "t")`, "a *(private)*"},
+		"linked image, both priv": {"[![alt](../../notes/i.png)](../../notes/x.md)", "alt *(private)* *(private)*"},
+		"linked image, ext outer": {"[![alt](../../notes/i.png)](https://e.com)", "[alt *(private)*](https://e.com)"},
+		"file scheme":             {"[a](file:///Users/me/x.md)", "a *(private)*"},
+		"uppercase file scheme":   {"[a](FILE:///tmp/x)", "a *(private)*"},
+		"windows drive path":      {`[a](C:\Users\me\x.md)`, "a *(private)*"},
+		"ref def private":         {"[n]: ../../notes/x.md", ""},
+		"ref def exported":        {"[n]: decisions.md#dec-001", "[n]: decisions.md#dec-001"},
+		"ref def external":        {"[n]: https://e.com/x", "[n]: https://e.com/x"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			in := pilotInput()
+			in.Files["decisions.md"] = tc.in + "\n"
+			out, err := Render(in)
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			body := out["pilot/decisions.md"]
+			line := strings.TrimSuffix(body[strings.Index(body, "\n\n")+2:], "\n")
+			if line != tc.want {
+				t.Errorf("got %q, want %q", line, tc.want)
+			}
+		})
+	}
+}
+
+func TestRenderRejectsUnsupportedLinkForm(t *testing.T) {
+	in := pilotInput()
+	in.Files["decisions.md"] = "[[[deep]]](../../notes/x.md)\n"
+	if _, err := Render(in); err == nil || !strings.Contains(err.Error(), "unsupported link form") {
+		t.Fatalf("want unsupported-link-form error, got %v", err)
+	}
+}

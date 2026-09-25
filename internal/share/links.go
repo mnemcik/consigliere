@@ -7,25 +7,62 @@ import (
 	"strings"
 )
 
+// Pieces of an inline link, shared by the matcher and the safety-net guard.
+const (
+	// linkText allows one level of nested brackets, so a linked image
+	// ([![alt](img)](target)) is matched as the outer link.
+	linkText = `((?:[^\[\]]|\[[^\[\]]*\])*)`
+	// linkTarget is an <angle-bracket> target or a bare one that may contain
+	// one level of balanced parentheses (a(b).md).
+	linkTarget = `(<[^<>\n]*>|(?:[^()\s]|\([^()\s]*\))+)`
+	linkTitle  = `(\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?`
+)
+
 // linkRe matches an inline markdown link or image: [text](target "title").
 // Groups: 1 "!" for images, 2 text, 3 target, 4 optional title.
-var linkRe = regexp.MustCompile(`(!?)\[([^\]]*)\]\(([^)\s]+)(\s+"[^"]*")?\)`)
+var linkRe = regexp.MustCompile(`(!?)\[` + linkText + `\]\(\s*` + linkTarget + linkTitle + `\s*\)`)
 
-var schemeRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*:`)
+// refDefRe matches a reference definition: [label]: target "title".
+// Groups: 1 prefix up to the target, 2 target, 3 rest of the line.
+var refDefRe = regexp.MustCompile(`^( {0,3}\[[^\]]+\]:\s*)(<[^<>\n]*>|\S+)(.*)$`)
+
+// guardRe finds the target after any remaining "](" for the safety net.
+var guardRe = regexp.MustCompile(`\]\(\s*` + linkTarget)
+
+// schemeRe requires at least two characters so a Windows drive path (C:\...)
+// is not mistaken for a URL scheme.
+var schemeRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]+:`)
 
 // PrivateMarker is appended to the text of a de-linked private link.
 const PrivateMarker = "*(private)*"
 
 // isExternal reports whether a link target leaves the workspace (a URL or
-// other scheme) or stays within the current page (a bare fragment).
+// other scheme) or stays within the current page (a bare fragment). A file:
+// URL is a local path, so it is never external.
 func isExternal(target string) bool {
-	return strings.HasPrefix(target, "#") || schemeRe.MatchString(target)
+	target = unwrapTarget(target)
+	if strings.HasPrefix(target, "#") {
+		return true
+	}
+	scheme := schemeRe.FindString(target)
+	return scheme != "" && !strings.EqualFold(scheme, "file:")
+}
+
+// unwrapTarget strips the angle brackets of an <angle-bracket> target.
+func unwrapTarget(target string) string {
+	if strings.HasPrefix(target, "<") && strings.HasSuffix(target, ">") {
+		return target[1 : len(target)-1]
+	}
+	return target
 }
 
 // resolveLinks rewrites the relative links in body. src is the file's
 // workspace-relative path and pub its published path; targets maps
 // workspace-relative paths to published ones. Fenced code blocks and inline
-// code spans are left untouched.
+// code spans are left untouched. A private reference definition is dropped,
+// leaving its uses as plain text. Any link form the rewriter does not
+// understand is an error rather than a pass-through, so an unrecognised shape
+// can never carry a private path out.
 func resolveLinks(body, src, pub string, targets map[string]string) (string, error) {
 	lines := strings.Split(body, "\n")
 	inFence := false
@@ -38,7 +75,13 @@ func resolveLinks(body, src, pub string, targets map[string]string) (string, err
 		if inFence {
 			continue
 		}
-		out, err := resolveLine(line, src, pub, targets)
+		out, err := resolveRefDef(line, src, pub, targets)
+		if err == nil && out == line {
+			out, err = resolveLine(line, src, pub, targets)
+		}
+		if err == nil {
+			err = guard(out, src, pub, targets)
+		}
 		if err != nil {
 			return "", fmt.Errorf("line %d: %w", i+1, err)
 		}
@@ -47,9 +90,24 @@ func resolveLinks(body, src, pub string, targets map[string]string) (string, err
 	return strings.Join(lines, "\n"), nil
 }
 
+// resolveRefDef rewrites a reference-definition line, drops it (returns "")
+// when its target is private, and returns any other line unchanged.
+func resolveRefDef(line, src, pub string, targets map[string]string) (string, error) {
+	m := refDefRe.FindStringSubmatch(line)
+	if len(m) < 4 || isExternal(m[2]) {
+		return line, nil
+	}
+	rewritten, ok, err := resolveTarget(unwrapTarget(m[2]), src, pub, targets)
+	if err != nil || !ok {
+		return "", err
+	}
+	return m[1] + rewrap(m[2], rewritten) + m[3], nil
+}
+
 // resolveLine rewrites the links on one line. A link that starts inside an
 // inline code span is literal text and left alone; a link whose text merely
-// contains a code span ([`name` DEC-5](...)) is still a link.
+// contains a code span ([`name` DEC-5](...)) is still a link, and its text is
+// resolved too, so a nested image is handled whatever the outer target is.
 func resolveLine(line, src, pub string, targets map[string]string) (string, error) {
 	spans := codeSpans(line)
 	var b strings.Builder
@@ -59,32 +117,64 @@ func resolveLine(line, src, pub string, targets map[string]string) (string, erro
 			continue
 		}
 		image := line[loc[2]:loc[3]]
-		text := line[loc[4]:loc[5]]
 		target := line[loc[6]:loc[7]]
 		title := ""
 		if loc[8] >= 0 {
 			title = line[loc[8]:loc[9]]
 		}
-		if isExternal(target) {
-			continue
-		}
-		rewritten, ok, err := resolveTarget(target, src, pub, targets)
+		text, err := resolveLine(line[loc[4]:loc[5]], src, pub, targets)
 		if err != nil {
 			return "", err
 		}
+
 		b.WriteString(line[last:loc[0]])
+		last = loc[1]
+		if isExternal(target) {
+			b.WriteString(image + "[" + text + "](" + target + title + ")")
+			continue
+		}
+		rewritten, ok, err := resolveTarget(unwrapTarget(target), src, pub, targets)
+		if err != nil {
+			return "", err
+		}
 		switch {
 		case ok:
-			b.WriteString(image + "[" + text + "](" + rewritten + title + ")")
+			b.WriteString(image + "[" + text + "](" + rewrap(target, rewritten) + title + ")")
 		case text == "":
 			b.WriteString(PrivateMarker)
 		default:
 			b.WriteString(text + " " + PrivateMarker)
 		}
-		last = loc[1]
 	}
 	b.WriteString(line[last:])
 	return b.String(), nil
+}
+
+// rewrap keeps the angle brackets of an <angle-bracket> original.
+func rewrap(original, rewritten string) string {
+	if strings.HasPrefix(original, "<") {
+		return "<" + rewritten + ">"
+	}
+	return rewritten
+}
+
+// guard fails when a "](" outside code still points at a workspace path that
+// has no published counterpart: a link shape the rewriter did not match.
+func guard(line, src, pub string, targets map[string]string) error {
+	spans := codeSpans(line)
+	for _, loc := range guardRe.FindAllStringSubmatchIndex(line, -1) {
+		if inSpans(loc[0], spans) {
+			continue
+		}
+		target := line[loc[2]:loc[3]]
+		if isExternal(target) {
+			continue
+		}
+		if _, ok, err := resolveTarget(unwrapTarget(target), src, pub, targets); err != nil || !ok {
+			return fmt.Errorf("unsupported link form around %q; simplify the link or put it in a code span", line[loc[0]:loc[1]])
+		}
+	}
+	return nil
 }
 
 // codeSpans returns the [start, end) byte ranges of the inline code spans on a
