@@ -76,9 +76,10 @@ be empty. `--check` renders and scans without writing anything.
 `--audience <name>` renders the project as shared with that audience: the
 project must be one it shares, its `include` and `acknowledged` entries are
 merged with the flags, and links to the audience's other projects are
-rewritten to their published copies instead of being de-linked. A sibling
-that has no row in the project index, or whose files cannot be selected, is
-left out, and links to it stay private.
+rewritten to their published copies instead of being de-linked. Only a
+sibling that would itself publish cleanly gets live links: one with no row in
+the project index, uncommitted changes, open scan findings or a broken include
+or marker is left out, and links to it stay private rather than dangling.
 
 The project folder and the project index must have no uncommitted changes, so
 the stamped source commit always describes exactly what was exported.
@@ -209,7 +210,10 @@ shared project and compares it with the share repo's manifest
 Staleness compares a hash of the rendered content, not only the source
 commit, so an edit that lives outside the project folder (a status change in
 `projects/TODO.md`) still counts. An empty share repo, or one without the
-branch, reads as nothing published. Only the branch tip is fetched, and git
-never prompts for credentials: an unreachable or unauthorised repo reads as
-`unknown` with the error shown. A manifest written for a different audience
+branch, reads as nothing published. Only the branch tip is fetched, git never
+prompts (credential prompts are disabled, and ssh runs in batch mode unless
+you have set your own `GIT_SSH_COMMAND` or `core.sshCommand`), and each read
+times out after 60 seconds: an unreachable or unauthorised repo reads as
+`unknown` with the error shown. Credentials embedded in a repo URL are
+redacted from all output. A manifest written for a different audience
 is not compared against.

@@ -68,14 +68,35 @@ var shareNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 // '-', no spaces, no "..", no control or special characters.
 var shareBranchRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._/-]*$`)
 
-// NormalizeRepo reduces a git URL to a comparable form: trimmed, lowercased,
-// without a trailing "/" or ".git". It catches the same repo written twice in
-// one style; an SSH alias and an https URL for one repo still differ.
+// usableBranch applies a conservative subset of git's ref-name rules
+// (git check-ref-format --branch): ASCII only, no leading '-', no "..", no
+// "//", no component starting with '.', no ".lock" or '.' or '/' ending, and
+// not HEAD.
+func usableBranch(b string) bool {
+	if !shareBranchRe.MatchString(b) || b == "HEAD" ||
+		strings.Contains(b, "..") || strings.Contains(b, "//") || strings.Contains(b, "/.") ||
+		strings.HasSuffix(b, "/") || strings.HasSuffix(b, ".") || strings.HasSuffix(b, ".lock") {
+		return false
+	}
+	return true
+}
+
+// NormalizeRepo reduces a git URL to a comparable form: trimmed, without a
+// trailing "/" or ".git", and lowercased when it is a URL (hosts and GitHub
+// paths are case-insensitive) but not when it is a local path, which may be
+// case-sensitive. It catches the same repo written twice in one style; an SSH
+// alias and an https URL for one repo still differ.
 func NormalizeRepo(repo string) string {
-	r := strings.ToLower(strings.TrimSpace(repo))
+	r := strings.TrimSpace(repo)
+	if strings.Contains(r, "://") || scpLikeRe.MatchString(r) {
+		r = strings.ToLower(r)
+	}
 	r = strings.TrimSuffix(r, "/")
 	return strings.TrimSuffix(r, ".git")
 }
+
+// scpLikeRe matches git's scp-like form, user@host:path.
+var scpLikeRe = regexp.MustCompile(`^[^/@\s]+@[^/:\s]+:`)
 
 // Validate reports the first structural problem in the share block, so a
 // typo fails loudly instead of silently sharing less (or more) than meant.
@@ -96,7 +117,10 @@ func (s *ShareConfig) Validate() error {
 		if strings.TrimSpace(a.Repo) == "" {
 			return fmt.Errorf("share: audience %q has no repo", name)
 		}
-		if a.Branch != "" && (!shareBranchRe.MatchString(a.Branch) || strings.Contains(a.Branch, "..") || strings.HasSuffix(a.Branch, "/")) {
+		if strings.HasPrefix(strings.TrimSpace(a.Repo), "-") {
+			return fmt.Errorf("share: audience %q: a repo URL cannot start with '-'", name)
+		}
+		if a.Branch != "" && !usableBranch(a.Branch) {
 			return fmt.Errorf("share: audience %q: %q is not a usable branch name", name, a.Branch)
 		}
 		target := NormalizeRepo(a.Repo) + "#" + a.BranchOrDefault()

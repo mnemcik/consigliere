@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -80,7 +82,7 @@ func runShareExport(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	opts, err := env.exportOptions(slug, audience, include, acks, owner)
+	opts, err := env.exportOptions(cmd.Context(), slug, audience, include, acks, owner)
 	if err != nil {
 		return err
 	}
@@ -150,10 +152,48 @@ func loadShareEnv(cmd *cobra.Command) (*shareEnv, error) {
 // are the union of both; the denylist always applies. With an audience, the
 // project must be one it shares, and the audience's other projects become
 // link targets.
-func (e *shareEnv) exportOptions(slug, audience string, include []string, acks []share.Ack, owner string) (*share.Options, error) {
-	project, err := indexedProject(filepath.Join(e.root, filepath.FromSlash(e.indexPath)), slug)
+func (e *shareEnv) exportOptions(ctx context.Context, slug, audience string, include []string, acks []share.Ack, owner string) (*share.Options, error) {
+	opts, a, err := e.baseOptions(slug, audience, include, acks, owner)
+	if err != nil || audience == "" {
+		return opts, err
+	}
+	indexed, err := indexedSlugs(filepath.Join(e.root, filepath.FromSlash(e.indexPath)))
 	if err != nil {
 		return nil, err
+	}
+	opts.Shared = map[string]string{}
+	for _, other := range a.ProjectSlugs() {
+		if other == slug || !indexed[other] {
+			continue
+		}
+		// A link to a sibling stays live only if the sibling itself would be
+		// published: its export must run and come out clean. Anything else
+		// (open findings, uncommitted changes, a broken marker or include)
+		// would leave a dangling link, so the sibling stays private. The
+		// sibling is rendered without its own siblings, which cannot change
+		// the outcome: rewritten links are relative paths no rule matches.
+		sibling, _, err := e.baseOptions(other, audience, nil, nil, owner)
+		if err != nil {
+			continue
+		}
+		res, err := share.Export(ctx, sibling)
+		if err != nil || len(res.Findings) > 0 {
+			continue
+		}
+		for p := range res.Files {
+			opts.Shared[dirProjects+"/"+p] = p
+		}
+	}
+	return opts, nil
+}
+
+// baseOptions merges the share block with the command-line overrides, without
+// sibling links. It returns the audience when one is named.
+func (e *shareEnv) baseOptions(slug, audience string, include []string, acks []share.Ack, owner string) (*share.Options, workspace.ShareAudience, error) {
+	var none workspace.ShareAudience
+	project, err := indexedProject(filepath.Join(e.root, filepath.FromSlash(e.indexPath)), slug)
+	if err != nil {
+		return nil, none, err
 	}
 	opts := &share.Options{
 		Root:      e.root,
@@ -171,43 +211,22 @@ func (e *shareEnv) exportOptions(slug, audience string, include []string, acks [
 		opts.Scan.Denylist = e.share.Denylist
 	}
 	if audience == "" {
-		return opts, nil
+		return opts, none, nil
 	}
 
 	a, ok := e.audience(audience)
 	if !ok {
-		return nil, fmt.Errorf("audience %q is not in the .cg.json share block", audience)
+		return nil, none, fmt.Errorf("audience %q is not in the .cg.json share block", audience)
 	}
 	p, ok := a.Projects[slug]
 	if !ok {
-		return nil, fmt.Errorf("audience %q does not share project %q", audience, slug)
+		return nil, none, fmt.Errorf("audience %q does not share project %q", audience, slug)
 	}
 	opts.Include = append(append([]string(nil), p.Include...), include...)
 	for _, ack := range p.Acknowledged {
 		opts.Scan.Acknowledged = append(opts.Scan.Acknowledged, share.Ack{Rule: ack.Rule, Hash: ack.Hash})
 	}
-	indexed, err := indexedSlugs(filepath.Join(e.root, filepath.FromSlash(e.indexPath)))
-	if err != nil {
-		return nil, err
-	}
-	opts.Shared = map[string]string{}
-	for _, other := range a.ProjectSlugs() {
-		// A sibling that is not in the index, or whose files cannot be
-		// selected, cannot be exported, so its links would dangle. It is left
-		// out and links to it stay private; status reports its own error.
-		if other == slug || !indexed[other] {
-			continue
-		}
-		dir := filepath.Join(e.root, dirProjects, other)
-		names, err := share.ExportedNames(dir, a.Projects[other].Include)
-		if err != nil {
-			continue
-		}
-		for _, n := range names {
-			opts.Shared[dirProjects+"/"+other+"/"+n] = other + "/" + n
-		}
-	}
-	return opts, nil
+	return opts, a, nil
 }
 
 // indexedSlugs returns the project slugs that have a row in the index.
@@ -226,7 +245,8 @@ func indexedSlugs(indexPath string) (map[string]bool, error) {
 // rejectOwnRepo refuses a share block whose audience points at the
 // workspace's own origin: publishing there would push the private workspace's
 // content into the repo it came from. Comparison is by normalized URL, so an
-// alias spelling of the same repo is not caught; publish checks again.
+// alias spelling of the same repo is not caught; a publish command must check
+// the resolved remote again before it pushes.
 func rejectOwnRepo(cmd *cobra.Command, root string, sc *workspace.ShareConfig) error {
 	origin, err := gitx.RemoteURL(cmd.Context(), root, "origin")
 	if err != nil || origin == "" {
@@ -247,6 +267,10 @@ func (e *shareEnv) audience(name string) (workspace.ShareAudience, bool) {
 	a, ok := e.share.Audiences[name]
 	return a, ok
 }
+
+// shareReadTimeout bounds reading one share repo, so status never hangs on a
+// slow or unresponsive remote.
+const shareReadTimeout = 60 * time.Second
 
 var shareStatusCmd = &cobra.Command{
 	Use:   "status [<audience>]",
@@ -291,8 +315,10 @@ func runShareStatus(cmd *cobra.Command, args []string) error {
 
 func (e *shareEnv) printAudienceStatus(cmd *cobra.Command, w io.Writer, name string) {
 	a, _ := e.audience(name)
-	_, _ = fmt.Fprintf(w, "%s → %s (%s)\n", name, a.Repo, a.BranchOrDefault())
-	manifest, err := share.ReadPublished(cmd.Context(), a.Repo, a.BranchOrDefault())
+	_, _ = fmt.Fprintf(w, "%s → %s (%s)\n", name, share.RedactURL(a.Repo), a.BranchOrDefault())
+	ctx, cancel := context.WithTimeout(cmd.Context(), shareReadTimeout)
+	manifest, err := share.ReadPublished(ctx, a.Repo, a.BranchOrDefault())
+	cancel()
 	if err != nil {
 		_, _ = fmt.Fprintf(w, "  cannot read the share repo: %s\n", firstLine(err.Error()))
 	}
@@ -324,7 +350,7 @@ func (e *shareEnv) printAudienceStatus(cmd *cobra.Command, w io.Writer, name str
 }
 
 func (e *shareEnv) projectStatus(cmd *cobra.Command, audience, slug string, published map[string]share.PublishedProject, repoRead bool) (state, detail string) {
-	opts, err := e.exportOptions(slug, audience, nil, nil, "")
+	opts, err := e.exportOptions(cmd.Context(), slug, audience, nil, nil, "")
 	if err != nil {
 		return "error", firstLine(err.Error())
 	}

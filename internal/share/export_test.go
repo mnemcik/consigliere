@@ -268,3 +268,35 @@ func TestExportRefusesCaseVariants(t *testing.T) {
 		t.Errorf("the exact name must still work: %v", err)
 	}
 }
+
+// checkExactName reads directory listings, so unlike the Lstat-based
+// selection it exercises the case check on case-sensitive filesystems too.
+func TestCheckExactName(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "README.md", "r\n")
+	write(t, dir, "sub/notes.md", "n\n")
+	if err := checkExactName(dir, "README.md"); err != nil {
+		t.Errorf("exact name: %v", err)
+	}
+	if err := checkExactName(dir, "sub/notes.md"); err != nil {
+		t.Errorf("exact nested name: %v", err)
+	}
+	for _, name := range []string{"readme.md", "SUB/notes.md", "sub/Notes.md"} {
+		if err := checkExactName(dir, name); err == nil {
+			t.Errorf("%q: a case variant must be refused", name)
+		}
+	}
+}
+
+func TestExportSkipsMiscasedDefault(t *testing.T) {
+	ctx, root := initWorkspace(t)
+	git(t, ctx, root, "mv", "projects/pilot/decisions.md", "projects/pilot/Decisions.md")
+	git(t, ctx, root, "commit", "-m", "miscased")
+	res, err := Export(ctx, pilotOptions(root))
+	if err != nil {
+		t.Fatalf("a miscased default must be skipped, not fatal: %v", err)
+	}
+	if _, ok := res.Files["pilot/decisions.md"]; ok {
+		t.Error("a miscased default must not be exported under the default name")
+	}
+}

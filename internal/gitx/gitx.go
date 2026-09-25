@@ -84,7 +84,7 @@ func RefExists(ctx context.Context, dir, ref string) bool {
 // filesystem path is a valid url, which the extension installer relies on for
 // fixture-based tests.
 func Clone(ctx context.Context, url, dest, ref string) error {
-	if _, err := Run(ctx, "", "clone", "--quiet", url, dest); err != nil {
+	if _, err := Run(ctx, "", "clone", "--quiet", "--", url, dest); err != nil {
 		return err
 	}
 	if ref != "" {

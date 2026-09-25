@@ -174,7 +174,7 @@ func exportFor(t *testing.T, root, slug string) *share.Result {
 		t.Fatal(err)
 	}
 	env := &shareEnv{root: root, indexPath: indexProjectsPath, share: cfg.Share}
-	opts, err := env.exportOptions(slug, "team", nil, nil, "")
+	opts, err := env.exportOptions(context.Background(), slug, "team", nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +321,7 @@ func TestShareOwnerPrecedence(t *testing.T) {
 	cfg, _ := workspace.Detect(root)
 	env := &shareEnv{root: root, indexPath: indexProjectsPath, share: cfg.Share}
 	for flag, want := range map[string]string{"": "Ada Owner", "   ": "Ada Owner", "Flag Name": "Flag Name"} {
-		opts, err := env.exportOptions("alpha", "team", nil, nil, flag)
+		opts, err := env.exportOptions(context.Background(), "alpha", "team", nil, nil, flag)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -358,5 +358,17 @@ func TestShareRejectsWorkspaceOwnRepo(t *testing.T) {
 	out, err := runShare(t, root, "status")
 	if err == nil || !strings.Contains(err.Error()+out, "own repo") {
 		t.Errorf("an audience on the workspace's own origin must be refused, got err=%v\n%s", err, out)
+	}
+}
+
+func TestShareSiblingThatWouldNotPublishStaysPrivate(t *testing.T) {
+	root, _ := shareWorkspace(t)
+	// beta is indexed and its files can be selected, but a denylist hit
+	// blocks its own export, so it will never be published.
+	writeFile(t, root, "projects/beta/README.md", "# Beta\n\nKickoff with ACME.\n")
+	mustGit(t, context.Background(), root, "commit", "-qam", "acme")
+	readme := exportFor(t, root, "alpha").Files["alpha/README.md"]
+	if !strings.Contains(readme, "beta *(private)*") || strings.Contains(readme, "../beta/README.md") {
+		t.Errorf("a blocked sibling must stay private:\n%s", readme)
 	}
 }

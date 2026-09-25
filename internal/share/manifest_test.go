@@ -103,3 +103,27 @@ func TestReadPublishedRejectsUnversioned(t *testing.T) {
 		}
 	}
 }
+
+func TestRedactURL(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://user:s3cr3t@host/x.git":              "https://***@host/x.git",
+		"git clone https://tok@github.com/o/r failed": "git clone https://***@github.com/o/r failed",
+		"git@github.com:org/repo.git":                 "git@github.com:org/repo.git",
+		"/srv/share.git":                              "/srv/share.git",
+	} {
+		if got := RedactURL(in); got != want {
+			t.Errorf("RedactURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestReadPublishedRedactsAndRefusesOptions(t *testing.T) {
+	ctx := context.Background()
+	if _, err := ReadPublished(ctx, "--upload-pack=touch x", "main"); err == nil || !strings.Contains(err.Error(), "cannot start with '-'") {
+		t.Errorf("want an option-shaped repo refused, got %v", err)
+	}
+	_, err := ReadPublished(ctx, "https://user:s3cr3t@127.0.0.1:1/x.git", "main")
+	if err == nil || strings.Contains(err.Error(), "s3cr3t") {
+		t.Errorf("want an error with the secret redacted, got %v", err)
+	}
+}

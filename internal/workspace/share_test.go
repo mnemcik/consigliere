@@ -78,6 +78,16 @@ func TestShareConfigValidate(t *testing.T) {
 			"a": {Repo: "git@github.com:org/share.git", Projects: map[string]ShareProject{"p": ok}},
 			"b": {Repo: "git@github.com:Org/Share", Branch: "main", Projects: map[string]ShareProject{"q": ok}},
 		}}, "same repo and branch"},
+		"option repo":    {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "--upload-pack=x", Projects: map[string]ShareProject{"p": ok}}}}, "cannot start with '-'"},
+		"double slash":   {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Branch: "a//b", Projects: map[string]ShareProject{"p": ok}}}}, "not a usable branch"},
+		"lock branch":    {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Branch: "a.lock", Projects: map[string]ShareProject{"p": ok}}}}, "not a usable branch"},
+		"dot component":  {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Branch: "a/.b", Projects: map[string]ShareProject{"p": ok}}}}, "not a usable branch"},
+		"HEAD branch":    {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Branch: "HEAD", Projects: map[string]ShareProject{"p": ok}}}}, "not a usable branch"},
+		"release branch": {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Branch: "release/1.0", Projects: map[string]ShareProject{"p": ok}}}}, ""},
+		"local paths differ by case": {&ShareConfig{Audiences: map[string]ShareAudience{
+			"a": {Repo: "/srv/Share", Projects: map[string]ShareProject{"p": ok}},
+			"b": {Repo: "/srv/share", Projects: map[string]ShareProject{"q": ok}},
+		}}, ""},
 		"same repo, other branch": {&ShareConfig{Audiences: map[string]ShareAudience{
 			"a": {Repo: "r", Projects: map[string]ShareProject{"p": ok}},
 			"b": {Repo: "r", Branch: "team-b", Projects: map[string]ShareProject{"q": ok}},

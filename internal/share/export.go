@@ -93,6 +93,12 @@ func selectFiles(dir string, include []string) ([]string, error) {
 		if _, err := os.Lstat(filepath.Join(dir, name)); err != nil {
 			continue
 		}
+		// A default spelled differently on disk (Decisions.md) is simply not
+		// there, as on a case-sensitive filesystem; only an explicit include
+		// is fatal when its spelling does not match.
+		if checkExactName(dir, name) != nil {
+			continue
+		}
 		if err := checkContained(realDir, dir, name); err != nil {
 			return nil, err
 		}
