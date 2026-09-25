@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -61,7 +62,12 @@ func runSessionMarkDirty(cmd *cobra.Command, _ []string) error {
 	if cwd == "" {
 		cwd, _ = os.Getwd()
 	}
-	root, _, err := workspace.FindRoot(cwd)
+	// Badge files live at the main worktree root, matching start-gate and
+	// set-context; fall back to the walk-up root outside a git repo.
+	root, err := gitx.CommonRoot(cmd.Context(), cwd)
+	if err != nil {
+		root, _, err = workspace.FindRoot(cwd)
+	}
 	if err != nil || root == "" {
 		return nil
 	}
@@ -146,6 +152,12 @@ func init() {
 func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 	if !session.ValidSessionID(setContextSessionID) {
 		return fmt.Errorf("invalid --session-id %q", setContextSessionID)
+	}
+	// Required-flag checks only test presence, so --area "" would slip through.
+	setContextArea = strings.TrimSpace(setContextArea)
+	setContextProject = strings.TrimSpace(setContextProject)
+	if setContextArea == "" || setContextProject == "" {
+		return fmt.Errorf("--area and --project must be non-empty")
 	}
 	cmd.SilenceUsage = true
 
@@ -241,9 +253,13 @@ func runSessionStatusline(cmd *cobra.Command, _ []string) error {
 		cwd, _ = os.Getwd()
 	}
 
-	// The status line resolves its workspace by walking up from cwd (matching the
-	// shell hook), so the badge renders against whichever root holds the file.
-	root, _, _ := workspace.FindRoot(cwd)
+	// Badge files live at the main worktree root (where start-gate and
+	// set-context put them), so a session running in a linked worktree still
+	// finds its badge; fall back to the walk-up root outside a git repo.
+	root, err := gitx.CommonRoot(cmd.Context(), cwd)
+	if err != nil {
+		root, _, _ = workspace.FindRoot(cwd)
+	}
 	cfg, _ := workspace.Detect(root)
 	s := cfg.SessionSettings()
 
