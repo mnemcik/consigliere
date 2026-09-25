@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.19.0](https://github.com/mnemcik/consigliere/compare/v1.18.0...v1.19.0) (2026-09-25)
+
+
+### Features
+
+* **share:** add `cg share publish` ([#108](https://github.com/mnemcik/consigliere/issues/108)) ([1571109](https://github.com/mnemcik/consigliere/commit/15711097a3b481d6d77f1255bea3294fefe5807c))
+* **share:** require the terminal review when a publish adds files ([#114](https://github.com/mnemcik/consigliere/issues/114)) ([a36af67](https://github.com/mnemcik/consigliere/commit/a36af67f31a9bbd616f6a00da13b725241edbdee))
+* **share:** ship framework guidance for sharing projects ([#111](https://github.com/mnemcik/consigliere/issues/111)) ([69a78b2](https://github.com/mnemcik/consigliere/commit/69a78b24f4dee412506117f50adf341976428c0e))
+
 ## [1.18.0](https://github.com/mnemcik/consigliere/compare/v1.17.0...v1.18.0) (2026-09-25)
 
 
