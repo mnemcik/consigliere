@@ -27,6 +27,8 @@ const defaultGate = `⚠️ SESSION-START — before making changes, confirm:
 
 Session ID: {{session_id}}
 Badge state file for this session: {{badge_file}}
+Once the area and project are confirmed, record them for the status line:
+  cg session set-context --session-id {{session_id}} --area <area-slug> --project <project-slug>
 {{worktree_warning}}`
 
 // defaultWorktreeWarning is appended (as the {{worktree_warning}} token) when

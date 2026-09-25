@@ -36,7 +36,7 @@ Any **one** of these signals is usually enough; two or more makes it obvious:
 4. **Spawn the first bounded project** from the area's open feature tracks (usually just the one you're picking up now). Each new project gets an explicit `Done when:` and links its `Areas:` field to the new area.
 5. **Update `projects/TODO.md`.** Mark the retired project `Done`, repoint its Areas column to the new area, and add a row for each spawned project.
 6. **Update cross-references in related areas.** Any area that listed the old project under **Associated Items → Projects** should remove that entry and add the new area to its **Related Areas** list. Don't duplicate project links across both the owning area and related areas — only the owning area lists the projects.
-7. **Update the session-context badge** if you're continuing in the same session — the active area/project now differ from session start.
+7. **Update the session-context badge** if you're continuing in the same session — the active area/project now differ from session start — re-run `cg session set-context --session-id <id> --area <new-area> --project <project>`.
 
 ## Why the procedure matters
 

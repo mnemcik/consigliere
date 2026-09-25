@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -16,6 +17,7 @@ import (
 func init() {
 	sessionCmd.AddCommand(sessionMarkDirtyCmd)
 	sessionCmd.AddCommand(sessionPullLatestCmd)
+	sessionCmd.AddCommand(sessionSetContextCmd)
 	sessionCmd.AddCommand(sessionStartGateCmd)
 	sessionCmd.AddCommand(sessionStatuslineCmd)
 	rootCmd.AddCommand(sessionCmd)
@@ -23,7 +25,7 @@ func init() {
 
 var sessionCmd = &cobra.Command{
 	Use:   "session",
-	Short: "Claude Code hook bodies (gate, dirty-flag, pull-latest, statusline)",
+	Short: "Claude Code hook bodies and session badge state",
 	Long: `Bodies for the Claude Code hooks that the framework ships as thin bash
 wrappers. Each reads the hook's stdin JSON and writes the hook's expected
 stdout; they are designed to never fail the session, so operational problems
@@ -60,7 +62,12 @@ func runSessionMarkDirty(cmd *cobra.Command, _ []string) error {
 	if cwd == "" {
 		cwd, _ = os.Getwd()
 	}
-	root, _, err := workspace.FindRoot(cwd)
+	// Badge files live at the main worktree root, matching start-gate and
+	// set-context; fall back to the walk-up root outside a git repo.
+	root, err := gitx.CommonRoot(cmd.Context(), cwd)
+	if err != nil {
+		root, _, err = workspace.FindRoot(cwd)
+	}
 	if err != nil || root == "" {
 		return nil
 	}
@@ -109,6 +116,69 @@ func runSessionPullLatest(cmd *cobra.Command, _ []string) error {
 	if res.SystemMessage != "" {
 		emitSystemMessage(cmd.OutOrStdout(), res.SystemMessage)
 	}
+	return nil
+}
+
+var (
+	setContextSessionID string
+	setContextArea      string
+	setContextProject   string
+)
+
+var sessionSetContextCmd = &cobra.Command{
+	Use:   "set-context",
+	Short: "Record the session's area and project for the status-line badge",
+	Long: `Writes the area and project a session is working on to its badge state
+file (.claude/session-context/<session-id>.json under the main worktree root),
+creating it when absent. The status line renders the badge from this file and
+cg active lists sessions from it. Run it once the session-start gate's area and
+project are confirmed, and again whenever the session switches either one.
+Existing fields such as the dirty flag are preserved.`,
+	Example: `  cg session set-context --session-id 1b2c... --area platform --project api-gateway`,
+	Args:    cobra.NoArgs,
+	RunE:    runSessionSetContext,
+}
+
+func init() {
+	f := sessionSetContextCmd.Flags()
+	f.StringVar(&setContextSessionID, "session-id", "", "Claude Code session ID (shown in the session-start gate)")
+	f.StringVar(&setContextArea, "area", "", "area slug the session works in")
+	f.StringVar(&setContextProject, "project", "", "project slug the session works on")
+	for _, name := range []string{"session-id", "area", "project"} {
+		_ = sessionSetContextCmd.MarkFlagRequired(name)
+	}
+}
+
+func runSessionSetContext(cmd *cobra.Command, _ []string) error {
+	if !session.ValidSessionID(setContextSessionID) {
+		return fmt.Errorf("invalid --session-id %q", setContextSessionID)
+	}
+	// Required-flag checks only test presence, so --area "" would slip through.
+	setContextArea = strings.TrimSpace(setContextArea)
+	setContextProject = strings.TrimSpace(setContextProject)
+	if setContextArea == "" || setContextProject == "" {
+		return fmt.Errorf("--area and --project must be non-empty")
+	}
+	cmd.SilenceUsage = true
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	// Badge files live at the main worktree root, matching start-gate.
+	root, err := gitx.CommonRoot(cmd.Context(), cwd)
+	if err != nil {
+		root, _, err = workspace.FindRoot(cwd)
+	}
+	if err != nil || root == "" {
+		return fmt.Errorf("not inside a Consigliere workspace: %s", cwd)
+	}
+
+	if err := session.WriteContext(root, setContextSessionID, setContextArea, setContextProject); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Session badge set: [%s/%s] (%s)\n",
+		setContextArea, setContextProject, session.ContextFile(root, setContextSessionID))
 	return nil
 }
 
@@ -183,9 +253,13 @@ func runSessionStatusline(cmd *cobra.Command, _ []string) error {
 		cwd, _ = os.Getwd()
 	}
 
-	// The status line resolves its workspace by walking up from cwd (matching the
-	// shell hook), so the badge renders against whichever root holds the file.
-	root, _, _ := workspace.FindRoot(cwd)
+	// Badge files live at the main worktree root (where start-gate and
+	// set-context put them), so a session running in a linked worktree still
+	// finds its badge; fall back to the walk-up root outside a git repo.
+	root, err := gitx.CommonRoot(cmd.Context(), cwd)
+	if err != nil {
+		root, _, _ = workspace.FindRoot(cwd)
+	}
 	cfg, _ := workspace.Detect(root)
 	s := cfg.SessionSettings()
 
