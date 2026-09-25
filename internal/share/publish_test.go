@@ -353,3 +353,30 @@ func TestPublishFailsClosedWhenHistoryUnreadable(t *testing.T) {
 		t.Fatalf("an unreadable workspace history must refuse the publish, got %v", err)
 	}
 }
+
+func TestPublishAddedFileNeedsReview(t *testing.T) {
+	f := newPublishFixture(t)
+	f.publish(t, f.exports(t))
+
+	changed := f.exports(t)
+	changed["pilot"].Files["pilot/decisions.md"] += "\nedited\n"
+	plan, err := PreparePublish(f.ctx, f.opts(t, changed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plan.Close()
+	if plan.AddsFiles() || plan.NeedsReview() {
+		t.Errorf("a change-only republish must not need the terminal review: %+v", plan.Projects)
+	}
+
+	added := f.exports(t)
+	added["pilot"].Files["pilot/log.md"] = "# Log\n"
+	plan2, err := PreparePublish(f.ctx, f.opts(t, added))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plan2.Close()
+	if plan2.FirstPublish() || !plan2.AddsFiles() || !plan2.NeedsReview() {
+		t.Errorf("adding a file to a published project must need the terminal review: %+v", plan2.Projects)
+	}
+}

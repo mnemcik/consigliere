@@ -20,7 +20,7 @@ import (
 
 func init() {
 	sharePublishCmd.Flags().Bool("dry-run", false, "prepare and summarise the publish; commit and push nothing")
-	sharePublishCmd.Flags().Bool("yes", false, "confirm a republish without prompting (refused for a first publish)")
+	sharePublishCmd.Flags().Bool("yes", false, "confirm a republish without prompting (refused for a first publish or one that adds files)")
 	shareCmd.AddCommand(sharePublishCmd)
 }
 
@@ -36,10 +36,11 @@ repo has commits cg did not make, or someone published meanwhile, publishing
 stops. A share repo that shares history with this workspace is refused.
 
 Every publish shows what changes and asks for confirmation. The first publish
-of a project to an audience, or one that replaces content cg did not write,
-must be confirmed at an interactive terminal by typing the audience name:
-review the staged copy it points to first. --yes is refused for it. Later
-publishes accept --yes. --dry-run stops before committing.`,
+of a project to an audience, one that adds files to a project the audience
+already has, or one that replaces content cg did not write, must be confirmed
+at an interactive terminal by typing the audience name: review the staged
+copy it points to first. --yes is refused for these. Other republishes accept
+--yes. --dry-run stops before committing.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runSharePublish,
 }
@@ -233,14 +234,20 @@ func (e *shareEnv) publishAuthor(ctx context.Context, name, email, owner string)
 // of Claude Code's PreToolUse push-policy gate (which only sees git commands
 // Claude runs), so the gate lives here.
 func confirmPublish(ctx context.Context, w io.Writer, plan *share.PublishPlan, yes bool) error {
-	if plan.FirstPublish() {
+	if plan.NeedsReview() {
+		what := "a first publish"
+		heading := "FIRST PUBLISH"
+		if !plan.FirstPublish() {
+			what = "a publish that adds files"
+			heading = "NEW FILES"
+		}
 		if yes {
-			return fmt.Errorf("--yes is refused for a first publish; run it at a terminal and review the content first")
+			return fmt.Errorf("--yes is refused for %s; run it at a terminal and review the content first", what)
 		}
 		if !consent.Interactive() {
-			return fmt.Errorf("a first publish must be confirmed at an interactive terminal (run: cg share publish %s)", plan.Audience)
+			return fmt.Errorf("%s must be confirmed at an interactive terminal (run: cg share publish %s)", what, plan.Audience)
 		}
-		_, _ = fmt.Fprintf(w, "\n  FIRST PUBLISH to %q. Review every file in the staged copy before confirming:\n    %s\n", plan.Audience, plan.Dir)
+		_, _ = fmt.Fprintf(w, "\n  %s to %q. Review the content in the staged copy before confirming:\n    %s\n", heading, plan.Audience, plan.Dir)
 		answer, err := consent.Ask(ctx, w, fmt.Sprintf("  Type the audience name (%s) to publish, anything else to cancel: ", plan.Audience))
 		if err != nil {
 			return err
@@ -282,6 +289,9 @@ func printPlan(w io.Writer, plan *share.PublishPlan) {
 			state = fmt.Sprintf("changed (+%d ~%d -%d)", len(c.Added), len(c.Changed), len(c.Removed))
 		}
 		_, _ = fmt.Fprintf(w, "  %-32s %s\n", s, state)
+		if !c.First && len(c.Added) > 0 {
+			_, _ = fmt.Fprintf(w, "  %-32s new file(s): %s\n", "", strings.Join(c.Added, ", "))
+		}
 	}
 	for _, s := range plan.Removed {
 		_, _ = fmt.Fprintf(w, "  %-32s removed: no longer shared, deleted from the share repo (git history keeps it)\n", s)

@@ -83,6 +83,26 @@ func (p *PublishPlan) FirstPublish() bool {
 	return false
 }
 
+// AddsFiles reports whether the plan adds a file to a project the audience
+// already has — a newly included log.md, say. Unlike a changed file, which
+// keeps its previous published form for comparison, an added file is content
+// the audience has never seen, so it gets the same review as a first publish.
+func (p *PublishPlan) AddsFiles() bool {
+	for _, c := range p.Projects {
+		if !c.First && len(c.Added) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// NeedsReview reports whether the owner must review the staged content at an
+// interactive terminal before publishing: a first publish, or new files in an
+// already-published project.
+func (p *PublishPlan) NeedsReview() bool {
+	return p.FirstPublish() || p.AddsFiles()
+}
+
 // Close removes the staged clone.
 func (p *PublishPlan) Close() {
 	if p.tmp != "" {

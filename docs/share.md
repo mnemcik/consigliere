@@ -203,17 +203,16 @@ line is matched, so acknowledging it would let the key body through.
 
 No pattern can judge whether prose is sensitive, such as a colleague's name in
 meeting notes. That is covered by `log.md` being opt-in, and by the owner
-reviewing the full staged content before the first publish of each project to
-an audience (see `cg share publish`). Later changes to an already-published
-project get only a `[y/N]` confirmation, and existing files can gain new
-sensitive prose just as a newly included file can. Before confirming a
-republish, review what changed in the source since the last publish with
+reviewing the staged content at a terminal before the first publish of each
+project to an audience, and before any publish that adds files to it (see
+`cg share publish`). A republish that only changes existing files gets a
+`[y/N]` confirmation, and existing files can gain new sensitive prose. Before
+confirming it, review what changed in the source since the last publish with
 `git diff <published commit> -- projects/<slug>` (`cg share status` prints the
 published commit; every file shows as changed on a republish because its
-header names the source commit, so the source diff is what matters). Read any
-added file in full by rendering the project with
-`cg share export <slug> --audience <name> --out <dir>`, which is exactly what
-the publish would push.
+header names the source commit, so the source diff is what matters).
+`cg share export <slug> --audience <name> --out <dir>` renders exactly what the
+publish would push, if you want to read it before publishing.
 
 ## `cg share publish`
 
@@ -252,10 +251,12 @@ to its share repo. For each audience:
    -removed`) or unchanged, plus removed projects and replaced files. An
    unchanged audience publishes nothing.
 6. **Consent.**
-   - The first publish of a project to an audience, or one that replaces
-     content cg did not write, must be confirmed **at an interactive terminal**
-     by typing the audience name. Review the staged copy first. `--yes` is
-     refused for it. When Claude drives the session, run it yourself in a
+   - The first publish of a project to an audience, a publish that **adds
+     files** to a project the audience already has (a new include such as
+     `log.md`; the summary lists the new file names), or one that replaces
+     content cg did not write, must be confirmed **at an interactive
+     terminal** by typing the audience name. Review the staged copy first.
+     `--yes` is refused for these. When Claude drives the session, run it yourself in a
      separate terminal of your own, not through Claude: the prompt needs a
      real terminal on stdin.
    - Later publishes ask `[y/N]`, or accept `--yes`.
@@ -315,8 +316,8 @@ not compared against.
 | `… commits cg did not make …` | someone changed the share repo after the last publish | resolve it in the share repo; cg never force-pushes |
 | `… another audience` | the branch holds a different audience's copy | give each audience its own repo or branch |
 | `… was rejected …` | someone published between cg's read and push | `cg share status`, then publish again |
-| `a first publish must be confirmed at an interactive terminal` | the first publish needs a person at a real terminal | run `cg share publish <name>` yourself, in your own terminal |
-| `--yes is refused for a first publish` | a first publish always needs the typed confirmation | run it without `--yes`, in your own terminal |
+| `a first publish must be confirmed at an interactive terminal` / `a publish that adds files must be …` | these need a person at a real terminal | run `cg share publish <name>` yourself, in your own terminal |
+| `--yes is refused for a first publish` / `… for a publish that adds files` | these always need the typed confirmation | run it without `--yes`, in your own terminal |
 | `not an interactive terminal; pass --yes to confirm this republish` | a republish needs a confirmation | confirm at a terminal, or pass `--yes`, and only on the owner's explicit go-ahead |
 | `no author email for the publish commit` | no `authorEmail` and no workspace `user.email` | the owner sets `authorEmail` on the audience, or git `user.email` in the workspace |
 | `… newer than this cg understands` | the share repo was published by a newer cg | update cg |
