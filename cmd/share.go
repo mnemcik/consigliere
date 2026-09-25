@@ -51,7 +51,9 @@ The rendered output is scanned for credentials (token formats, private keys,
 JWTs, high-entropy assignments), local paths, op:// references and leftover
 template placeholders. Any finding stops the export before anything is
 written. Resolve a finding by fixing the source, wrapping the passage in
-exclusion markers, or, for a false positive, passing --ack rule:hash.
+exclusion markers, or, for a false positive, passing --ack rule:hash (record
+it in the project's "acknowledged" entry in .cg.json to unblock status and
+publish, which take no --ack).
 --check runs the scan without writing.
 
 The share block in .cg.json supplies the owner and the denylist. With
@@ -485,5 +487,5 @@ func printFindings(w io.Writer, findings []share.Finding) {
 	for _, f := range findings {
 		_, _ = fmt.Fprintf(w, "  %s:%d  %-22s %s  [ack: %s:%s]\n", f.File, f.Line, f.Rule, f.Match, f.Rule, f.Hash)
 	}
-	_, _ = fmt.Fprintln(w, "Fix the source, exclude the passage with share:exclude markers, or --ack a false positive.")
+	_, _ = fmt.Fprintln(w, "Fix the source, exclude the passage with share:exclude markers, or acknowledge a false positive:\n--ack rule:hash for this export, or the project's \"acknowledged\" entry in .cg.json to unblock publish.")
 }

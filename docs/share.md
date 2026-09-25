@@ -187,7 +187,9 @@ File names are scanned too, and a finding in one is reported as line 0.
 
 Resolve each finding by fixing the source, wrapping the passage in exclusion
 markers, or, for a false positive, acknowledging it with the `rule:hash` the
-report prints:
+report prints. `--ack` on the command line affects only that export; to
+unblock `cg share status` and `cg share publish`, record the acknowledgement
+under `audiences.<name>.projects.<slug>.acknowledged` in the `share` block:
 
 ```
 cg share export my-project --check --ack local-path:6c54c54b471a3e54
@@ -203,8 +205,10 @@ No pattern can judge whether prose is sensitive, such as a colleague's name in
 meeting notes. That is covered by `log.md` being opt-in, and by the owner
 reviewing the full staged content before the first publish of each project to
 an audience (see `cg share publish`). Later changes to an already-published
-project, a newly included file among them, get only a `[y/N]` confirmation, so
-review the staged copy yourself when the summary shows added files.
+project, a newly included file among them, get only a `[y/N]` confirmation.
+When the summary shows added files for a project, render it with
+`cg share export <slug> --audience <name> --out <dir>` (exactly what the
+publish would push) and read the new files before confirming.
 
 ## `cg share publish`
 
@@ -282,7 +286,7 @@ shared project and compares it with the share repo's manifest
 | `blocked` | open scan findings; run `cg share export <slug> --audience <name> --check` |
 | `error` | the export cannot run, e.g. uncommitted changes in the project |
 | `removed` | published, but no longer in the config; the next publish deletes it |
-| `unknown` | the share repo could not be read (the error is shown); a project that is `blocked` or `error` shows that instead |
+| `unknown` | the share repo could not be read, or holds another audience's copy (the reason is shown); a project that is `blocked` or `error` shows that instead |
 
 Staleness compares a hash of the rendered content, not only the source
 commit, so an edit that lives outside the project folder (a status change in
@@ -300,7 +304,7 @@ not compared against.
 | Message | What it means | What to do |
 |---|---|---|
 | `uncommitted changes under …` | the project folder or index has uncommitted edits, so the stamp would lie | commit them, then publish |
-| `… open finding(s)` | the scan found something in a shared project | `cg share export <slug> --audience <name> --check`, then fix, exclude or `--ack` |
+| `… open finding(s)` | the scan found something in a shared project | `cg share export <slug> --audience <name> --check`, then fix the source, exclude the passage, or record an acknowledgement under `audiences.<name>.projects.<slug>.acknowledged` (a command-line `--ack` does not reach publish) |
 | `… a separate repo` | the share repo shares history with this workspace | point the audience at a new, separate repo |
 | `… shallow clone …` | the workspace's real history is unknown | `git fetch --unshallow`, then publish |
 | `… commits cg did not make …` | someone changed the share repo after the last publish | resolve it in the share repo; cg never force-pushes |
@@ -309,6 +313,6 @@ not compared against.
 | `a first publish must be confirmed at an interactive terminal` | the first publish needs a person at a real terminal | run `cg share publish <name>` yourself, in your own terminal |
 | `--yes is refused for a first publish` | a first publish always needs the typed confirmation | run it without `--yes`, in your own terminal |
 | `not an interactive terminal; pass --yes to confirm this republish` | a republish needs a confirmation | confirm at a terminal, or pass `--yes`, and only on the owner's explicit go-ahead |
-| `no author email for the publish commit` | no `authorEmail` and no workspace `user.email` | set `authorEmail` on the audience, or git `user.email` in the workspace |
+| `no author email for the publish commit` | no `authorEmail` and no workspace `user.email` | the owner sets `authorEmail` on the audience, or git `user.email` in the workspace |
 | `… newer than this cg understands` | the share repo was published by a newer cg | update cg |
 | `… has no row in the project index` | the shared project is not in `projects/TODO.md` | add it to the index, or remove it from the audience |
