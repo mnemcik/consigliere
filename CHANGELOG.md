@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.17.0](https://github.com/mnemcik/consigliere/compare/v1.16.1...v1.17.0) (2026-09-25)
+
+
+### Features
+
+* **share:** add the project export core and `cg share export` ([#104](https://github.com/mnemcik/consigliere/issues/104)) ([30e43b8](https://github.com/mnemcik/consigliere/commit/30e43b8948cad84c5c11383a3f5f2e9a36b0fd68))
+* **share:** scan exports for confidential content before writing ([#105](https://github.com/mnemcik/consigliere/issues/105)) ([43abaa6](https://github.com/mnemcik/consigliere/commit/43abaa67176472fa137da97cd90c9808bfec2a42))
+
+
+### Bug Fixes
+
+* **init:** ignore .claude/session-context/ in the workspace .gitignore ([#102](https://github.com/mnemcik/consigliere/issues/102)) ([d0972c1](https://github.com/mnemcik/consigliere/commit/d0972c19a4f631f44086d39cdd4eb4a3c31db937))
+
 ## [1.16.1](https://github.com/mnemcik/consigliere/compare/v1.16.0...v1.16.1) (2026-09-22)
 
 
