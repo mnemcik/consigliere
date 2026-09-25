@@ -27,12 +27,16 @@ type Options struct {
 	Owner string
 	// Shared is passed through to Render; see Input.Shared.
 	Shared map[string]string
+	// Scan configures the confidentiality scan run on the rendered output.
+	Scan ScanOptions
 }
 
-// Result is a rendered export.
+// Result is a rendered export. Findings holds the unacknowledged scan
+// findings; a non-empty list means the export must not be written.
 type Result struct {
-	Files map[string]string // published path → content
-	Stamp Stamp
+	Files    map[string]string // published path → content
+	Stamp    Stamp
+	Findings []Finding
 }
 
 // Export selects, reads and renders one project. It refuses to run while the
@@ -70,7 +74,7 @@ func Export(ctx context.Context, opts *Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Result{Files: rendered, Stamp: stamp}, nil
+	return &Result{Files: rendered, Stamp: stamp, Findings: Scan(rendered, opts.Scan)}, nil
 }
 
 // selectFiles returns the allowlisted file names present in dir: the defaults
@@ -181,9 +185,18 @@ func resolveStamp(ctx context.Context, opts *Options, rel string) (Stamp, error)
 	return Stamp{Owner: owner, SHA: sha, Date: date}, nil
 }
 
-// WriteTo writes rendered files under out, which must not exist yet or be an
+// Write writes the export under out. It refuses while any scan finding is
+// open, so no caller can write an export the scan has not cleared.
+func (r *Result) Write(out string) error {
+	if len(r.Findings) > 0 {
+		return fmt.Errorf("%d open scan finding(s); refusing to write the export", len(r.Findings))
+	}
+	return writeFiles(out, r.Files)
+}
+
+// writeFiles writes rendered files under out, which must not exist yet or be an
 // empty directory, so an export never overwrites or mixes with existing files.
-func WriteTo(out string, files map[string]string) error {
+func writeFiles(out string, files map[string]string) error {
 	entries, err := os.ReadDir(out)
 	switch {
 	case err == nil && len(entries) > 0:
