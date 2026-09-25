@@ -219,8 +219,14 @@ func writeFiles(out string, files map[string]string) error {
 	case err != nil && !os.IsNotExist(err):
 		return err
 	}
+	return writeTree(out, files)
+}
+
+// writeTree writes files under dir, creating directories as needed. It does
+// not check what dir already holds; callers decide that.
+func writeTree(dir string, files map[string]string) error {
 	for pub, body := range files {
-		dest := filepath.Join(out, filepath.FromSlash(pub))
+		dest := filepath.Join(dir, filepath.FromSlash(pub))
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 			return err
 		}

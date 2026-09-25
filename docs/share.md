@@ -11,9 +11,20 @@ no per-path read permission. `cg share` therefore exports one project at a
 time, keeps only what was meant to leave, and stamps the result as a mirror of
 the owner's copy.
 
-Status: `cg share export` (render + scan), the `share` block in `.cg.json`
-and `cg share status` are available. Publishing to the share repo
-(`cg share publish`) is planned; until then a share repo is only read.
+The commands are `cg share export` (render + scan), `cg share status` and
+`cg share publish`, configured by the `share` block in `.cg.json`.
+
+## Setting up an audience
+
+1. Create a **private** repo for the audience yourself, and give each
+   recipient the read role. `cg` never creates repos or grants access, and the
+   recipients should not be able to write: `cg` owns the repo's whole tree.
+2. Add the audience to the `share` block (below), naming the repo and the
+   projects it gets.
+3. Run `cg share export <slug> --audience <name> --check` for each project and
+   resolve every finding.
+4. Run `cg share publish <name>` **yourself, at a terminal**, and review the
+   staged copy it points to before confirming.
 
 ## Configuration: the `share` block
 
@@ -191,6 +202,52 @@ No pattern can judge whether prose is sensitive, such as a colleague's name in
 meeting notes. That is covered by `log.md` being opt-in and, once publishing
 lands, by requiring the owner to review the full content on the first publish
 to each audience.
+
+## `cg share publish`
+
+```
+cg share publish [<audience>] [--dry-run] [--yes]
+```
+
+Publishes every project an audience shares (all audiences, or the one named)
+to its share repo. For each audience:
+
+1. **Every shared project is rendered and scanned.** If any cannot be
+   exported or has open findings, nothing is published for that audience: a
+   share repo is published whole or not at all.
+2. **The share branch is cloned** into a temporary directory, or started
+   fresh if it does not exist yet (an empty repo, or a new branch).
+3. **Safety checks.**
+   - A share repo that shares a root commit with this workspace is refused.
+     This check works however the URL is spelled, which the configuration
+     check cannot do.
+   - A manifest written for another audience is refused.
+   - A branch whose tip lacks cg's `Cg-Share-Publish` commit trailer has
+     commits cg did not make. If it was published before, publishing stops
+     and cg never force-pushes; resolve it in the share repo. If it was never
+     published (a repo created with a README, say), its files are listed and
+     will be replaced.
+4. **The whole tree is reproduced:** a generated `README.md` index,
+   `.cg-share.json`, and one `<slug>/` folder per project. A project no longer
+   shared is deleted from the tree, but **git history still has it**. If
+   something leaked, deleting it is not enough: rewrite the share repo's
+   history and review who had access.
+5. **A summary** lists each project as new, changed (`+added ~changed
+   -removed`) or unchanged, plus removed projects and replaced files. An
+   unchanged audience publishes nothing.
+6. **Consent.**
+   - The first publish of a project to an audience, or one that replaces
+     content cg did not write, must be confirmed **at an interactive terminal**
+     by typing the audience name. Review the staged copy first. `--yes` is
+     refused for it. When Claude drives the session, run it yourself with
+     `! cg share publish <name>`.
+   - Later publishes ask `[y/N]`, or accept `--yes`.
+   - `--dry-run` stops before committing.
+7. **Commit and push.** The commit is authored by the audience's
+   `authorName`/`authorEmail`, else this workspace's git identity, and carries
+   the `Cg-Share-Publish` trailer. The push is fast-forward only: if someone
+   published meanwhile, it is rejected, and you run `cg share status` and
+   retry.
 
 ## `cg share status`
 
