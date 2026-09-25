@@ -552,3 +552,13 @@ func TestSharePublishRepublishDryRunAndBlocked(t *testing.T) {
 		t.Fatalf("an audience with a blocked project must publish nothing, got err=%v\n%s", err, out)
 	}
 }
+
+func TestPublishSummaryNamesCompletedAudiences(t *testing.T) {
+	err := publishSummary([]string{"a"}, []string{"b", "c"}, "interrupted")
+	if err == nil || err.Error() != "interrupted; not published: b, c; completed: a" {
+		t.Errorf("a partial run must say what already went out, got %v", err)
+	}
+	if err := publishSummary(nil, []string{"b"}, ""); err == nil || err.Error() != "not published: b" {
+		t.Errorf("got %v", err)
+	}
+}

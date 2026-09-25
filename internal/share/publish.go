@@ -192,8 +192,17 @@ func refuseWorkspaceHistory(ctx context.Context, shareDir, workspaceRoot string,
 			return fmt.Errorf("the share repo has a branch or tag at commit %.12s, which is in this workspace's history; a share repo must be a separate repo", sha)
 		}
 	}
-	shareRoots := rootCommits(ctx, shareDir, "--all")
-	for r := range rootCommits(ctx, workspaceRoot, "--all") {
+	// A failed enumeration must not read as "no roots": that would pass the
+	// check without having made it.
+	shareRoots, err := rootCommits(ctx, shareDir, "--all")
+	if err != nil {
+		return fmt.Errorf("listing the share repo's root commits: %w", err)
+	}
+	workspaceRoots, err := rootCommits(ctx, workspaceRoot, "--all")
+	if err != nil {
+		return fmt.Errorf("listing this workspace's root commits: %w", err)
+	}
+	for r := range workspaceRoots {
 		if shareRoots[r] {
 			return fmt.Errorf("the share repo shares history with this workspace (root commit %.12s); a share repo must be a separate repo", r)
 		}
@@ -201,16 +210,16 @@ func refuseWorkspaceHistory(ctx context.Context, shareDir, workspaceRoot string,
 	return nil
 }
 
-func rootCommits(ctx context.Context, dir, rev string) map[string]bool {
+func rootCommits(ctx context.Context, dir, rev string) (map[string]bool, error) {
 	out, err := gitx.Run(ctx, dir, "rev-list", "--max-parents=0", rev)
-	roots := map[string]bool{}
 	if err != nil {
-		return roots
+		return nil, err
 	}
+	roots := map[string]bool{}
 	for _, r := range strings.Fields(out) {
 		roots[r] = true
 	}
-	return roots
+	return roots, nil
 }
 
 // readExisting loads the manifest on the branch and checks the branch tip was

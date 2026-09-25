@@ -110,20 +110,44 @@ func runSharePublish(cmd *cobra.Command, args []string) error {
 	}
 
 	w := cmd.OutOrStdout()
-	var failed []string
+	var done, failed []string
 	for i, name := range names {
 		if i > 0 {
 			_, _ = fmt.Fprintln(w)
 		}
+		if ctx.Err() != nil {
+			// Interrupted: stop here rather than run the remaining audiences
+			// into a cancelled context, and say exactly what already went out.
+			failed = append(failed, names[i:]...)
+			return publishSummary(done, failed, "interrupted")
+		}
 		if err := env.publishAudience(ctx, w, name, dryRun, yes); err != nil {
 			_, _ = fmt.Fprintf(w, "%s: %s\n", name, err)
 			failed = append(failed, name)
+			continue
 		}
+		done = append(done, name)
+	}
+	if ctx.Err() != nil {
+		return publishSummary(done, failed, "interrupted")
 	}
 	if len(failed) > 0 {
-		return fmt.Errorf("not published: %s", strings.Join(failed, ", "))
+		return publishSummary(done, failed, "")
 	}
 	return nil
+}
+
+// publishSummary reports which audiences were handled and which were not, so
+// a partial run (some audiences already pushed) is never reported as nothing.
+func publishSummary(done, failed []string, why string) error {
+	msg := "not published: " + strings.Join(failed, ", ")
+	if len(done) > 0 {
+		msg += "; completed: " + strings.Join(done, ", ")
+	}
+	if why != "" {
+		msg = why + "; " + msg
+	}
+	return errors.New(msg)
 }
 
 func (e *shareEnv) publishAudience(ctx context.Context, w io.Writer, name string, dryRun, yes bool) error {

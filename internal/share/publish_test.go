@@ -342,3 +342,14 @@ func TestPublishNewProjectInPublishedAudienceIsFirst(t *testing.T) {
 		t.Errorf("adding a project must make it a first publish, and only it: %+v", plan.Projects)
 	}
 }
+
+// If the workspace's history cannot be listed, the check has not been made
+// and must not pass.
+func TestPublishFailsClosedWhenHistoryUnreadable(t *testing.T) {
+	f := newPublishFixture(t)
+	o := f.opts(t, f.exports(t))
+	o.WorkspaceRoot = t.TempDir() // not a git repository
+	if _, err := PreparePublish(f.ctx, o); err == nil || !strings.Contains(err.Error(), "root commits") {
+		t.Fatalf("an unreadable workspace history must refuse the publish, got %v", err)
+	}
+}
