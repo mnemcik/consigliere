@@ -48,6 +48,27 @@ func TestScanTruePositives(t *testing.T) {
 		"slack app token":     {"xapp-1-A0123-4567-abcdef", RuleToken},
 		"pgp private key":     {"-----BEGIN PGP PRIVATE KEY BLOCK-----", RulePrivateKey},
 		"lowercase windows":   {`c:\users\jane\notes`, RuleLocalPath},
+		// Round-2 review and CodeRabbit cases.
+		"password with $":       {"DB_PASSWORD=Summer$2024x", RuleAssignment},
+		"password with *":       {"password=Tr0ub4dor*3x", RuleAssignment},
+		"password with ; and &": {"DB_PASSWORD=Xk9;mQ2&vL7p", RuleAssignment},
+		"password with comma":   {"password: Pa55,word99", RuleAssignment},
+		"smtp pass":             {"SMTP_PASS=Hunter2024xyz", RuleAssignment},
+		"ssh passphrase":        {"SSH_PASSPHRASE=correct9horse", RuleAssignment},
+		"pgpassword":            {"PGPASSWORD=Hunter2024xyz", RuleAssignment},
+		"credentials":           {"credentials=Zx9Qw2Er7Ty4Ui1Op6As", RuleAssignment},
+		"short base62 key":      {"api_key=Zx9Qw2Er7Ty4", RuleAssignment},
+		"hex apim key":          {"Ocp-Apim-Subscription-Key: 3f9a1c0e7b2d4e6f8a9b0c1d2e3f4a5b", RuleAssignment},
+		"short hex key":         {"api_key=3f9a1c0e7b2d4e6f", RuleAssignment},
+		"camel client secret":   {"clientSecret: Zx9Qw2Er7Ty4Ui1Op6As", RuleAssignment},
+		"url password with @":   {"postgres://admin:p@ss1word@db/app", RuleURLCredential},
+		"url empty user":        {"redis://:Zx9Qw2Er7Ty4@cache:6379", RuleURLCredential},
+		"curl basic user":       {"curl -u admin:Summer2024x https://staging.example.com", RuleURLCredential},
+		"basic auth header":     {"Authorization: Basic YWRtaW46U3VtbWVyMjAyNHg=", RuleToken},
+		"psql password flag":    {"psql --password Summer2024x", RuleAssignment},
+		"file url user path":    {"file:///Users/jane.doe/Documents/x.md", RuleLocalPath},
+		"PATH entry user path":  {"PATH=/usr/bin:/Users/jane/bin", RuleLocalPath},
+		"windows forward slash": {"C:/Users/jane/notes", RuleLocalPath},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -95,6 +116,9 @@ func TestScanTrueNegatives(t *testing.T) {
 		"password placeholder":    "password=$DB_PASSWORD",
 		"windows env ref":         "password=%DB_PASSWORD%",
 		"api web route":           "GET /api/Users/me/settings",
+		"date utc flag":           `--start-time "$(date -u +%Y-%m-%dT%H:00:00Z)"`,
+		"email in query":          "https://api.example.com/users?email=jane.doe2@example.com",
+		"port and query email":    "https://api.example.com:8443/users?email=jane2@example.com",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got := scanOne(line, ScanOptions{}); len(got) != 0 {
