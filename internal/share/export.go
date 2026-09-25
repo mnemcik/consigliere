@@ -93,6 +93,15 @@ func selectFiles(dir string, include []string) ([]string, error) {
 		if _, err := os.Lstat(filepath.Join(dir, name)); err != nil {
 			continue
 		}
+		// A default spelled differently on disk (Decisions.md) is simply not
+		// there, as on a case-sensitive filesystem; only an explicit include
+		// is fatal when its spelling does not match.
+		if checkExactName(dir, name) != nil {
+			if name == readmeFile {
+				return nil, fmt.Errorf("project has no %s (a file differing only in letter case exists; rename it to %s)", readmeFile, readmeFile)
+			}
+			continue
+		}
 		if err := checkContained(realDir, dir, name); err != nil {
 			return nil, err
 		}
@@ -107,7 +116,7 @@ func selectFiles(dir string, include []string) ([]string, error) {
 		if path.IsAbs(name) || name == "." || name == ".." || strings.HasPrefix(name, "../") {
 			return nil, fmt.Errorf("include %q is not a file inside the project folder", raw)
 		}
-		if path.Base(name) == ResumeFile {
+		if isResume(name) {
 			return nil, fmt.Errorf("include %q: %s is never exported", raw, ResumeFile)
 		}
 		if seen[name] {
@@ -136,6 +145,12 @@ func checkContained(realDir, dir, name string) error {
 	}
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("%s is not a regular file", name)
+	}
+	// On a case-insensitive filesystem Lstat("Readme.md") succeeds for
+	// README.md, so a name could select a file other than the one it spells.
+	// Require an entry with exactly this name in its directory.
+	if err := checkExactName(dir, name); err != nil {
+		return err
 	}
 	resolved, err := filepath.EvalSymlinks(full)
 	if err != nil {
@@ -212,6 +227,30 @@ func writeFiles(out string, files map[string]string) error {
 		if err := os.WriteFile(dest, []byte(body), 0o644); err != nil { //nolint:gosec // exported markdown, meant to be read
 			return err
 		}
+	}
+	return nil
+}
+
+// checkExactName confirms that every element of name, below dir, is spelled
+// exactly as it appears in its directory listing.
+func checkExactName(dir, name string) error {
+	cur := dir
+	for _, elem := range strings.Split(name, "/") {
+		entries, err := os.ReadDir(cur)
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, e := range entries {
+			if e.Name() == elem {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("%s: no file with exactly this name (letter case differs on disk)", name)
+		}
+		cur = filepath.Join(cur, elem)
 	}
 	return nil
 }

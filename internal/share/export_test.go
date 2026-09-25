@@ -238,3 +238,74 @@ func TestExportSeesUntrackedDespiteConfig(t *testing.T) {
 		t.Fatalf("want uncommitted-changes error for an untracked include, got %v", err)
 	}
 }
+
+func TestExportRefusesCaseVariants(t *testing.T) {
+	ctx, root := initWorkspace(t)
+	write(t, root, "projects/pilot/sub/notes.md", "n\n")
+	git(t, ctx, root, "add", ".")
+	git(t, ctx, root, "commit", "-m", "sub")
+	opts := pilotOptions(root)
+
+	// resume.md never leaves in any letter case. On a case-insensitive
+	// filesystem Resume.md would otherwise open the real pause cursor.
+	for _, inc := range []string{"Resume.md", "RESUME.MD", "sub/../Resume.md"} {
+		opts.Include = []string{inc}
+		if _, err := Export(ctx, opts); err == nil || !strings.Contains(err.Error(), "never exported") {
+			t.Errorf("include %q: want never-exported error, got %v", inc, err)
+		}
+	}
+	// A name must match the file on disk exactly, in every path element.
+	// Case-insensitive filesystems report a case mismatch, case-sensitive
+	// ones a missing file; both must refuse.
+	for _, inc := range []string{"Log.md", "SUB/notes.md", "sub/Notes.md"} {
+		opts.Include = []string{inc}
+		if _, err := Export(ctx, opts); err == nil {
+			t.Errorf("include %q: a case variant must be refused", inc)
+		}
+	}
+	opts.Include = []string{"sub/notes.md"}
+	if _, err := Export(ctx, opts); err != nil {
+		t.Errorf("the exact name must still work: %v", err)
+	}
+}
+
+// checkExactName reads directory listings, so unlike the Lstat-based
+// selection it exercises the case check on case-sensitive filesystems too.
+func TestCheckExactName(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "README.md", "r\n")
+	write(t, dir, "sub/notes.md", "n\n")
+	if err := checkExactName(dir, "README.md"); err != nil {
+		t.Errorf("exact name: %v", err)
+	}
+	if err := checkExactName(dir, "sub/notes.md"); err != nil {
+		t.Errorf("exact nested name: %v", err)
+	}
+	for _, name := range []string{"readme.md", "SUB/notes.md", "sub/Notes.md"} {
+		if err := checkExactName(dir, name); err == nil {
+			t.Errorf("%q: a case variant must be refused", name)
+		}
+	}
+}
+
+func TestExportSkipsMiscasedDefault(t *testing.T) {
+	ctx, root := initWorkspace(t)
+	git(t, ctx, root, "mv", "projects/pilot/decisions.md", "projects/pilot/Decisions.md")
+	git(t, ctx, root, "commit", "-m", "miscased")
+	res, err := Export(ctx, pilotOptions(root))
+	if err != nil {
+		t.Fatalf("a miscased default must be skipped, not fatal: %v", err)
+	}
+	if _, ok := res.Files["pilot/decisions.md"]; ok {
+		t.Error("a miscased default must not be exported under the default name")
+	}
+}
+
+func TestExportExplainsMiscasedReadme(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "readme.md", "r\n")
+	_, err := selectFiles(dir, nil)
+	if err == nil || !strings.Contains(err.Error(), "no README.md") {
+		t.Fatalf("want a no-README error, got %v", err)
+	}
+}

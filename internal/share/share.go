@@ -46,6 +46,12 @@ const (
 	readmeFile  = "README.md"
 )
 
+// isResume reports whether name is the pause cursor, in any letter case: on a
+// case-insensitive filesystem (the macOS default) Resume.md opens resume.md.
+func isResume(name string) bool {
+	return strings.EqualFold(path.Base(name), ResumeFile)
+}
+
 // DefaultFiles are exported without being included explicitly.
 var DefaultFiles = []string{readmeFile, "decisions.md", "todo.md"}
 
@@ -96,7 +102,7 @@ func Render(in *Input) (map[string]string, error) {
 
 	out := make(map[string]string, len(names))
 	for _, name := range names {
-		if path.Base(name) == ResumeFile {
+		if isResume(name) {
 			return nil, fmt.Errorf("share: %s is never exported", name)
 		}
 		body, err := renderFile(in, name, targets)

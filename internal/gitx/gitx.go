@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -18,12 +19,22 @@ import (
 // Run executes `git <args...>` in dir (or the current directory if dir is "")
 // and returns trimmed stdout. On failure the error wraps git's stderr.
 func Run(ctx context.Context, dir string, args ...string) (string, error) {
+	return RunEnv(ctx, dir, nil, args...)
+}
+
+// RunEnv is Run with extra environment variables (KEY=value) layered on the
+// process environment, e.g. GIT_TERMINAL_PROMPT=0 so a read against a remote
+// without credentials fails instead of waiting on an interactive prompt.
+func RunEnv(ctx context.Context, dir string, env []string, args ...string) (string, error) {
 	// #nosec G204 -- "git" is a fixed binary; args originate internally (never
 	// from a shell string), and this is the single controlled choke point for
 	// every git invocation in cg.
 	cmd := exec.CommandContext(ctx, "git", args...)
 	if dir != "" {
 		cmd.Dir = dir
+	}
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
 	}
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
@@ -73,7 +84,7 @@ func RefExists(ctx context.Context, dir, ref string) bool {
 // filesystem path is a valid url, which the extension installer relies on for
 // fixture-based tests.
 func Clone(ctx context.Context, url, dest, ref string) error {
-	if _, err := Run(ctx, "", "clone", "--quiet", url, dest); err != nil {
+	if _, err := Run(ctx, "", "clone", "--quiet", "--", url, dest); err != nil {
 		return err
 	}
 	if ref != "" {
