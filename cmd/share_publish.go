@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"sort"
 	"strings"
 
@@ -49,8 +51,9 @@ var consent consenter = terminalConsent{}
 type consenter interface {
 	// Interactive reports whether a person is at the terminal.
 	Interactive() bool
-	// Ask prints the prompt and returns the answer line.
-	Ask(w io.Writer, prompt string) (string, error)
+	// Ask prints the prompt and returns the answer line. It returns early
+	// with an error when ctx is cancelled (Ctrl-C).
+	Ask(ctx context.Context, w io.Writer, prompt string) (string, error)
 }
 
 type terminalConsent struct{}
@@ -59,17 +62,35 @@ func (terminalConsent) Interactive() bool {
 	return term.IsTerminal(int(os.Stdin.Fd())) //nolint:gosec // stdin fd fits in int on every supported platform
 }
 
-func (terminalConsent) Ask(w io.Writer, prompt string) (string, error) {
+func (terminalConsent) Ask(ctx context.Context, w io.Writer, prompt string) (string, error) {
 	_, _ = fmt.Fprint(w, prompt)
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", err
+	type answer struct {
+		line string
+		err  error
 	}
-	return strings.TrimSpace(line), nil
+	ch := make(chan answer, 1)
+	go func() {
+		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		ch <- answer{line, err}
+	}()
+	select {
+	case <-ctx.Done():
+		_, _ = fmt.Fprintln(w)
+		return "", fmt.Errorf("interrupted")
+	case a := <-ch:
+		if a.err != nil && !errors.Is(a.err, io.EOF) {
+			return "", a.err
+		}
+		return strings.TrimSpace(a.line), nil
+	}
 }
 
 func runSharePublish(cmd *cobra.Command, args []string) error {
 	cmd.SilenceUsage = true
+	// Ctrl-C cancels the context instead of killing the process, so the
+	// staged clone is removed on the way out.
+	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
+	defer stop()
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	yes, _ := cmd.Flags().GetBool("yes")
 
@@ -94,7 +115,7 @@ func runSharePublish(cmd *cobra.Command, args []string) error {
 		if i > 0 {
 			_, _ = fmt.Fprintln(w)
 		}
-		if err := env.publishAudience(cmd, w, name, dryRun, yes); err != nil {
+		if err := env.publishAudience(ctx, w, name, dryRun, yes); err != nil {
 			_, _ = fmt.Fprintf(w, "%s: %s\n", name, err)
 			failed = append(failed, name)
 		}
@@ -105,8 +126,7 @@ func runSharePublish(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (e *shareEnv) publishAudience(cmd *cobra.Command, w io.Writer, name string, dryRun, yes bool) error {
-	ctx := cmd.Context()
+func (e *shareEnv) publishAudience(ctx context.Context, w io.Writer, name string, dryRun, yes bool) error {
 	a, _ := e.audience(name)
 	_, _ = fmt.Fprintf(w, "%s → %s (%s)\n", name, share.RedactURL(a.Repo), a.BranchOrDefault())
 
@@ -130,7 +150,7 @@ func (e *shareEnv) publishAudience(cmd *cobra.Command, w io.Writer, name string,
 		owner = res.Stamp.Owner
 	}
 
-	authorName, authorEmail, err := e.publishAuthor(cmd, a.AuthorName, a.AuthorEmail, owner)
+	authorName, authorEmail, err := e.publishAuthor(ctx, a.AuthorName, a.AuthorEmail, owner)
 	if err != nil {
 		return err
 	}
@@ -154,7 +174,7 @@ func (e *shareEnv) publishAudience(cmd *cobra.Command, w io.Writer, name string,
 		_, _ = fmt.Fprintln(w, "  dry run: nothing committed or pushed")
 		return nil
 	}
-	if err := confirmPublish(w, plan, yes); err != nil {
+	if err := confirmPublish(ctx, w, plan, yes); err != nil {
 		return err
 	}
 	sha, err := plan.Commit(ctx)
@@ -169,8 +189,7 @@ func (e *shareEnv) publishAudience(cmd *cobra.Command, w io.Writer, name string,
 // configured author, else the workspace repo's own git identity (which may be
 // repo-local, and so invisible to the temporary share clone), else the owner
 // name. A commit needs an email, so a missing one is an error.
-func (e *shareEnv) publishAuthor(cmd *cobra.Command, name, email, owner string) (resolvedName, resolvedEmail string, err error) {
-	ctx := cmd.Context()
+func (e *shareEnv) publishAuthor(ctx context.Context, name, email, owner string) (resolvedName, resolvedEmail string, err error) {
 	if name == "" {
 		name, _ = gitx.Run(ctx, e.root, "config", "user.name")
 	}
@@ -186,9 +205,10 @@ func (e *shareEnv) publishAuthor(cmd *cobra.Command, name, email, owner string) 
 	return name, email, nil
 }
 
-// confirmPublish is the consent gate. The push happens inside cg, where no
-// external hook sees it, so the gate lives here.
-func confirmPublish(w io.Writer, plan *share.PublishPlan, yes bool) error {
+// confirmPublish is the consent gate. The push happens inside cg, out of reach
+// of Claude Code's PreToolUse push-policy gate (which only sees git commands
+// Claude runs), so the gate lives here.
+func confirmPublish(ctx context.Context, w io.Writer, plan *share.PublishPlan, yes bool) error {
 	if plan.FirstPublish() {
 		if yes {
 			return fmt.Errorf("--yes is refused for a first publish; run it at a terminal and review the content first")
@@ -197,7 +217,7 @@ func confirmPublish(w io.Writer, plan *share.PublishPlan, yes bool) error {
 			return fmt.Errorf("a first publish must be confirmed at an interactive terminal (run: cg share publish %s)", plan.Audience)
 		}
 		_, _ = fmt.Fprintf(w, "\n  FIRST PUBLISH to %q. Review every file in the staged copy before confirming:\n    %s\n", plan.Audience, plan.Dir)
-		answer, err := consent.Ask(w, fmt.Sprintf("  Type the audience name (%s) to publish, anything else to cancel: ", plan.Audience))
+		answer, err := consent.Ask(ctx, w, fmt.Sprintf("  Type the audience name (%s) to publish, anything else to cancel: ", plan.Audience))
 		if err != nil {
 			return err
 		}
@@ -212,7 +232,7 @@ func confirmPublish(w io.Writer, plan *share.PublishPlan, yes bool) error {
 	if !consent.Interactive() {
 		return fmt.Errorf("not an interactive terminal; pass --yes to confirm this republish")
 	}
-	answer, err := consent.Ask(w, "  Publish these changes? [y/N] ")
+	answer, err := consent.Ask(ctx, w, "  Publish these changes? [y/N] ")
 	if err != nil {
 		return err
 	}

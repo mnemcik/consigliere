@@ -447,7 +447,7 @@ type fakeConsent struct {
 
 func (f *fakeConsent) Interactive() bool { return f.interactive }
 
-func (f *fakeConsent) Ask(w io.Writer, prompt string) (string, error) {
+func (f *fakeConsent) Ask(_ context.Context, w io.Writer, prompt string) (string, error) {
 	f.asked++
 	_, _ = fmt.Fprint(w, prompt)
 	return f.answer, nil

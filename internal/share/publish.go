@@ -116,11 +116,11 @@ func PreparePublish(ctx context.Context, opts *PublishOptions) (plan *PublishPla
 	}()
 	plan = staged
 
-	branchExists, err := cloneForPublish(ctx, opts.Repo, opts.Branch, plan.Dir)
+	branchExists, tips, err := cloneForPublish(ctx, opts.Repo, opts.Branch, plan.Dir)
 	if err != nil {
 		return nil, err
 	}
-	if err := refuseWorkspaceHistory(ctx, plan.Dir, opts.WorkspaceRoot); err != nil {
+	if err := refuseWorkspaceHistory(ctx, plan.Dir, opts.WorkspaceRoot, tips); err != nil {
 		return nil, err
 	}
 	if branchExists {
@@ -134,43 +134,65 @@ func PreparePublish(ctx context.Context, opts *PublishOptions) (plan *PublishPla
 	return plan, nil
 }
 
-// cloneForPublish clones branch of repo into dest, or, when the branch does
-// not exist yet (an empty repo, or a new branch), prepares an unborn branch.
-func cloneForPublish(ctx context.Context, repo, branch, dest string) (branchExists bool, err error) {
+// cloneForPublish clones the share repo into dest with every branch and tag
+// (commits, no file contents until checkout), so the history check sees the
+// whole repo, then checks out branch, or prepares it as an unborn branch when
+// it does not exist yet (an empty repo, or a new branch). It returns the tip
+// of every branch and tag the remote advertises.
+func cloneForPublish(ctx context.Context, repo, branch, dest string) (branchExists bool, tips []string, err error) {
 	env := readEnv(ctx)
-	heads, err := gitx.RunEnv(ctx, "", env, "ls-remote", "--heads", repo, "refs/heads/"+branch)
+	refs, err := gitx.RunEnv(ctx, "", env, "ls-remote", "--heads", "--tags", repo)
 	if err != nil {
-		return false, fmt.Errorf("reading share repo %s: %s", RedactURL(repo), RedactURL(err.Error()))
+		return false, nil, fmt.Errorf("reading share repo %s: %s", RedactURL(repo), RedactURL(err.Error()))
 	}
-	if strings.TrimSpace(heads) != "" {
-		if _, err := gitx.RunEnv(ctx, "", env, "clone", "--quiet", "--single-branch", "--branch", branch, "--", repo, dest); err != nil {
-			return false, fmt.Errorf("cloning share repo %s: %s", RedactURL(repo), RedactURL(err.Error()))
+	for _, line := range strings.Split(refs, "\n") {
+		sha, ref, ok := strings.Cut(strings.TrimSpace(line), "\t")
+		if !ok {
+			continue
 		}
-		return true, nil
+		tips = append(tips, sha)
+		if ref == "refs/heads/"+branch {
+			branchExists = true
+		}
 	}
-	if _, err := gitx.RunEnv(ctx, "", env, "clone", "--quiet", "--", repo, dest); err != nil {
-		return false, fmt.Errorf("cloning share repo %s: %s", RedactURL(repo), RedactURL(err.Error()))
+
+	if _, err := gitx.RunEnv(ctx, "", env, "clone", "--quiet", "--no-checkout", "--filter=blob:none", "--", repo, dest); err != nil {
+		return false, nil, fmt.Errorf("cloning share repo %s: %s", RedactURL(repo), RedactURL(err.Error()))
+	}
+	if branchExists {
+		if _, err := gitx.RunEnv(ctx, dest, env, "checkout", "--quiet", "-B", branch, "origin/"+branch); err != nil {
+			return false, nil, fmt.Errorf("checking out %s: %s", branch, RedactURL(err.Error()))
+		}
+		return true, tips, nil
 	}
 	if _, err := gitx.Run(ctx, dest, "checkout", "--quiet", "--orphan", branch); err != nil {
-		return false, err
+		return false, nil, err
 	}
-	// An orphan branch starts with the previous HEAD's files staged; start
-	// from nothing. On an empty repo there is nothing to remove.
+	// Start from nothing: an orphan branch may inherit the previous HEAD's
+	// index. On an empty repo there is nothing to remove.
 	_, _ = gitx.Run(ctx, dest, "rm", "-r", "-q", "--cached", "--ignore-unmatch", ".")
-	return false, nil
+	return false, tips, nil
 }
 
-// refuseWorkspaceHistory refuses a share repo that shares a root commit with
-// the workspace: it is the workspace itself (or a fork of it), whatever its
-// URL looks like. This is the check URL comparison cannot make reliable.
-func refuseWorkspaceHistory(ctx context.Context, shareDir, workspaceRoot string) error {
+// refuseWorkspaceHistory refuses a share repo that is the workspace itself, or
+// a fork of it, whatever its URL looks like — the check URL comparison cannot
+// make reliable. Two independent signals, over every branch and tag of the
+// share repo: a root commit shared with the workspace, or a branch or tag tip
+// the workspace already has. A shallow workspace cannot show its real roots,
+// so it is refused rather than half-checked.
+func refuseWorkspaceHistory(ctx context.Context, shareDir, workspaceRoot string, tips []string) error {
 	if workspaceRoot == "" {
 		return nil
 	}
-	shareRoots := rootCommits(ctx, shareDir, "--all")
-	if len(shareRoots) == 0 {
-		return nil
+	if shallow, _ := gitx.Run(ctx, workspaceRoot, "rev-parse", "--is-shallow-repository"); shallow == "true" {
+		return fmt.Errorf("this workspace is a shallow clone, so cg cannot verify the share repo is separate from it; run git fetch --unshallow first")
 	}
+	for _, sha := range tips {
+		if gitx.CommitishExists(ctx, workspaceRoot, sha) {
+			return fmt.Errorf("the share repo has a branch or tag at commit %.12s, which is in this workspace's history; a share repo must be a separate repo", sha)
+		}
+	}
+	shareRoots := rootCommits(ctx, shareDir, "--all")
 	for r := range rootCommits(ctx, workspaceRoot, "--all") {
 		if shareRoots[r] {
 			return fmt.Errorf("the share repo shares history with this workspace (root commit %.12s); a share repo must be a separate repo", r)
@@ -222,11 +244,11 @@ func (p *PublishPlan) readExisting(ctx context.Context) error {
 	}
 	// Never published, but not empty: e.g. created with a README. Publishing
 	// replaces that content, which the first-publish review shows.
-	files, err := gitx.Run(ctx, p.Dir, "ls-files")
+	files, err := lsFiles(ctx, p.Dir)
 	if err != nil {
 		return err
 	}
-	p.Foreign = strings.Fields(files)
+	p.Foreign = files
 	return nil
 }
 
@@ -266,26 +288,42 @@ func (p *PublishPlan) stage(ctx context.Context) error {
 	if err := writeTree(p.Dir, files); err != nil {
 		return err
 	}
-	if _, err := gitx.Run(ctx, p.Dir, "add", "-A"); err != nil {
+	// --force: a user's global gitignore must not silently drop a published
+	// file while the manifest still lists it.
+	if _, err := gitx.Run(ctx, p.Dir, "add", "-A", "--force"); err != nil {
 		return err
+	}
+	staged, err := lsFiles(ctx, p.Dir)
+	if err != nil {
+		return err
+	}
+	if len(staged) != len(files) {
+		return fmt.Errorf("staged %d file(s) for %d rendered; refusing to publish an incomplete tree", len(staged), len(files))
+	}
+	for _, f := range staged {
+		if _, ok := files[f]; !ok {
+			return fmt.Errorf("unexpected file %q staged; refusing to publish", f)
+		}
 	}
 	return p.diff(ctx, &manifest)
 }
 
 // diff fills Projects, Removed and Changed from the staged tree.
 func (p *PublishPlan) diff(ctx context.Context, next *Manifest) error {
-	status, err := gitx.Run(ctx, p.Dir, "status", "--porcelain", "--untracked-files=all", "--no-renames")
+	// -z: paths are NUL-terminated and never quoted, so names with spaces or
+	// non-ASCII characters parse like any other.
+	status, err := gitx.Run(ctx, p.Dir, "status", "--porcelain", "-z", "--untracked-files=all", "--no-renames")
 	if err != nil {
 		return err
 	}
-	p.Changed = strings.TrimSpace(status) != ""
+	p.Changed = strings.Trim(status, "\x00 ") != ""
 
 	p.Projects = map[string]ProjectChange{}
 	for slug := range next.Projects {
 		c := ProjectChange{First: p.Old == nil || !hasProject(p.Old, slug)}
 		p.Projects[slug] = c
 	}
-	for _, line := range strings.Split(status, "\n") {
+	for _, line := range strings.Split(status, "\x00") {
 		if len(line) < 4 {
 			continue
 		}
@@ -335,7 +373,15 @@ func (p *PublishPlan) Commit(ctx context.Context) (string, error) {
 	sort.Strings(slugs)
 	msg := fmt.Sprintf("publish: %s\n\n%s\n", strings.Join(slugs, ", "), PublishTrailer)
 
-	args := []string{}
+	// A user's global hooks and signing must not run in cg's clone: a
+	// prepare-commit-msg hook can drop the trailer (locking the owner out of
+	// the next publish), a pre-push hook can block the push, and signing can
+	// prompt. hooksPath points at an empty directory, which works everywhere.
+	noHooks := filepath.Join(p.tmp, "no-hooks")
+	if err := os.MkdirAll(noHooks, 0o700); err != nil {
+		return "", err
+	}
+	args := []string{"-c", "core.hooksPath=" + noHooks, "-c", "commit.gpgsign=false"}
 	if p.opts.AuthorName != "" {
 		args = append(args, "-c", "user.name="+p.opts.AuthorName)
 	}
@@ -346,12 +392,19 @@ func (p *PublishPlan) Commit(ctx context.Context) (string, error) {
 	if _, err := gitx.Run(ctx, p.Dir, args...); err != nil {
 		return "", err
 	}
+	if body, err := gitx.Run(ctx, p.Dir, "log", "-1", "--format=%B"); err != nil || !strings.Contains(body, PublishTrailer) {
+		return "", fmt.Errorf("the publish commit lost its %q trailer; not pushing", PublishTrailer)
+	}
 	sha, err := gitx.Run(ctx, p.Dir, "rev-parse", "HEAD")
 	if err != nil {
 		return "", err
 	}
-	if _, err := gitx.RunEnv(ctx, p.Dir, readEnv(ctx), "push", "--quiet", "origin", "HEAD:refs/heads/"+p.Branch); err != nil {
-		return "", fmt.Errorf("pushing to %s: %s (someone may have published meanwhile; run cg share status and retry)", RedactURL(p.Repo), RedactURL(err.Error()))
+	if _, err := gitx.RunEnv(ctx, p.Dir, readEnv(ctx), "-c", "core.hooksPath="+noHooks, "push", "--quiet", "origin", "HEAD:refs/heads/"+p.Branch); err != nil {
+		msg := RedactURL(err.Error())
+		if strings.Contains(msg, "non-fast-forward") || strings.Contains(msg, "fetch first") || strings.Contains(msg, "[rejected]") {
+			return "", fmt.Errorf("pushing to %s was rejected: the share repo changed since it was read (someone published meanwhile?); run cg share status and retry", RedactURL(p.Repo))
+		}
+		return "", fmt.Errorf("pushing to %s: %s", RedactURL(p.Repo), msg)
 	}
 	return sha, nil
 }
@@ -374,4 +427,19 @@ func indexReadme(m *Manifest) string {
 		_, _ = fmt.Fprintf(&b, "| [%s](%s/README.md) | `%.12s` | %s |\n", s, s, p.SourceCommit, p.SourceDate)
 	}
 	return b.String()
+}
+
+// lsFiles lists the index, NUL-separated so any file name parses.
+func lsFiles(ctx context.Context, dir string) ([]string, error) {
+	out, err := gitx.Run(ctx, dir, "ls-files", "-z")
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, f := range strings.Split(out, "\x00") {
+		if f != "" {
+			files = append(files, f)
+		}
+	}
+	return files, nil
 }

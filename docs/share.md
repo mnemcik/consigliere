@@ -218,9 +218,13 @@ to its share repo. For each audience:
 2. **The share branch is cloned** into a temporary directory, or started
    fresh if it does not exist yet (an empty repo, or a new branch).
 3. **Safety checks.**
-   - A share repo that shares a root commit with this workspace is refused.
-     This check works however the URL is spelled, which the configuration
-     check cannot do.
+   - A share repo that is this workspace or a fork of it is refused, however
+     its URL is spelled, which the configuration check cannot do. Every
+     branch and tag of the share repo is checked (commits only, no file
+     contents), so it doesn't matter which branch it's on. Two signals: a root
+     commit shared with the workspace, or a branch or tag tip the workspace
+     already has. A shallow workspace is refused, since its real roots are
+     unknown (`git fetch --unshallow` first).
    - A manifest written for another audience is refused.
    - A branch whose tip lacks cg's `Cg-Share-Publish` commit trailer has
      commits cg did not make. If it was published before, publishing stops
@@ -245,7 +249,13 @@ to its share repo. For each audience:
    - `--dry-run` stops before committing.
 7. **Commit and push.** The commit is authored by the audience's
    `authorName`/`authorEmail`, else this workspace's git identity, and carries
-   the `Cg-Share-Publish` trailer. The push is fast-forward only: if someone
+   the `Cg-Share-Publish` trailer. Your global git hooks and commit signing do
+   not run in cg's clone: a hook could drop the trailer (which would lock you
+   out of the next publish) or block the push, and signing could prompt. A
+   share repo that requires signed commits cannot be published to yet. A
+   global gitignore does not affect what is published, and the staged tree is
+   checked against the rendered files before anything is committed. Ctrl-C at
+   the prompt cancels cleanly and removes the staged copy. The push is fast-forward only: if someone
    published meanwhile, it is rejected, and you run `cg share status` and
    retry.
 

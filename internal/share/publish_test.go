@@ -154,8 +154,8 @@ func TestPublishRefusesWorkspaceHistory(t *testing.T) {
 	git(t, f.ctx, "", "clone", "--quiet", "--bare", f.root, fork)
 	o := f.opts(t, f.exports(t))
 	o.Repo = fork
-	if _, err := PreparePublish(f.ctx, o); err == nil || !strings.Contains(err.Error(), "shares history") {
-		t.Fatalf("want a shared-history refusal, got %v", err)
+	if _, err := PreparePublish(f.ctx, o); err == nil || !strings.Contains(err.Error(), "a separate repo") {
+		t.Fatalf("want a not-a-separate-repo refusal, got %v", err)
 	}
 }
 
@@ -224,5 +224,121 @@ func TestPublishToNewBranchOfExistingRepo(t *testing.T) {
 	}
 	if _, err := os.Stat(plan.Dir); err != nil {
 		t.Errorf("the staged clone must exist until Close: %v", err)
+	}
+}
+
+// The reviewer's bypass: the share repo IS the workspace (a bare copy of it),
+// and publishing targets an orphan branch whose own root is unrelated. Every
+// branch must be checked, not just the target.
+func TestPublishRefusesWorkspaceHiddenBehindOrphanBranch(t *testing.T) {
+	f := newPublishFixture(t)
+	copyRepo := filepath.Join(t.TempDir(), "ws.git")
+	git(t, f.ctx, "", "clone", "--quiet", "--bare", f.root, copyRepo)
+	work := filepath.Join(t.TempDir(), "orphan")
+	git(t, f.ctx, "", "clone", "--quiet", copyRepo, work)
+	git(t, f.ctx, work, "config", "user.email", "x@example.com")
+	git(t, f.ctx, work, "config", "user.name", "X")
+	git(t, f.ctx, work, "config", "commit.gpgsign", "false")
+	git(t, f.ctx, work, "checkout", "--quiet", "--orphan", "share")
+	git(t, f.ctx, work, "rm", "-rq", "--cached", ".")
+	write(t, work, "x.md", "x\n")
+	git(t, f.ctx, work, "add", "x.md")
+	git(t, f.ctx, work, "commit", "--quiet", "-m", "orphan")
+	git(t, f.ctx, work, "push", "--quiet", "origin", "share")
+
+	o := f.opts(t, f.exports(t))
+	o.Repo, o.Branch = copyRepo, "share"
+	if _, err := PreparePublish(f.ctx, o); err == nil || !strings.Contains(err.Error(), "a separate repo") {
+		t.Fatalf("a share repo holding the workspace on another branch must be refused, got %v", err)
+	}
+}
+
+func TestPublishRefusesWorkspaceHistoryOnAnotherBranch(t *testing.T) {
+	f := newPublishFixture(t)
+	f.publish(t, f.exports(t))
+	git(t, f.ctx, f.root, "push", "--quiet", f.bare, "HEAD:refs/heads/backup")
+	if _, err := PreparePublish(f.ctx, f.opts(t, f.exports(t))); err == nil || !strings.Contains(err.Error(), "a separate repo") {
+		t.Fatalf("workspace history on another branch of the share repo must be refused, got %v", err)
+	}
+}
+
+func TestPublishRefusesShallowWorkspace(t *testing.T) {
+	f := newPublishFixture(t)
+	shallow := filepath.Join(t.TempDir(), "shallow")
+	git(t, f.ctx, "", "clone", "--quiet", "--depth", "1", "file://"+f.root, shallow)
+	o := f.opts(t, f.exports(t))
+	o.WorkspaceRoot = shallow
+	if _, err := PreparePublish(f.ctx, o); err == nil || !strings.Contains(err.Error(), "shallow") {
+		t.Fatalf("a shallow workspace must be refused, got %v", err)
+	}
+}
+
+func TestPublishCountsQuotedFileNames(t *testing.T) {
+	f := newPublishFixture(t)
+	exports := f.exports(t)
+	exports["pilot"].Files["pilot/my file.md"] = "a\n"
+	exports["pilot"].Files["pilot/café.md"] = "b\n"
+	plan, err := PreparePublish(f.ctx, f.opts(t, exports))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plan.Close()
+	if got := len(plan.Projects["pilot"].Added); got != 4 {
+		t.Errorf("names with spaces or non-ASCII must be counted: got %d added (%v)", got, plan.Projects["pilot"].Added)
+	}
+}
+
+// globalGitConfig points git at a throwaway global config for the test.
+func globalGitConfig(t *testing.T, body string) {
+	t.Helper()
+	cfg := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+}
+
+func TestPublishIgnoresGlobalGitignore(t *testing.T) {
+	f := newPublishFixture(t)
+	ignore := filepath.Join(t.TempDir(), "ignore")
+	write(t, filepath.Dir(ignore), "ignore", "decisions.md\n")
+	globalGitConfig(t, "[core]\n\texcludesFile = "+ignore+"\n")
+	f.publish(t, f.exports(t))
+	if tree := git(t, f.ctx, f.bare, "ls-tree", "-r", "--name-only", "main"); !strings.Contains(tree, "pilot/decisions.md") {
+		t.Errorf("a global gitignore must not drop a published file:\n%s", tree)
+	}
+}
+
+func TestPublishIgnoresGlobalHooks(t *testing.T) {
+	f := newPublishFixture(t)
+	hooks := t.TempDir()
+	write(t, hooks, "prepare-commit-msg", "#!/bin/sh\necho 'hijacked' > \"$1\"\n")
+	write(t, hooks, "pre-push", "#!/bin/sh\nexit 1\n")
+	for _, h := range []string{"prepare-commit-msg", "pre-push"} {
+		if err := os.Chmod(filepath.Join(hooks, h), 0o755); err != nil { //nolint:gosec // G302: a test hook must be executable
+			t.Fatal(err)
+		}
+	}
+	globalGitConfig(t, "[core]\n\thooksPath = "+hooks+"\n")
+	f.publish(t, f.exports(t))
+	if log := git(t, f.ctx, f.bare, "log", "-1", "--format=%B", "main"); !strings.Contains(log, PublishTrailer) {
+		t.Errorf("global hooks must not run in cg's clone; commit message:\n%s", log)
+	}
+}
+
+func TestPublishNewProjectInPublishedAudienceIsFirst(t *testing.T) {
+	f := newPublishFixture(t)
+	f.publish(t, f.exports(t))
+	exports := f.exports(t)
+	sib := &Result{Files: map[string]string{"sibling/README.md": "# S\n"}, Stamp: Stamp{SHA: "abc", Date: "2026-09-25", Owner: "Ada"}}
+	exports["sibling"] = sib
+	plan, err := PreparePublish(f.ctx, f.opts(t, exports))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plan.Close()
+	if !plan.FirstPublish() || !plan.Projects["sibling"].First || plan.Projects["pilot"].First {
+		t.Errorf("adding a project must make it a first publish, and only it: %+v", plan.Projects)
 	}
 }
