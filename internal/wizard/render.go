@@ -94,7 +94,7 @@ func InsertAreaIndexRow(index string, a *Answers) string {
 	if strings.Contains(index, fmt.Sprintf("](%s.md)", a.AreaSlug)) {
 		return index
 	}
-	row := fmt.Sprintf("| [%s](%s.md) | `%s` | %s | %s |",
+	row := fmt.Sprintf("| [%s](%s.md) | %#q | %s | %s |",
 		escapeTableCell(a.AreaName), a.AreaSlug, a.AreaSlug,
 		escapeTableCell(normalizeTags(a.AreaTags)),
 		escapeTableCell(firstSentence(a.AreaOverview)))

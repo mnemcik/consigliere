@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mnemcik/consigliere/internal/extension"
 	"github.com/mnemcik/consigliere/internal/manifest"
+	"github.com/mnemcik/consigliere/internal/session"
 )
 
 func chdir(t *testing.T, dir string) {
@@ -303,4 +305,32 @@ func TestInitSeedsManifest(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "notes", "INDEX.md")); err != nil {
 		t.Errorf("expected notes/INDEX.md to exist: %v", err)
 	}
+}
+
+// Session badges are per-session runtime state (liveness comes from local
+// mtimes), so the seeded .gitignore must keep them out of history.
+func TestInitGitignoreExcludesSessionContext(t *testing.T) {
+	dir := t.TempDir()
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	defer chdir(t, origDir)
+	chdir(t, dir)
+
+	if err := runInit(nil, nil); err != nil {
+		t.Fatalf("init failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("cannot read .gitignore: %v", err)
+	}
+	want := filepath.ToSlash(session.ContextDirName) + "/"
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == want {
+			return
+		}
+	}
+	t.Errorf(".gitignore does not ignore %s:\n%s", want, data)
 }

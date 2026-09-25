@@ -1,1 +1,5 @@
 .DS_Store
+
+# cg session badges: per-session runtime state. `cg active` reads liveness
+# from the local files' mtimes, so a committed badge is never meaningful.
+.claude/session-context/
