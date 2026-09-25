@@ -28,3 +28,18 @@ func TestIndexedProject(t *testing.T) {
 		t.Errorf("want no-row error, got %v", err)
 	}
 }
+
+func TestParseAcks(t *testing.T) {
+	acks, err := parseAcks([]string{"local-path:6c54c54b471a3e54", "placeholder:abc"})
+	if err != nil {
+		t.Fatalf("parseAcks: %v", err)
+	}
+	if len(acks) != 2 || acks[0].Rule != "local-path" || acks[0].Hash != "6c54c54b471a3e54" {
+		t.Errorf("got %+v", acks)
+	}
+	for _, bad := range []string{"nohash", ":abc", "rule:"} {
+		if _, err := parseAcks([]string{bad}); err == nil {
+			t.Errorf("parseAcks(%q): expected an error", bad)
+		}
+	}
+}

@@ -27,12 +27,16 @@ type Options struct {
 	Owner string
 	// Shared is passed through to Render; see Input.Shared.
 	Shared map[string]string
+	// Scan configures the confidentiality scan run on the rendered output.
+	Scan ScanOptions
 }
 
-// Result is a rendered export.
+// Result is a rendered export. Findings holds the unacknowledged scan
+// findings; a non-empty list means the export must not be written.
 type Result struct {
-	Files map[string]string // published path → content
-	Stamp Stamp
+	Files    map[string]string // published path → content
+	Stamp    Stamp
+	Findings []Finding
 }
 
 // Export selects, reads and renders one project. It refuses to run while the
@@ -70,7 +74,7 @@ func Export(ctx context.Context, opts *Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Result{Files: rendered, Stamp: stamp}, nil
+	return &Result{Files: rendered, Stamp: stamp, Findings: Scan(rendered, opts.Scan)}, nil
 }
 
 // selectFiles returns the allowlisted file names present in dir: the defaults
