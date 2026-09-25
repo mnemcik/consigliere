@@ -205,10 +205,15 @@ No pattern can judge whether prose is sensitive, such as a colleague's name in
 meeting notes. That is covered by `log.md` being opt-in, and by the owner
 reviewing the full staged content before the first publish of each project to
 an audience (see `cg share publish`). Later changes to an already-published
-project, a newly included file among them, get only a `[y/N]` confirmation.
-When the summary shows added files for a project, render it with
-`cg share export <slug> --audience <name> --out <dir>` (exactly what the
-publish would push) and read the new files before confirming.
+project get only a `[y/N]` confirmation, and existing files can gain new
+sensitive prose just as a newly included file can. Before confirming a
+republish, review what changed in the source since the last publish with
+`git diff <published commit> -- projects/<slug>` (`cg share status` prints the
+published commit; every file shows as changed on a republish because its
+header names the source commit, so the source diff is what matters). Read any
+added file in full by rendering the project with
+`cg share export <slug> --audience <name> --out <dir>`, which is exactly what
+the publish would push.
 
 ## `cg share publish`
 
