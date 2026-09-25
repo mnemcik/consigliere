@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.18.0](https://github.com/mnemcik/consigliere/compare/v1.17.0...v1.18.0) (2026-09-25)
+
+
+### Features
+
+* **share:** configure sharing in .cg.json and add `cg share status` ([#106](https://github.com/mnemcik/consigliere/issues/106)) ([766170e](https://github.com/mnemcik/consigliere/commit/766170ec231f1d2faabc67dae6ef03d0fe6dc091))
+
 ## [1.17.0](https://github.com/mnemcik/consigliere/compare/v1.16.1...v1.17.0) (2026-09-25)
 
 
