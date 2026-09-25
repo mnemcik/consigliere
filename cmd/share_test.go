@@ -274,3 +274,89 @@ func TestShareStatusWithoutConfig(t *testing.T) {
 		t.Errorf("want a nothing-shared message, got err=%v\n%s", err, out)
 	}
 }
+
+func TestShareExportSiblingsDegradeToPrivate(t *testing.T) {
+	root, bare := shareWorkspace(t)
+	cfg, err := workspace.Detect(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := cfg.Share.Audiences["team"]
+	a.Projects["ghost"] = workspace.ShareProject{}                            // in config, not in the index
+	a.Projects["beta"] = workspace.ShareProject{Include: []string{"nope.md"}} // cannot be selected
+	cfg.Share.Audiences["team"] = a
+	if err := cfg.Save(root); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, root, "projects/ghost/README.md", "# Ghost\n")
+	writeFile(t, root, "projects/alpha/README.md", "# Alpha\n\nSee [beta](../beta/README.md) and [ghost](../ghost/README.md).\n")
+	mustGit(t, context.Background(), root, "add", ".")
+	mustGit(t, context.Background(), root, "commit", "-qm", "siblings")
+
+	res := exportFor(t, root, "alpha")
+	readme := res.Files["alpha/README.md"]
+	for _, want := range []string{"beta *(private)*", "ghost *(private)*"} {
+		if !strings.Contains(readme, want) {
+			t.Errorf("a sibling that cannot be exported must stay private (%q):\n%s", want, readme)
+		}
+	}
+	out, _ := runShare(t, root, "status")
+	if !strings.Contains(out, "alpha") || strings.Contains(firstStatusLine(out, "alpha"), "error") {
+		t.Errorf("one broken sibling must not put alpha into error:\n%s", out)
+	}
+	_ = bare
+}
+
+func firstStatusLine(out, slug string) string {
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(l), slug+" ") {
+			return l
+		}
+	}
+	return ""
+}
+
+func TestShareOwnerPrecedence(t *testing.T) {
+	root, _ := shareWorkspace(t)
+	cfg, _ := workspace.Detect(root)
+	env := &shareEnv{root: root, indexPath: indexProjectsPath, share: cfg.Share}
+	for flag, want := range map[string]string{"": "Ada Owner", "   ": "Ada Owner", "Flag Name": "Flag Name"} {
+		opts, err := env.exportOptions("alpha", "team", nil, nil, flag)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if opts.Owner != want {
+			t.Errorf("--owner %q: owner = %q, want %q", flag, opts.Owner, want)
+		}
+	}
+}
+
+func TestShareStatusIgnoresOtherAudiencesManifest(t *testing.T) {
+	root, bare := shareWorkspace(t)
+	m := share.Manifest{Version: share.ManifestVersion, Audience: "someone-else", Projects: map[string]share.PublishedProject{"theirs": {}}}
+	data, _ := json.Marshal(m)
+	ctx := context.Background()
+	work := filepath.Join(t.TempDir(), "pub")
+	mustGit(t, ctx, "", "clone", "--quiet", bare, work)
+	mustGit(t, ctx, work, "config", "user.email", "t@example.com")
+	mustGit(t, ctx, work, "config", "user.name", "T")
+	mustGit(t, ctx, work, "config", "commit.gpgsign", "false")
+	writeFile(t, work, share.ManifestFile, string(data))
+	mustGit(t, ctx, work, "add", ".")
+	mustGit(t, ctx, work, "commit", "-qm", "x")
+	mustGit(t, ctx, work, "push", "--quiet", "origin", "HEAD:main")
+
+	out, _ := runShare(t, root, "status")
+	if !strings.Contains(out, `holds audience "someone-else"`) || strings.Contains(out, "removed") {
+		t.Errorf("another audience's manifest must be refused, not diffed:\n%s", out)
+	}
+}
+
+func TestShareRejectsWorkspaceOwnRepo(t *testing.T) {
+	root, bare := shareWorkspace(t)
+	mustGit(t, context.Background(), root, "remote", "add", "origin", bare+"/")
+	out, err := runShare(t, root, "status")
+	if err == nil || !strings.Contains(err.Error()+out, "own repo") {
+		t.Errorf("an audience on the workspace's own origin must be refused, got err=%v\n%s", err, out)
+	}
+}

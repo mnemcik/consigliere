@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mnemcik/consigliere/internal/gitx"
 	"github.com/mnemcik/consigliere/internal/share"
 	"github.com/mnemcik/consigliere/internal/workspace"
 )
@@ -136,6 +137,9 @@ func loadShareEnv(cmd *cobra.Command) (*shareEnv, error) {
 		if err := cfg.Share.Validate(); err != nil {
 			return nil, err
 		}
+		if err := rejectOwnRepo(cmd, root, cfg.Share); err != nil {
+			return nil, err
+		}
 		env.share = cfg.Share
 	}
 	return env, nil
@@ -159,9 +163,10 @@ func (e *shareEnv) exportOptions(slug, audience string, include []string, acks [
 		Owner:     owner,
 		Scan:      share.ScanOptions{Acknowledged: acks},
 	}
+	opts.Owner = strings.TrimSpace(opts.Owner)
 	if e.share != nil {
 		if opts.Owner == "" {
-			opts.Owner = e.share.Owner
+			opts.Owner = strings.TrimSpace(e.share.Owner)
 		}
 		opts.Scan.Denylist = e.share.Denylist
 	}
@@ -181,21 +186,58 @@ func (e *shareEnv) exportOptions(slug, audience string, include []string, acks [
 	for _, ack := range p.Acknowledged {
 		opts.Scan.Acknowledged = append(opts.Scan.Acknowledged, share.Ack{Rule: ack.Rule, Hash: ack.Hash})
 	}
+	indexed, err := indexedSlugs(filepath.Join(e.root, filepath.FromSlash(e.indexPath)))
+	if err != nil {
+		return nil, err
+	}
 	opts.Shared = map[string]string{}
 	for _, other := range a.ProjectSlugs() {
-		if other == slug {
+		// A sibling that is not in the index, or whose files cannot be
+		// selected, cannot be exported, so its links would dangle. It is left
+		// out and links to it stay private; status reports its own error.
+		if other == slug || !indexed[other] {
 			continue
 		}
 		dir := filepath.Join(e.root, dirProjects, other)
 		names, err := share.ExportedNames(dir, a.Projects[other].Include)
 		if err != nil {
-			return nil, fmt.Errorf("audience %q, project %q: %w", audience, other, err)
+			continue
 		}
 		for _, n := range names {
 			opts.Shared[dirProjects+"/"+other+"/"+n] = other + "/" + n
 		}
 	}
 	return opts, nil
+}
+
+// indexedSlugs returns the project slugs that have a row in the index.
+func indexedSlugs(indexPath string) (map[string]bool, error) {
+	projects, err := parseProjectIndex(indexPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading project index: %w", err)
+	}
+	slugs := make(map[string]bool, len(projects))
+	for _, p := range projects {
+		slugs[p.Folder] = true
+	}
+	return slugs, nil
+}
+
+// rejectOwnRepo refuses a share block whose audience points at the
+// workspace's own origin: publishing there would push the private workspace's
+// content into the repo it came from. Comparison is by normalized URL, so an
+// alias spelling of the same repo is not caught; publish checks again.
+func rejectOwnRepo(cmd *cobra.Command, root string, sc *workspace.ShareConfig) error {
+	origin, err := gitx.RemoteURL(cmd.Context(), root, "origin")
+	if err != nil || origin == "" {
+		return nil
+	}
+	for _, name := range sc.AudienceNames() {
+		if workspace.NormalizeRepo(sc.Audiences[name].Repo) == workspace.NormalizeRepo(origin) {
+			return fmt.Errorf("share: audience %q points at this workspace's own repo; a share repo must be a separate repo", name)
+		}
+	}
+	return nil
 }
 
 func (e *shareEnv) audience(name string) (workspace.ShareAudience, bool) {
@@ -253,6 +295,12 @@ func (e *shareEnv) printAudienceStatus(cmd *cobra.Command, w io.Writer, name str
 	manifest, err := share.ReadPublished(cmd.Context(), a.Repo, a.BranchOrDefault())
 	if err != nil {
 		_, _ = fmt.Fprintf(w, "  cannot read the share repo: %s\n", firstLine(err.Error()))
+	}
+	if manifest != nil && manifest.Audience != name {
+		// Another audience's copy: comparing against it would report its
+		// projects as removed. Refuse to compare instead.
+		_, _ = fmt.Fprintf(w, "  the share repo holds audience %q, not %q; not comparing\n", manifest.Audience, name)
+		manifest, err = nil, fmt.Errorf("audience mismatch")
 	}
 	published := map[string]share.PublishedProject{}
 	if manifest != nil {

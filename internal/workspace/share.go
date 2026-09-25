@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 )
 
 // ShareConfig is the `share` block of .cg.json: which projects are shared
@@ -63,26 +64,57 @@ func (a ShareAudience) BranchOrDefault() string {
 
 var shareNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 
+// shareBranchRe is a conservative subset of git's ref-name rules: no leading
+// '-', no spaces, no "..", no control or special characters.
+var shareBranchRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._/-]*$`)
+
+// NormalizeRepo reduces a git URL to a comparable form: trimmed, lowercased,
+// without a trailing "/" or ".git". It catches the same repo written twice in
+// one style; an SSH alias and an https URL for one repo still differ.
+func NormalizeRepo(repo string) string {
+	r := strings.ToLower(strings.TrimSpace(repo))
+	r = strings.TrimSuffix(r, "/")
+	return strings.TrimSuffix(r, ".git")
+}
+
 // Validate reports the first structural problem in the share block, so a
 // typo fails loudly instead of silently sharing less (or more) than meant.
 func (s *ShareConfig) Validate() error {
 	if s == nil {
 		return nil
 	}
+	// One repo and branch belongs to one audience: the share repo is a pure
+	// function of its audience's config, so a second audience on the same
+	// target would read the first one's projects as removed, and publishing
+	// it would delete them.
+	targets := map[string]string{}
 	for _, name := range s.AudienceNames() {
 		a := s.Audiences[name]
 		if !shareNameRe.MatchString(name) {
 			return fmt.Errorf("share: audience %q: names are lowercase letters, digits, '.', '_' and '-'", name)
 		}
-		if a.Repo == "" {
+		if strings.TrimSpace(a.Repo) == "" {
 			return fmt.Errorf("share: audience %q has no repo", name)
 		}
+		if a.Branch != "" && (!shareBranchRe.MatchString(a.Branch) || strings.Contains(a.Branch, "..") || strings.HasSuffix(a.Branch, "/")) {
+			return fmt.Errorf("share: audience %q: %q is not a usable branch name", name, a.Branch)
+		}
+		target := NormalizeRepo(a.Repo) + "#" + a.BranchOrDefault()
+		if other, dup := targets[target]; dup {
+			return fmt.Errorf("share: audiences %q and %q publish to the same repo and branch; each audience needs its own", other, name)
+		}
+		targets[target] = name
 		if len(a.Projects) == 0 {
 			return fmt.Errorf("share: audience %q shares no projects", name)
 		}
 		for slug, p := range a.Projects {
 			if !shareNameRe.MatchString(slug) {
 				return fmt.Errorf("share: audience %q: %q is not a project slug", name, slug)
+			}
+			for _, inc := range p.Include {
+				if strings.TrimSpace(inc) == "" {
+					return fmt.Errorf("share: audience %q, project %q: include has an empty entry", name, slug)
+				}
 			}
 			for _, ack := range p.Acknowledged {
 				if ack.Rule == "" || ack.Hash == "" {

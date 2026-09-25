@@ -92,3 +92,14 @@ func TestReadPublishedErrors(t *testing.T) {
 		t.Errorf("want a newer-version error, got %v", err)
 	}
 }
+
+func TestReadPublishedRejectsUnversioned(t *testing.T) {
+	ctx := context.Background()
+	for name, m := range map[string]*Manifest{
+		"no version": {Projects: map[string]PublishedProject{"a": {}}},
+	} {
+		if _, err := ReadPublished(ctx, shareRemote(t, m), "main"); err == nil || !strings.Contains(err.Error(), "no schema version") {
+			t.Errorf("%s: want a no-version error, got %v", name, err)
+		}
+	}
+}

@@ -69,6 +69,19 @@ func TestShareConfigValidate(t *testing.T) {
 		"no projects":    {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r"}}}, "shares no projects"},
 		"bad slug":       {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Projects: map[string]ShareProject{"../x": ok}}}}, "not a project slug"},
 		"incomplete ack": {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Projects: map[string]ShareProject{"p": {Acknowledged: []ShareAck{{Rule: "token"}}}}}}}, "needs both rule and hash"},
+		"blank repo":     {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "   ", Projects: map[string]ShareProject{"p": ok}}}}, "has no repo"},
+		"dash branch":    {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Branch: "-x", Projects: map[string]ShareProject{"p": ok}}}}, "not a usable branch"},
+		"space branch":   {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Branch: "a b", Projects: map[string]ShareProject{"p": ok}}}}, "not a usable branch"},
+		"dotdot branch":  {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Branch: "a..b", Projects: map[string]ShareProject{"p": ok}}}}, "not a usable branch"},
+		"empty include":  {&ShareConfig{Audiences: map[string]ShareAudience{"team": {Repo: "r", Projects: map[string]ShareProject{"p": {Include: []string{" "}}}}}}, "empty entry"},
+		"same target": {&ShareConfig{Audiences: map[string]ShareAudience{
+			"a": {Repo: "git@github.com:org/share.git", Projects: map[string]ShareProject{"p": ok}},
+			"b": {Repo: "git@github.com:Org/Share", Branch: "main", Projects: map[string]ShareProject{"q": ok}},
+		}}, "same repo and branch"},
+		"same repo, other branch": {&ShareConfig{Audiences: map[string]ShareAudience{
+			"a": {Repo: "r", Projects: map[string]ShareProject{"p": ok}},
+			"b": {Repo: "r", Branch: "team-b", Projects: map[string]ShareProject{"q": ok}},
+		}}, ""},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

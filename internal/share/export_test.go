@@ -238,3 +238,33 @@ func TestExportSeesUntrackedDespiteConfig(t *testing.T) {
 		t.Fatalf("want uncommitted-changes error for an untracked include, got %v", err)
 	}
 }
+
+func TestExportRefusesCaseVariants(t *testing.T) {
+	ctx, root := initWorkspace(t)
+	write(t, root, "projects/pilot/sub/notes.md", "n\n")
+	git(t, ctx, root, "add", ".")
+	git(t, ctx, root, "commit", "-m", "sub")
+	opts := pilotOptions(root)
+
+	// resume.md never leaves in any letter case. On a case-insensitive
+	// filesystem Resume.md would otherwise open the real pause cursor.
+	for _, inc := range []string{"Resume.md", "RESUME.MD", "sub/../Resume.md"} {
+		opts.Include = []string{inc}
+		if _, err := Export(ctx, opts); err == nil || !strings.Contains(err.Error(), "never exported") {
+			t.Errorf("include %q: want never-exported error, got %v", inc, err)
+		}
+	}
+	// A name must match the file on disk exactly, in every path element.
+	// Case-insensitive filesystems report a case mismatch, case-sensitive
+	// ones a missing file; both must refuse.
+	for _, inc := range []string{"Log.md", "SUB/notes.md", "sub/Notes.md"} {
+		opts.Include = []string{inc}
+		if _, err := Export(ctx, opts); err == nil {
+			t.Errorf("include %q: a case variant must be refused", inc)
+		}
+	}
+	opts.Include = []string{"sub/notes.md"}
+	if _, err := Export(ctx, opts); err != nil {
+		t.Errorf("the exact name must still work: %v", err)
+	}
+}

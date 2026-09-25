@@ -26,10 +26,13 @@ const ManifestVersion = 1
 // publishing needs, and it lives with the published copy rather than in the
 // owner's workspace.
 type Manifest struct {
-	Version  int                         `json:"version"`
-	Owner    string                      `json:"owner"`
-	Audience string                      `json:"audience"`
-	Projects map[string]PublishedProject `json:"projects"`
+	Version int `json:"version"`
+	// Generator names the cg that wrote the manifest (e.g. "cg 1.18.0"), for
+	// diagnosing a publish; compatibility is decided by Version alone.
+	Generator string                      `json:"generator,omitempty"`
+	Owner     string                      `json:"owner"`
+	Audience  string                      `json:"audience"`
+	Projects  map[string]PublishedProject `json:"projects"`
 }
 
 // PublishedProject is one project as last published.
@@ -77,29 +80,36 @@ func PublishedEntry(res *Result) PublishedProject {
 	}
 }
 
-// ReadPublished clones the share repo into a temporary directory and returns
-// the manifest on branch. It returns (nil, nil) when nothing has been
-// published yet: an empty repo, a branch that does not exist, or a branch
-// without a manifest. Clone and auth errors are returned as they are.
+// noPrompt makes remote reads fail instead of waiting on a credential prompt.
+var noPrompt = []string{"GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=never"}
+
+// ReadPublished returns the manifest on branch of the share repo. It returns
+// (nil, nil) when nothing has been published yet: an empty repo, a branch
+// that does not exist, or a branch without a manifest. Reachability and auth
+// errors are returned as they are. Only the branch tip is fetched, and git
+// never prompts for credentials.
 func ReadPublished(ctx context.Context, repo, branch string) (*Manifest, error) {
+	heads, err := gitx.RunEnv(ctx, "", noPrompt, "ls-remote", "--heads", repo, "refs/heads/"+branch)
+	if err != nil {
+		return nil, fmt.Errorf("reading share repo %s: %w", repo, err)
+	}
+	if strings.TrimSpace(heads) == "" {
+		return nil, nil
+	}
+
 	tmp, err := os.MkdirTemp("", "cg-share-read-")
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = os.RemoveAll(tmp) }()
-
 	dest := filepath.Join(tmp, "repo")
-	if err := gitx.Clone(ctx, repo, dest, ""); err != nil {
+	if _, err := gitx.RunEnv(ctx, "", noPrompt, "clone", "--quiet", "--depth", "1", "--single-branch", "--branch", branch, repo, dest); err != nil {
 		return nil, fmt.Errorf("reading share repo %s: %w", repo, err)
 	}
-	ref := "origin/" + branch
-	if !gitx.CommitishExists(ctx, dest, ref) {
+	if _, err := gitx.Run(ctx, dest, "cat-file", "-e", "HEAD:"+ManifestFile); err != nil {
 		return nil, nil
 	}
-	if _, err := gitx.Run(ctx, dest, "cat-file", "-e", ref+":"+ManifestFile); err != nil {
-		return nil, nil
-	}
-	data, err := gitx.Run(ctx, dest, "show", ref+":"+ManifestFile)
+	data, err := gitx.Run(ctx, dest, "show", "HEAD:"+ManifestFile)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +117,10 @@ func ReadPublished(ctx context.Context, repo, branch string) (*Manifest, error) 
 	if err := json.Unmarshal([]byte(data), &m); err != nil {
 		return nil, fmt.Errorf("share repo %s: %s is not valid: %w", repo, ManifestFile, err)
 	}
-	if m.Version > ManifestVersion {
+	switch {
+	case m.Version < 1:
+		return nil, fmt.Errorf("share repo %s: %s has no schema version; it was not written by cg", repo, ManifestFile)
+	case m.Version > ManifestVersion:
 		return nil, fmt.Errorf("share repo %s: manifest version %d is newer than this cg understands (%d); update cg", repo, m.Version, ManifestVersion)
 	}
 	return &m, nil

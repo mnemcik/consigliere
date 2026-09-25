@@ -52,15 +52,22 @@ published is read from each share repo, never stored in the workspace.
 | `projects.<slug>.include` | Files beyond the default allowlist, as `--include`. |
 | `projects.<slug>.acknowledged` | Findings judged safe, as `--ack`; copy `rule` and `hash` from the report. |
 
-A malformed block (an audience without a repo or projects, a bad name, an
-incomplete acknowledgement) is an error for every `cg share` command, so a
-typo never silently shares less or more than meant. `.cg.json` itself never
-leaves the workspace: it is not in any project folder.
+A malformed block is an error for every `cg share` command, so a typo never
+silently shares less or more than meant. That covers:
 
+- an audience without a repo or projects;
+- a bad audience name, project slug or branch name;
+- an empty include entry or an incomplete acknowledgement;
+- two audiences on the same repo and branch (each would read the other's projects as removed);
+- an audience pointing at the workspace's own repo.
+
+`.cg.json` itself never leaves the workspace: it is not in any project folder.
+
+## `cg share export`
 
 ```
-cg share export <slug> --out <dir> [--include <file>]... [--owner <name>] [--ack <rule:hash>]...
-cg share export <slug> --check [--include <file>]... [--ack <rule:hash>]...
+cg share export <slug> --out <dir> [--audience <name>] [--include <file>]... [--owner <name>] [--ack <rule:hash>]...
+cg share export <slug> --check [--audience <name>] [--include <file>]... [--ack <rule:hash>]...
 ```
 
 Renders `projects/<slug>/` into `<dir>/<slug>/`. `<dir>` must not exist or must
@@ -69,7 +76,9 @@ be empty. `--check` renders and scans without writing anything.
 `--audience <name>` renders the project as shared with that audience: the
 project must be one it shares, its `include` and `acknowledged` entries are
 merged with the flags, and links to the audience's other projects are
-rewritten to their published copies instead of being de-linked.
+rewritten to their published copies instead of being de-linked. A sibling
+that has no row in the project index, or whose files cannot be selected, is
+left out, and links to it stay private.
 
 The project folder and the project index must have no uncommitted changes, so
 the stamped source commit always describes exactly what was exported.
@@ -79,9 +88,10 @@ the stamped source commit always describes exactly what was exported.
 - **Files are allowlisted.** `README.md`, `decisions.md` and `todo.md` leave by
   default. Anything else, `log.md` included, leaves only when named with
   `--include`. `log.md` is opt-in because it is where meeting notes and names
-  accumulate. `resume.md` (the `/wrap pause` cursor) never leaves, even when
-  included. Files must be regular files inside the project folder; symlinks are
-  refused.
+  accumulate. `resume.md` (the `/wrap pause` cursor) never leaves, in any
+  letter case, even when included. Files must be regular files inside the
+  project folder, spelled exactly as on disk (a case-insensitive filesystem
+  would otherwise let `Readme.md` open `README.md`); symlinks are refused.
 - **Sections can be excluded.** Content between these markers, each on its own
   line, is removed:
 
@@ -199,4 +209,7 @@ shared project and compares it with the share repo's manifest
 Staleness compares a hash of the rendered content, not only the source
 commit, so an edit that lives outside the project folder (a status change in
 `projects/TODO.md`) still counts. An empty share repo, or one without the
-branch, reads as nothing published.
+branch, reads as nothing published. Only the branch tip is fetched, and git
+never prompts for credentials: an unreachable or unauthorised repo reads as
+`unknown` with the error shown. A manifest written for a different audience
+is not compared against.
