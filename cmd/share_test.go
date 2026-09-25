@@ -562,3 +562,45 @@ func TestPublishSummaryNamesCompletedAudiences(t *testing.T) {
 		t.Errorf("got %v", err)
 	}
 }
+
+func TestSharePublishAddedFileGate(t *testing.T) {
+	root, bare := shareWorkspace(t)
+	withConsent(t, &fakeConsent{interactive: true, answer: "team"})
+	resetPublishFlags()
+	if out, err := runShare(t, root, "publish", "team"); err != nil {
+		t.Fatalf("first publish: %v\n%s", err, out)
+	}
+	tip := shareTip(t, bare)
+
+	// beta gains an included file: content the audience has never seen.
+	writeFile(t, root, "projects/beta/notes.md", "# Notes\n")
+	cfg, _ := workspace.Detect(root)
+	a := cfg.Share.Audiences["team"]
+	a.Projects["beta"] = workspace.ShareProject{Include: []string{"notes.md"}}
+	cfg.Share.Audiences["team"] = a
+	if err := cfg.Save(root); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, context.Background(), root, "add", ".")
+	mustGit(t, context.Background(), root, "commit", "-qm", "include notes")
+
+	resetPublishFlags()
+	if out, err := runShare(t, root, "publish", "team", "--dry-run"); err != nil || !strings.Contains(out, "needs the owner's review") {
+		t.Fatalf("a dry run must say the real publish needs the terminal review, got err=%v\n%s", err, out)
+	}
+	resetPublishFlags()
+	if out, err := runShare(t, root, "publish", "team", "--yes"); err == nil || !strings.Contains(out, "adds files") || shareTip(t, bare) != tip {
+		t.Fatalf("--yes must be refused when a publish adds files, got err=%v\n%s", err, out)
+	}
+	withConsent(t, &fakeConsent{interactive: false})
+	resetPublishFlags()
+	if out, err := runShare(t, root, "publish", "team"); err == nil || !strings.Contains(out, "interactive terminal") {
+		t.Fatalf("a publish adding files needs a terminal, got err=%v\n%s", err, out)
+	}
+	withConsent(t, &fakeConsent{interactive: true, answer: "team"})
+	resetPublishFlags()
+	out, err := runShare(t, root, "publish", "team")
+	if err != nil || !strings.Contains(out, "NEW FILES") || !strings.Contains(out, "new file(s): notes.md") || shareTip(t, bare) == tip {
+		t.Fatalf("typing the audience name must publish the added file, got err=%v\n%s", err, out)
+	}
+}

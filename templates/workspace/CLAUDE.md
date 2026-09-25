@@ -254,7 +254,7 @@ For the per-step pre-flight, the default exclusion set, the shell-splitting tell
 <!-- cg:section:start=sharing-projects -->
 ## Sharing Projects Read-Only
 
-When the user asks to share, send, export or publish a project, or before running any `cg share` command or editing the `share` block in `.cg.json`, load [`notes/sharing-projects.md`](notes/sharing-projects.md). In short: never invent an audience, repo or recipient, and never create a share repo or grant access; resolve scan findings with the owner and never paste a secret's value; the owner runs the first publish in their own terminal, not through Claude, and any republish needs their explicit go-ahead.
+When the user asks to share, send, export or publish a project, or before running any `cg share` command or editing the `share` block in `.cg.json`, load [`notes/sharing-projects.md`](notes/sharing-projects.md). In short: never invent an audience, repo or recipient, and never create a share repo or grant access; resolve scan findings with the owner and never paste a secret's value; the owner runs the first publish, and any publish that adds files, in their own terminal, not through Claude, and any other republish needs their explicit go-ahead.
 <!-- cg:section:end=sharing-projects -->
 
 <!-- cg:section:start=continuous-improvement -->
