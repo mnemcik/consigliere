@@ -25,8 +25,8 @@ The skill has two modes. Most phases are identical; only Phase 6.5 (new), Phase 
 
 | Mode | When | What's different |
 |------|------|-----------------|
-| **end** *(default)* | Session is genuinely finished — work landed, todo step closed, ready to close terminal. | Phase 7 lands the commit to `main` via `cg worktree land`. Phase 8 removes the worktree unconditionally. Phase 9 marker is `✅ Wrap complete — session can be closed.` and clears the dirty flag. |
-| **pause** | Session must stop mid-work — half-edited files, in-flight todo step, mental context that won't survive in the codebase but matters for picking up later. | **Phase 6.5 (new)** writes `projects/<slug>/resume.md` capturing the cursor (active todo, files, mental context, next action, blockers). Phase 7 makes a `WIP pause: <one-line>` commit and pushes the **branch** to `origin/session/<slug>` — does **not** land to `main`. Phase 8 **skips** worktree removal — worktree + branch survive. Phase 9 marker is `⏸️ Session paused — resume by re-entering the project (worktree at <path>).` and **leaves the dirty flag set**. |
+| **end** *(default)* | Session is genuinely finished — work landed, todo step closed, ready to close terminal. | Phase 7 lands the commit to `main` via `cg worktree land`. Phase 8 removes the worktree unconditionally. Phase 9 marker is `✅ Wrap complete — session can be closed.` and releases the session claim. |
+| **pause** | Session must stop mid-work — half-edited files, in-flight todo step, mental context that won't survive in the codebase but matters for picking up later. | **Phase 6.5 (new)** writes `projects/<slug>/resume.md` capturing the cursor (active todo, files, mental context, next action, blockers). Phase 7 makes a `WIP pause: <one-line>` commit and pushes the **branch** to `origin/session/<slug>` — does **not** land to `main`. Phase 8 **skips** worktree removal — worktree + branch survive. Phase 9 marker is `⏸️ Session paused — resume by re-entering the project (worktree at <path>).` and **keeps the session claim**. |
 
 ### Detecting mode
 
@@ -335,24 +335,24 @@ Present a brief summary to the user. Sections shown are mode-dependent.
 
 Keep it scannable. The user should be able to glance at this and confirm nothing was missed.
 
-#### Session-dirty flag
+#### Session claim
 
-If the workspace maintains a per-session "dirty" indicator (check for `.claude/session-context/<session_id>.json` at the workspace root, and a `dirty` field in the schema — see the workspace's `CLAUDE.md`):
+If the workspace tracks sessions with a badge file (`.claude/session-context/<session_id>.json` at the workspace root, written by `cg session set-context`):
 
-- **End mode:** clear the flag — the session is safe to close.
+- **End mode:** release the claim, so the status-line badge clears and `cg active` stops listing this session.
 
   ```sh
-  ctx=".claude/session-context/<session_id>.json"
-  [ -r "$ctx" ] && tmp=$(mktemp) && jq '. + {dirty: false}' "$ctx" > "$tmp" && mv "$tmp" "$ctx"
+  cg session release --session-id <session_id>
   ```
 
-- **Pause mode:** **leave the flag set.** Paused state is dirty by design — the status-line should still indicate work-in-progress. Skip the `jq` step entirely.
+  It deletes the badge file and succeeds when there is none. Do not edit the file by hand: rewriting it keeps the session listed for hours.
+- **Pause mode:** **keep the claim.** Paused state is dirty by design, and `cg active` reports the project as paused while its `resume.md` exists. The session that resumes the project takes the claim over with `cg session set-context`.
 
-Skip silently if the workspace doesn't use a dirty flag or the context file doesn't exist.
+Skip silently if the workspace doesn't use badge files.
 
 #### Terminal completion marker
 
-After the summary block (and after handling the dirty flag if applicable), print one final line that is unambiguously the end of the wrap. The marker is mode-specific:
+After the summary block (and after handling the session claim if applicable), print one final line that is unambiguously the end of the wrap. The marker is mode-specific:
 
 - **End mode:**
 
@@ -380,5 +380,5 @@ This line is the signal that every phase ran to completion. It must be the **las
 - **Verify worktree isolation before committing.** If the workspace requires per-session worktrees (check its `CLAUDE.md`) and you are in the main workspace, stop before staging — a shared index can leak parallel-session work into your commit regardless of how carefully you stage by name.
 - **Ask if uncertain.** If you're not sure whether a finding is worth capturing or where it belongs, ask the user rather than guessing.
 - **Trivial sessions are OK.** If the session was a quick lookup or a single file rename, say "Nothing to capture — session was trivial" and stop. Don't manufacture output.
-- **Pause is not the default.** Pause mode requires an explicit signal (`/wrap pause`, pause phrasing, or an unambiguous resolution to the ambiguity prompt). When the signal is absent, treat the wrap as end-of-session — the historical default. Pause is opt-in because it leaves the worktree alive and the dirty flag set; users who don't ask for that get standard end-of-session behavior.
+- **Pause is not the default.** Pause mode requires an explicit signal (`/wrap pause`, pause phrasing, or an unambiguous resolution to the ambiguity prompt). When the signal is absent, treat the wrap as end-of-session — the historical default. Pause is opt-in because it leaves the worktree alive and keeps the session claim; users who don't ask for that get standard end-of-session behavior.
 - **Pause from the main workspace is invalid.** Pause mode requires a worktree on a `session/<slug>` branch — that's the resume vehicle. If the wrap is invoked from the main workspace in pause mode, refuse: surface the issue and tell the user to re-issue from inside a worktree (`cg worktree create <slug>`).

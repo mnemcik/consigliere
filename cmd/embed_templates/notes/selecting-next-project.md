@@ -23,15 +23,17 @@ Rank within a priority bucket is **mutable and user-owned**. Claude may suggest 
 
 ## `cg active` — the active-work detector
 
-`cg active` reads the per-session badge files under `.claude/session-context/*.json` and filters by a liveness window.
+`cg active` lists sessions that still claim a project (from the per-session badge files under `.claude/session-context/*.json`) plus paused projects (from `projects/<slug>/resume.md`). A session claims a project with `cg session set-context` and releases it with `cg session release`, which the end-mode wrap runs, so a wrapped session is not listed. The caller's own session is always excluded.
 
 | Invocation | Output |
 |---|---|
-| `cg active` | One line per active session (project / area / dirty / mtime / session columns). |
-| `cg active --slugs` | Distinct active project slugs, one per line — ideal for `grep` / `if` checks. |
-| `cg active --json` | A JSON array of active sessions — ideal for piping into other tooling. |
+| `cg active` | One line per entry (project / area / dirty / mtime / session / state columns); state is `live` or `paused`. |
+| `cg active --slugs` | Distinct **live** project slugs, one per line — ideal for `grep` / `if` checks. Paused projects are not included. |
+| `cg active --json` | A JSON array of entries, each with a `state` field — ideal for piping into other tooling. |
 
-**Liveness windows:** a `dirty` session counts while recently touched (default 48h); a clean one counts within the active window (default 4h). Both are configurable in `.cg.json` under `session.dirtyWindowMin` / `session.activeWindowMin`.
+**Paused projects** are not live: nobody is working on them, so they are pickable. Picking one up means resuming it (read its `resume.md`); running `cg session set-context` on it releases the pausing session's claim.
+
+**Liveness windows** only matter for claims that were never released (crash, closed terminal, no wrap): such a claim counts as live while its badge was written recently, within 48h by default when `dirty` and 4h when clean. Both are configurable in `.cg.json` under `session.dirtyWindowMin` / `session.activeWindowMin`.
 
 ### When to consult it
 
@@ -41,7 +43,7 @@ Rank within a priority bucket is **mutable and user-owned**. Claude may suggest 
 
 ### Stale dirty sessions
 
-A dirty session close to the dirty-window cap is a hint that a prior session crashed or was never wrapped. Flag it and suggest either rejoining to wrap it, or clearing its badge file at `.claude/session-context/<session_id>.json`.
+A listed live session that the user says is not running is a claim that was never released: the session crashed or ended without a wrap. Flag it and suggest either rejoining to wrap it, or releasing it with `cg session release --session-id <session_id>`.
 
 ## Related
 

@@ -18,6 +18,7 @@ import (
 func init() {
 	sessionCmd.AddCommand(sessionMarkDirtyCmd)
 	sessionCmd.AddCommand(sessionPullLatestCmd)
+	sessionCmd.AddCommand(sessionReleaseCmd)
 	sessionCmd.AddCommand(sessionSetContextCmd)
 	sessionCmd.AddCommand(sessionStartGateCmd)
 	sessionCmd.AddCommand(sessionStatuslineCmd)
@@ -131,7 +132,12 @@ cg active lists sessions from it. Run it once the session-start gate's area and
 project are confirmed, and again whenever the session switches either one.
 Existing fields such as the dirty flag are preserved. It refuses to run
 outside a Consigliere workspace. The session ID must match [A-Za-z0-9_-]+.
-The file format is described in docs/cg-subcommands.md, "Session badge file".`,
+The file format is described in docs/cg-subcommands.md, "Session badge file".
+
+When the project is paused (projects/<project>/resume.md exists), this session
+is resuming it, so other sessions' claims on the project are released.
+
+` + sessionIDHelp,
 	Example: `  cg session set-context --session-id 1b2c... --area platform --project api-gateway`,
 	Args:    cobra.NoArgs,
 	RunE:    runSessionSetContext,
@@ -139,20 +145,76 @@ The file format is described in docs/cg-subcommands.md, "Session badge file".`,
 
 func init() {
 	f := sessionSetContextCmd.Flags()
-	f.StringVar(&setContextSessionID, "session-id", "", "Claude Code session ID (shown in the session-start gate)")
+	f.StringVar(&setContextSessionID, "session-id", "", "session ID (shown in the session-start gate; see below for defaults)")
 	f.StringVar(&setContextArea, "area", "", "area slug the session works in")
 	f.StringVar(&setContextProject, "project", "", "project slug the session works on")
-	for _, name := range []string{"session-id", "area", "project"} {
+	for _, name := range []string{"area", "project"} {
 		_ = sessionSetContextCmd.MarkFlagRequired(name)
 	}
+	sessionReleaseCmd.Flags().StringVar(&releaseSessionID, "session-id", "", "session ID (see below for defaults)")
+}
+
+// sessionIDHelp documents resolveSessionID for every command that takes one.
+const sessionIDHelp = `The session ID comes from --session-id, else $CG_SESSION_ID, else
+$CLAUDE_CODE_SESSION_ID (set by Claude Code). Other agents set CG_SESSION_ID
+or pass the flag.`
+
+// resolveSessionID picks the session ID from the flag, then the agent-neutral
+// CG_SESSION_ID, then Claude Code's CLAUDE_CODE_SESSION_ID. It returns "" when
+// none is set.
+func resolveSessionID(flag string) string {
+	for _, v := range []string{flag, os.Getenv("CG_SESSION_ID"), os.Getenv("CLAUDE_CODE_SESSION_ID")} {
+		if v = strings.TrimSpace(v); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+var releaseSessionID string
+
+var sessionReleaseCmd = &cobra.Command{
+	Use:   "release",
+	Short: "End the session's claim on its project (end-mode wrap)",
+	Long: `Deletes the session's badge state file, so the status-line badge clears and
+cg active stops listing the session. Run it when a session is finished, which
+the end-mode wrap does. Do not run it on a pause: a paused session keeps its
+claim until another session resumes the project. Releasing a session that has
+no badge file succeeds.
+
+` + sessionIDHelp,
+	Example: `  cg session release --session-id 1b2c...`,
+	Args:    cobra.NoArgs,
+	RunE:    runSessionRelease,
+}
+
+func runSessionRelease(cmd *cobra.Command, _ []string) error {
+	cmd.SilenceUsage = true
+	id := resolveSessionID(releaseSessionID)
+	if !session.ValidSessionID(id) {
+		return fmt.Errorf("invalid or missing session ID %q (pass --session-id or set CG_SESSION_ID)", id)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	root, wsRoot, _ := sessionRoots(cmd.Context(), cwd)
+	if wsRoot == "" || root == "" {
+		return fmt.Errorf("not inside a Consigliere workspace: %s", cwd)
+	}
+	if err := session.Release(root, id); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Session released: %s\n", id)
+	return nil
 }
 
 func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 	// Flag values are validated below; a bad value is not a usage error.
 	cmd.SilenceUsage = true
-	setContextSessionID = strings.TrimSpace(setContextSessionID)
-	if !session.ValidSessionID(setContextSessionID) {
-		return fmt.Errorf("invalid --session-id %q", setContextSessionID)
+	id := resolveSessionID(setContextSessionID)
+	if !session.ValidSessionID(id) {
+		return fmt.Errorf("invalid or missing session ID %q (pass --session-id or set CG_SESSION_ID)", id)
 	}
 	// Required-flag checks only test presence, so --area "" would slip through.
 	setContextArea = strings.TrimSpace(setContextArea)
@@ -172,11 +234,19 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("not inside a Consigliere workspace: %s", cwd)
 	}
 
-	if err := session.WriteContext(root, setContextSessionID, setContextArea, setContextProject); err != nil {
+	if err := session.WriteContext(root, id, setContextArea, setContextProject); err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Session badge set: [%s/%s] (%s)\n",
-		setContextArea, setContextProject, session.ContextFile(root, setContextSessionID))
+	out := cmd.OutOrStdout()
+	_, _ = fmt.Fprintf(out, "Session badge set: [%s/%s] (%s)\n",
+		setContextArea, setContextProject, session.ContextFile(root, id))
+	retired, err := session.HandOver(root, wsRoot, id, setContextProject)
+	if err != nil {
+		return err
+	}
+	for _, sid := range retired {
+		_, _ = fmt.Fprintf(out, "Resuming paused project: released session %s\n", sid)
+	}
 	return nil
 }
 

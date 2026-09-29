@@ -2,6 +2,7 @@ package session
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -30,7 +31,7 @@ func TestActiveProjects(t *testing.T) {
 	// no project → skipped
 	mk("s5", `{"area":"a5","dirty":false}`, 1*time.Hour)
 
-	got, err := ActiveProjects(root, now, active, dirty)
+	got, err := ActiveProjects(root, ActiveOptions{Now: now, ActiveWindow: active, DirtyWindow: dirty})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,6 +42,60 @@ func TestActiveProjects(t *testing.T) {
 	for _, s := range got {
 		if !want[s.Project] {
 			t.Errorf("unexpected active project %q", s.Project)
+		}
+	}
+}
+
+func TestActiveProjectsPausedAndExcluded(t *testing.T) {
+	root := t.TempDir()
+	ws := t.TempDir()
+	now := time.Now()
+	opts := ActiveOptions{WorkspaceRoot: ws, Now: now, ActiveWindow: 4 * time.Hour, DirtyWindow: 48 * time.Hour}
+
+	mk := func(id, content string, age time.Duration) {
+		writeCtx(t, root, id, content)
+		mt := now.Add(-age)
+		if err := os.Chtimes(ContextFile(root, id), mt, mt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pause := func(project string) {
+		p := ResumeFile(ws, project)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("cursor\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Paused project with its pausing badge, older than the dirty window:
+	// still listed, as paused.
+	pause("paused-old")
+	mk("pauser", `{"area":"a","project":"paused-old","dirty":true}`, 60*time.Hour)
+	// Paused project whose badge is gone: listed from resume.md alone.
+	pause("paused-bare")
+	// Live project, and the caller's own session.
+	mk("other", `{"area":"a","project":"live","dirty":false}`, time.Hour)
+	mk("me", `{"area":"a","project":"mine","dirty":false}`, time.Minute)
+
+	opts.ExcludeSessionID = "me"
+	got, err := ActiveProjects(root, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type key struct{ project, state, sid string }
+	want := map[key]bool{
+		{"live", StateLive, "other"}:          true,
+		{"paused-bare", StatePaused, ""}:      true,
+		{"paused-old", StatePaused, "pauser"}: true,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d entries, want %d: %+v", len(got), len(want), got)
+	}
+	for _, s := range got {
+		if !want[key{s.Project, s.State, s.SessionID}] {
+			t.Errorf("unexpected entry %+v", s)
 		}
 	}
 }
