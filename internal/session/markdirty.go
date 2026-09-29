@@ -10,6 +10,13 @@ import (
 // not exist — tracking is opt-in, so the flag never appears for untracked
 // sessions. Mirrors the `jq '. + {dirty: true}'` behavior of the shell hook.
 func MarkDirty(root, sessionID string) error {
+	if !ValidSessionID(sessionID) {
+		return nil // hook input; an unsafe ID never names a badge
+	}
+	return withBadgeLock(root, sessionID, func() error { return markDirty(root, sessionID) })
+}
+
+func markDirty(root, sessionID string) error {
 	path := ContextFile(root, sessionID)
 	m, err := readContextMap(path)
 	if err != nil {

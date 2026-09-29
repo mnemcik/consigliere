@@ -137,6 +137,12 @@ git-ignored.
 
 - The session ID must match `[A-Za-z0-9_-]+`.
 - Writers merge into the existing file and keep fields they do not own.
+- Each read-modify-write holds a per-session lock, `<session-id>.lock` next
+  to the badge, so concurrent writers (hook bodies and agent commands run as
+  separate processes) never drop each other's changes. The lock waits at most
+  1 s and then proceeds without it, because a hook must never hang the
+  session. A lock older than 10 s is left over from a crashed writer and is
+  removed; the session gate prunes old lock files with old badges.
 - `cg session statusline` renders `area` and `project` through
   `session.badgeFormat`.
 - The session ID comes from `--session-id`, else `$CG_SESSION_ID`, else

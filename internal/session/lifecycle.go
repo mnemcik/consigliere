@@ -43,17 +43,22 @@ func MarkPaused(root, sessionID string, now time.Time) (bool, error) {
 	if !ValidSessionID(sessionID) {
 		return false, fmt.Errorf("invalid session id %q", sessionID)
 	}
-	path := ContextFile(root, sessionID)
-	m, err := readContextMap(path)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return false, nil
+	marked := false
+	err := withBadgeLock(root, sessionID, func() error {
+		path := ContextFile(root, sessionID)
+		m, err := readContextMap(path)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
 		}
-		return false, err
-	}
-	m["paused"] = true
-	m["pausedAt"] = now.UTC().Format(time.RFC3339)
-	return true, writeJSONAtomic(path, m)
+		m["paused"] = true
+		m["pausedAt"] = now.UTC().Format(time.RFC3339)
+		marked = true
+		return writeJSONAtomic(path, m)
+	})
+	return marked && err == nil, err
 }
 
 // Release ends a session's claim by deleting its badge file, so cg active no
@@ -63,10 +68,7 @@ func Release(root, sessionID string) error {
 	if !ValidSessionID(sessionID) {
 		return fmt.Errorf("invalid session id %q", sessionID)
 	}
-	if err := os.Remove(ContextFile(root, sessionID)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	return nil
+	return withBadgeLock(root, sessionID, func() error { return removeBadge(root, sessionID) })
 }
 
 // HandOver retires the pausing session's claim on project when the caller
@@ -90,14 +92,23 @@ func HandOver(root, wsRoot, callerID, project string) ([]string, error) {
 		if sid == callerID || !ValidSessionID(sid) {
 			continue
 		}
-		c, rerr := ReadContext(root, sid)
-		if rerr != nil || c == nil || c.Project != project || !c.Paused {
-			continue
-		}
-		if err := Release(root, sid); err != nil {
+		// Re-read under that session's lock: it may be claiming the project
+		// again (which clears its marker) at the same moment.
+		released := false
+		err := withBadgeLock(root, sid, func() error {
+			c, rerr := ReadContext(root, sid)
+			if rerr != nil || c == nil || c.Project != project || !c.Paused {
+				return nil
+			}
+			released = true
+			return removeBadge(root, sid)
+		})
+		if err != nil {
 			return retired, err
 		}
-		retired = append(retired, sid)
+		if released {
+			retired = append(retired, sid)
+		}
 	}
 	sort.Strings(retired)
 	return retired, nil
