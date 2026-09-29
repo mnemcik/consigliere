@@ -112,3 +112,29 @@ binary**: the binary emits framework-neutral defaults, and a workspace supplies
 its own wording via `session.gateTemplate` (a file it owns). This keeps the
 framework/workspace boundary clean — the binary ships mechanics, the workspace
 ships its content.
+
+## Session badge file
+
+Each session's badge state lives in `.claude/session-context/<session-id>.json`
+under the **main worktree root**, so a session in a linked worktree reads and
+writes the same file. `cg session set-context` creates it; the directory is
+git-ignored.
+
+```jsonc
+{
+  "area": "platform",       // area slug, set by `cg session set-context`
+  "project": "api-gateway", // project slug, set by `cg session set-context`
+  "dirty": false            // true once the session edits files
+                            //   (`cg session mark-dirty`); the end-mode wrap
+                            //   clears it
+}
+```
+
+- The session ID must match `[A-Za-z0-9_-]+`.
+- Writers merge into the existing file and keep fields they do not own.
+- `cg session statusline` renders `area` and `project` through
+  `session.badgeFormat`.
+- `cg active` lists a session while the file's modification time is within
+  `session.activeWindowMin`, or within `session.dirtyWindowMin` when `dirty`
+  is true. Files older than `session.pruneDays` are removed by the session
+  gate.

@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -52,10 +53,15 @@ func ReadContext(root, sessionID string) (*Context, error) {
 	return &c, nil
 }
 
-// ValidSessionID reports whether id is safe to use as a badge file name: it
-// must be non-empty and must not contain path separators or dot-dot segments.
+// sessionIDPattern is the allowlist for session IDs used as badge file names.
+// Agents issue UUID-like IDs; anything else (separators, dots, drive or stream
+// colons, spaces) could escape the directory or misbehave on some filesystem.
+var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// ValidSessionID reports whether id is safe to use as a badge file name: one or
+// more ASCII letters, digits, underscores or hyphens.
 func ValidSessionID(id string) bool {
-	return id != "" && id != "." && !strings.ContainsAny(id, `/\`) && !strings.Contains(id, "..")
+	return sessionIDPattern.MatchString(id)
 }
 
 // WriteContext records the area and project for a session in its badge state
@@ -70,21 +76,11 @@ func WriteContext(root, sessionID, area, project string) error {
 		return err
 	}
 	path := ContextFile(root, sessionID)
-	m := map[string]any{}
-	data, err := os.ReadFile(path)
-	switch {
-	case err == nil:
-		// UseNumber keeps numeric fields written by other tools exact instead
-		// of round-tripping them through float64.
-		dec := json.NewDecoder(bytes.NewReader(data))
-		dec.UseNumber()
-		if err := dec.Decode(&m); err != nil {
-			return err
-		}
-		if m == nil {
-			m = map[string]any{}
-		}
-	case !errors.Is(err, fs.ErrNotExist):
+	m, err := readContextMap(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		m, err = map[string]any{}, nil
+	}
+	if err != nil {
 		return err
 	}
 	m["area"] = area
@@ -93,6 +89,27 @@ func WriteContext(root, sessionID, area, project string) error {
 		m["dirty"] = false
 	}
 	return writeJSONAtomic(path, m)
+}
+
+// readContextMap loads a badge file as a generic map so writers can update
+// their own fields and keep the rest. UseNumber keeps numeric fields written
+// by other tools exact instead of round-tripping them through float64. A
+// missing file returns an error satisfying errors.Is(err, fs.ErrNotExist).
+func readContextMap(path string) (map[string]any, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(&m); err != nil {
+		return nil, err
+	}
+	if m == nil {
+		m = map[string]any{}
+	}
+	return m, nil
 }
 
 // IsContextPath reports whether p targets the session-context directory (or a
