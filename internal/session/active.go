@@ -43,18 +43,20 @@ type ActiveOptions struct {
 	ExcludeSessionID string
 }
 
-// ActiveProjects lists live sessions and paused projects. A badge whose
-// project is paused is reported as paused rather than live, whatever its age;
-// a paused project with no badge left is still listed, dated by its resume.md.
-// Badges without a project are skipped. Results are sorted by project, then
-// state, then session ID.
+// ActiveProjects lists live sessions and paused projects. The badge of the
+// session that paused a project (written no later than its resume.md) is
+// reported as paused, whatever its age. A badge written after resume.md
+// belongs to a session resuming the project and is treated as live. A paused
+// project with no badge left, and no live session resuming it, is listed from
+// its resume.md. Badges without a project are skipped. Results are sorted by
+// project, then state, then session ID.
 func ActiveProjects(root string, opts ActiveOptions) ([]ActiveSession, error) {
 	matches, err := filepath.Glob(filepath.Join(ContextDir(root), "*.json"))
 	if err != nil {
 		return nil, err
 	}
 	var out []ActiveSession
-	pausedSeen := map[string]bool{}
+	covered := map[string]bool{} // projects already reported by a badge
 	for _, f := range matches {
 		sid := strings.TrimSuffix(filepath.Base(f), ".json")
 		if sid == opts.ExcludeSessionID {
@@ -72,9 +74,13 @@ func ActiveProjects(root string, opts ActiveOptions) ([]ActiveSession, error) {
 			Project: c.Project, Area: c.Area, Dirty: c.Dirty,
 			MTime: fi.ModTime(), SessionID: sid, State: StateLive,
 		}
-		if IsPaused(opts.WorkspaceRoot, c.Project) {
+		pausedAt, paused, perr := PausedSince(opts.WorkspaceRoot, c.Project)
+		if perr != nil {
+			return nil, perr
+		}
+		if paused && pausedBadge(fi.ModTime(), pausedAt) {
 			s.State = StatePaused
-			pausedSeen[c.Project] = true
+			covered[c.Project] = true
 			out = append(out, s)
 			continue
 		}
@@ -85,9 +91,10 @@ func ActiveProjects(root string, opts ActiveOptions) ([]ActiveSession, error) {
 		if opts.Now.Sub(fi.ModTime()) > window {
 			continue // stale
 		}
+		covered[c.Project] = true
 		out = append(out, s)
 	}
-	out = append(out, pausedWithoutBadge(opts.WorkspaceRoot, pausedSeen)...)
+	out = append(out, pausedWithoutBadge(opts.WorkspaceRoot, covered)...)
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Project != out[j].Project {
 			return out[i].Project < out[j].Project
@@ -101,7 +108,7 @@ func ActiveProjects(root string, opts ActiveOptions) ([]ActiveSession, error) {
 }
 
 // pausedWithoutBadge lists paused projects (projects/*/resume.md) that no
-// badge already reported.
+// badge already reported, as paused or as a live resuming session.
 func pausedWithoutBadge(wsRoot string, seen map[string]bool) []ActiveSession {
 	if wsRoot == "" {
 		return nil

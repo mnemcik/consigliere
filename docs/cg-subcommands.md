@@ -142,14 +142,17 @@ git-ignored.
 
 | Step | Command | Effect |
 |------|---------|--------|
-| Claim | `cg session set-context` | Creates or updates the badge. If the project is paused (`projects/<slug>/resume.md` exists), other sessions' badges for it are deleted: this session is resuming it. |
+| Claim | `cg session set-context` | Creates or updates the badge. If the project is paused (`projects/<slug>/resume.md` exists), the pausing session's badge (written no later than `resume.md`) is deleted: this session is resuming it. |
 | Work | `cg session mark-dirty` (PostToolUse hook) | Sets `dirty` on the first file edit. |
 | End | `cg session release` (end-mode wrap) | Deletes the badge. |
 | Pause | none | The badge stays; `cg active` reports the project as paused while `resume.md` exists. |
 
 `cg active` never lists the caller's own session. It lists a badge as
-`paused` when its project has a `resume.md`, whatever the badge's age, and
-lists a paused project with no badge from its `resume.md`. Otherwise a badge is
+`paused` when its project has a `resume.md` and the badge was written no later
+than it, whatever the badge's age. A badge written after `resume.md` belongs to
+the session resuming the project and is `live`, so `resume.md` can stay until
+that session has read it. A paused project with no badge, and no live session
+resuming it, is listed from its `resume.md`. Otherwise a badge is
 `live` while its modification time is within `session.activeWindowMin`, or
 within `session.dirtyWindowMin` when `dirty` is true. The windows only matter
 for claims that were never released (crash, closed terminal, no wrap). Files

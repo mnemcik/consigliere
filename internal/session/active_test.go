@@ -2,7 +2,6 @@ package session
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -54,27 +53,20 @@ func TestActiveProjectsPausedAndExcluded(t *testing.T) {
 
 	mk := func(id, content string, age time.Duration) {
 		writeCtx(t, root, id, content)
-		mt := now.Add(-age)
-		if err := os.Chtimes(ContextFile(root, id), mt, mt); err != nil {
-			t.Fatal(err)
-		}
-	}
-	pause := func(project string) {
-		p := ResumeFile(ws, project)
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte("cursor\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		touch(t, ContextFile(root, id), now.Add(-age))
 	}
 
 	// Paused project with its pausing badge, older than the dirty window:
 	// still listed, as paused.
-	pause("paused-old")
+	writeResume(t, ws, "paused-old", now.Add(-59*time.Hour))
 	mk("pauser", `{"area":"a","project":"paused-old","dirty":true}`, 60*time.Hour)
 	// Paused project whose badge is gone: listed from resume.md alone.
-	pause("paused-bare")
+	writeResume(t, ws, "paused-bare", now.Add(-time.Hour))
+	// Paused project that a session resumed after the pause (its resume.md is
+	// not deleted yet): the resumer is live and the project is not also
+	// listed as paused.
+	writeResume(t, ws, "resumed", now.Add(-2*time.Hour))
+	mk("resumer", `{"area":"a","project":"resumed","dirty":false}`, time.Hour)
 	// Live project, and the caller's own session.
 	mk("other", `{"area":"a","project":"live","dirty":false}`, time.Hour)
 	mk("me", `{"area":"a","project":"mine","dirty":false}`, time.Minute)
@@ -89,6 +81,7 @@ func TestActiveProjectsPausedAndExcluded(t *testing.T) {
 		{"live", StateLive, "other"}:          true,
 		{"paused-bare", StatePaused, ""}:      true,
 		{"paused-old", StatePaused, "pauser"}: true,
+		{"resumed", StateLive, "resumer"}:     true,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d entries, want %d: %+v", len(got), len(want), got)
