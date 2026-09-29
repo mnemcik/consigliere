@@ -79,24 +79,26 @@ func WriteContext(root, sessionID, area, project string) error {
 	if err := os.MkdirAll(ContextDir(root), 0o755); err != nil {
 		return err
 	}
-	path := ContextFile(root, sessionID)
-	m, err := readContextMap(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		m, err = map[string]any{}, nil
-	}
-	if err != nil {
-		return err
-	}
-	m["area"] = area
-	m["project"] = project
-	// Claiming a project makes this session the active one on it, including a
-	// session resuming its own pause (session IDs survive a resume).
-	delete(m, "paused")
-	delete(m, "pausedAt")
-	if _, ok := m["dirty"]; !ok {
-		m["dirty"] = false
-	}
-	return writeJSONAtomic(path, m)
+	return withBadgeLock(root, sessionID, func() error {
+		path := ContextFile(root, sessionID)
+		m, err := readContextMap(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			m, err = map[string]any{}, nil
+		}
+		if err != nil {
+			return err
+		}
+		m["area"] = area
+		m["project"] = project
+		// Claiming a project makes this session the active one on it, including a
+		// session resuming its own pause (session IDs survive a resume).
+		delete(m, "paused")
+		delete(m, "pausedAt")
+		if _, ok := m["dirty"]; !ok {
+			m["dirty"] = false
+		}
+		return writeJSONAtomic(path, m)
+	})
 }
 
 // readContextMap loads a badge file as a generic map so writers can update

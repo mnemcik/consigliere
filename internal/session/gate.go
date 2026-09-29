@@ -102,15 +102,20 @@ func inMainWorktree(ctx context.Context, cwd, root string) bool {
 	return rt == rr
 }
 
-// pruneStaleContexts removes badge files older than pruneDays (best-effort).
+// pruneStaleContexts removes badge and lock files older than pruneDays
+// (best-effort).
 func pruneStaleContexts(root string, pruneDays int) {
 	if pruneDays <= 0 {
 		return
 	}
 	cutoff := time.Now().Add(-time.Duration(pruneDays) * 24 * time.Hour)
-	matches, err := filepath.Glob(filepath.Join(ContextDir(root), "*.json"))
-	if err != nil {
-		return
+	var matches []string
+	for _, pattern := range []string{"*.json", "*.lock"} {
+		m, err := filepath.Glob(filepath.Join(ContextDir(root), pattern))
+		if err != nil {
+			return
+		}
+		matches = append(matches, m...)
 	}
 	for _, m := range matches {
 		if fi, err := os.Stat(m); err == nil && fi.ModTime().Before(cutoff) {

@@ -1,5 +1,7 @@
 package session
 
+import "fmt"
+
 // EndSession releases a session's claim when the agent reports that the
 // session ended (for Claude Code, the SessionEnd hook: exit, /clear, /resume,
 // logout). Only a clean, unpaused claim is released:
@@ -14,18 +16,26 @@ package session
 // It reports whether the claim was released. A session without a badge file
 // is not an error.
 func EndSession(root, wsRoot, sessionID string) (bool, error) {
-	c, err := ReadContext(root, sessionID)
-	if err != nil || c == nil || c.Dirty {
-		return false, err
+	if !ValidSessionID(sessionID) {
+		return false, fmt.Errorf("invalid session id %q", sessionID)
 	}
-	if c.Paused {
-		paused, err := IsPaused(wsRoot, c.Project)
-		if err != nil || paused {
-			return false, err
+	released := false
+	err := withBadgeLock(root, sessionID, func() error {
+		c, err := ReadContext(root, sessionID)
+		if err != nil || c == nil || c.Dirty {
+			return err
 		}
-	}
-	if err := Release(root, sessionID); err != nil {
-		return false, err
-	}
-	return true, nil
+		if c.Paused {
+			paused, err := IsPaused(wsRoot, c.Project)
+			if err != nil || paused {
+				return err
+			}
+		}
+		if err := removeBadge(root, sessionID); err != nil {
+			return err
+		}
+		released = true
+		return nil
+	})
+	return released, err
 }
