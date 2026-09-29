@@ -33,10 +33,12 @@ A session claims a project with cg session set-context and releases it with
 cg session release (the end-mode wrap does this), so a wrapped session is no
 longer listed. The caller's own session is always excluded.
 
-A project with projects/<slug>/resume.md is paused: it is listed with state
-"paused", whatever the age of its badge, and is not in --slugs, since nobody
-is working on it. Resuming it (set-context on that project) releases the
-pausing session's claim.
+A project with projects/<slug>/resume.md is paused. The pausing session's
+badge (written no later than resume.md) is listed with state "paused", whatever
+its age, and paused projects are not in --slugs, since nobody is working on
+them. Resuming one (set-context on that project) releases the pausing
+session's claim; the resuming session's badge, written after resume.md, is
+live even before resume.md is deleted.
 
 A claim that was never released (crash, closed terminal, no wrap) counts as
 live while its badge file was written recently: within dirtyWindow (default

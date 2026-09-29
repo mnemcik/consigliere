@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -192,6 +193,17 @@ func TestSessionLifecycleEndToEnd(t *testing.T) {
 		t.Fatalf("A mark-dirty: %v\n%s", err, out)
 	}
 	writeFile(t, repo, "projects/p/resume.md", "cursor\n")
+	// A's badge predates the pause, and B resumes later. Set the times
+	// explicitly: coarse filesystem clocks can give quick writes equal mtimes.
+	pausedAt := time.Now().Add(-time.Hour)
+	for path, mt := range map[string]time.Time{
+		session.ContextFile(repo, "sA"):                   pausedAt.Add(-time.Minute),
+		filepath.Join(repo, "projects", "p", "resume.md"): pausedAt,
+	} {
+		if err := os.Chtimes(path, mt, mt); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	// Session B sees p as paused, not live.
 	t.Setenv("CG_SESSION_ID", "sB")
@@ -212,17 +224,26 @@ func TestSessionLifecycleEndToEnd(t *testing.T) {
 	if c, _ := session.ReadContext(repo, "sA"); c != nil {
 		t.Errorf("sA badge should be gone after hand-over: %+v", c)
 	}
-	if err := os.Remove(filepath.Join(repo, "projects", "p", "resume.md")); err != nil {
-		t.Fatal(err)
-	}
+	// resume.md is still there (B has not deleted it yet), but B is live.
 	out, _ = runSession(t, repo, "", "active", "--slugs")
 	if strings.TrimSpace(out) != "" {
 		t.Errorf("the caller must not list itself: %q", out)
 	}
-	// A third session (flag beats env) sees B live.
+	// A third session (flag beats env) sees B live, not paused.
 	out, _ = runSession(t, repo, "", "active", "--slugs", "--session-id", "sC")
 	if strings.TrimSpace(out) != "p" {
 		t.Errorf("sC should see p live: %q", out)
+	}
+	// ...and claiming p itself does not take B's claim away.
+	out, err = runSession(t, repo, "", "set-context", "--area", "a", "--project", "p", "--session-id", "sC")
+	if err != nil || strings.Contains(out, "released session") {
+		t.Fatalf("sC must not release B, who already resumed p: %v\n%s", err, out)
+	}
+	if c, _ := session.ReadContext(repo, "sB"); c == nil {
+		t.Fatal("sB badge must survive a later claim on p")
+	}
+	if err := session.Release(repo, "sC"); err != nil {
+		t.Fatal(err)
 	}
 
 	// B end-wraps: release deletes the badge, and nobody sees p afterwards.
