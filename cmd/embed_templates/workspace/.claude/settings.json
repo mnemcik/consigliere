@@ -24,6 +24,14 @@
         ]
       }
     ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-end.sh", "timeout": 3 }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",

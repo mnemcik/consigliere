@@ -310,6 +310,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		wrappers := map[string]string{
 			"embed_templates/workspace/.claude/hooks/session-start-gate.sh":        filepath.Join(".claude", "hooks", "session-start-gate.sh"),
 			"embed_templates/workspace/.claude/hooks/mark-session-dirty.sh":        filepath.Join(".claude", "hooks", "mark-session-dirty.sh"),
+			"embed_templates/workspace/.claude/hooks/session-end.sh":               filepath.Join(".claude", "hooks", "session-end.sh"),
 			"embed_templates/workspace/.claude/hooks/pull-latest-main.sh":          filepath.Join(".claude", "hooks", "pull-latest-main.sh"),
 			"embed_templates/workspace/.claude/hooks/external-repo-push-policy.sh": filepath.Join(".claude", "hooks", "external-repo-push-policy.sh"),
 			"embed_templates/workspace/.claude/statusline.sh":                      filepath.Join(".claude", "statusline.sh"),

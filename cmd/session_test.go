@@ -267,3 +267,42 @@ func TestSessionReleaseNeedsSessionID(t *testing.T) {
 		t.Fatalf("release without an ID: err = %v\n%s", err, out)
 	}
 }
+
+func TestSessionEndReleasesCleanClaimsSilently(t *testing.T) {
+	clearSessionEnv(t)
+	repo := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere"}`)
+	for id, dirty := range map[string]string{"clean": "false", "dirty": "true"} {
+		if err := session.WriteContext(repo, id, "a", "p"); err != nil {
+			t.Fatal(err)
+		}
+		if dirty == "true" {
+			if err := session.MarkDirty(repo, id); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	for _, id := range []string{"clean", "dirty"} {
+		stdin := `{"session_id":"` + id + `","cwd":"` + filepath.ToSlash(repo) + `","hook_event_name":"SessionEnd","reason":"clear"}`
+		out, err := runSession(t, repo, stdin, "end")
+		if err != nil {
+			t.Fatalf("session end %s: %v", id, err)
+		}
+		if out != "" {
+			t.Errorf("session end %s printed %q; Claude Code shows SessionEnd output to the user", id, out)
+		}
+	}
+	if c, _ := session.ReadContext(repo, "clean"); c != nil {
+		t.Errorf("a clean claim should be released on SessionEnd: %+v", c)
+	}
+	if c, _ := session.ReadContext(repo, "dirty"); c == nil {
+		t.Error("a dirty claim must survive SessionEnd: its worktree may hold unlanded work")
+	}
+
+	// Malformed input and unsafe IDs are ignored, never an error.
+	for _, stdin := range []string{`not json`, `{"session_id":"../x"}`, `{}`} {
+		if out, err := runSession(t, repo, stdin, "end"); err != nil || out != "" {
+			t.Errorf("session end with %q = (%q, %v), want silent success", stdin, out, err)
+		}
+	}
+}

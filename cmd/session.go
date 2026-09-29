@@ -16,6 +16,7 @@ import (
 )
 
 func init() {
+	sessionCmd.AddCommand(sessionEndCmd)
 	sessionCmd.AddCommand(sessionMarkDirtyCmd)
 	sessionCmd.AddCommand(sessionPullLatestCmd)
 	sessionCmd.AddCommand(sessionReleaseCmd)
@@ -32,6 +33,46 @@ var sessionCmd = &cobra.Command{
 wrappers. Each reads the hook's stdin JSON and writes the hook's expected
 stdout; they are designed to never fail the session, so operational problems
 are reported in-band rather than via a non-zero exit.`,
+}
+
+// sessionEndInput is the SessionEnd hook payload the claim release consumes.
+type sessionEndInput struct {
+	SessionID string `json:"session_id"`
+	CWD       string `json:"cwd"`
+}
+
+var sessionEndCmd = &cobra.Command{
+	Use:   "end",
+	Short: "SessionEnd hook: release a clean, unpaused session claim",
+	Long: `Hook body for Claude Code's SessionEnd event (exit, /clear, /resume, logout).
+Releases the session's claim unless the session has unwrapped work (dirty) or
+paused its project, so cg active stops listing a session that ended without a
+wrap. It prints nothing on success, because Claude Code shows a SessionEnd
+hook's output to the user.`,
+	Args:   cobra.NoArgs,
+	RunE:   runSessionEnd,
+	Hidden: true, // invoked by the hook wrapper, not interactively
+}
+
+func runSessionEnd(cmd *cobra.Command, _ []string) error {
+	cmd.SilenceUsage = true
+
+	var in sessionEndInput
+	if err := decodeStdin(cmd.InOrStdin(), &in); err != nil || !session.ValidSessionID(in.SessionID) {
+		return nil // malformed / no session — never fail the hook
+	}
+	cwd := in.CWD
+	if cwd == "" {
+		cwd, _ = os.Getwd()
+	}
+	root, wsRoot, _ := sessionRoots(cmd.Context(), cwd)
+	if root == "" {
+		return nil
+	}
+	if _, err := session.EndSession(root, wsRoot, in.SessionID); err != nil {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "cg session end: %v\n", err)
+	}
+	return nil
 }
 
 // markDirtyInput is the PostToolUse hook payload the dirty-marker consumes.

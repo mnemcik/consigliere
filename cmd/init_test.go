@@ -34,6 +34,7 @@ func TestInitInstallsClaudeIntegration(t *testing.T) {
 	execFiles := []string{
 		".claude/hooks/session-start-gate.sh",
 		".claude/hooks/mark-session-dirty.sh",
+		".claude/hooks/session-end.sh",
 		".claude/hooks/pull-latest-main.sh",
 		".claude/hooks/external-repo-push-policy.sh",
 		".claude/statusline.sh",
