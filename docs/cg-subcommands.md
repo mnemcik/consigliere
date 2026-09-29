@@ -28,10 +28,11 @@ template.
 | `cg session mark-dirty` | `mark-session-dirty.sh` | **shipped** |
 | `cg session pull-latest` | `pull-latest-main.sh` | **shipped** |
 | `cg session statusline` | `statusline.sh` | **shipped** |
-| `cg session set-context --session-id … --area … --project …` | manual badge-file write | **shipped** |
+| `cg session set-context [--session-id …] --area … --project …` | manual badge-file write | **shipped** |
+| `cg session release [--session-id …]` | wrap's `jq` `dirty: false` edit | **shipped** |
 | `cg push-policy lookup <owner/repo>` | `lookup-push-policy.sh` | **shipped** |
 | `cg push-policy gate` | `external-repo-push-policy.sh` | **shipped** |
-| `cg active [--slugs\|--json]` | `active-projects.sh` | **shipped** |
+| `cg active [--slugs\|--json] [--session-id …]` | `active-projects.sh` | **shipped** |
 | `cg tags` | `area-tags.sh` | **shipped** |
 | `cg colors check` | `colors-check.sh` | **shipped** |
 
@@ -134,7 +135,22 @@ git-ignored.
 - Writers merge into the existing file and keep fields they do not own.
 - `cg session statusline` renders `area` and `project` through
   `session.badgeFormat`.
-- `cg active` lists a session while the file's modification time is within
-  `session.activeWindowMin`, or within `session.dirtyWindowMin` when `dirty`
-  is true. Files older than `session.pruneDays` are removed by the session
-  gate.
+- The session ID comes from `--session-id`, else `$CG_SESSION_ID`, else
+  `$CLAUDE_CODE_SESSION_ID`.
+
+### Lifecycle
+
+| Step | Command | Effect |
+|------|---------|--------|
+| Claim | `cg session set-context` | Creates or updates the badge. If the project is paused (`projects/<slug>/resume.md` exists), other sessions' badges for it are deleted: this session is resuming it. |
+| Work | `cg session mark-dirty` (PostToolUse hook) | Sets `dirty` on the first file edit. |
+| End | `cg session release` (end-mode wrap) | Deletes the badge. |
+| Pause | none | The badge stays; `cg active` reports the project as paused while `resume.md` exists. |
+
+`cg active` never lists the caller's own session. It lists a badge as
+`paused` when its project has a `resume.md`, whatever the badge's age, and
+lists a paused project with no badge from its `resume.md`. Otherwise a badge is
+`live` while its modification time is within `session.activeWindowMin`, or
+within `session.dirtyWindowMin` when `dirty` is true. The windows only matter
+for claims that were never released (crash, closed terminal, no wrap). Files
+older than `session.pruneDays` are removed by the session gate.

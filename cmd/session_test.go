@@ -14,12 +14,15 @@ import (
 	"github.com/mnemcik/consigliere/internal/session"
 )
 
-// runSession executes `cg session <args>` in dir with stdin, resetting flags
-// left over from earlier runs of the shared command tree.
+// runSession executes `cg session <args>` (or `cg active <args>` when args
+// start with "active") in dir with stdin, resetting flags left over from
+// earlier runs of the shared command tree. Session-ID environment variables
+// are cleared so the host agent's own session never leaks into a test; set
+// them with t.Setenv after calling clearSessionEnv when a test needs them.
 func runSession(t *testing.T, dir, stdin string, args ...string) (string, error) {
 	t.Helper()
 	t.Chdir(dir)
-	for _, c := range []*cobra.Command{sessionSetContextCmd} {
+	for _, c := range []*cobra.Command{sessionSetContextCmd, sessionReleaseCmd, activeCmd} {
 		c.SilenceUsage = false // a previous run's RunE sets it on the shared command
 		c.Flags().VisitAll(func(f *pflag.Flag) {
 			_ = f.Value.Set(f.DefValue)
@@ -30,7 +33,11 @@ func runSession(t *testing.T, dir, stdin string, args ...string) (string, error)
 	rootCmd.SetOut(buf)
 	rootCmd.SetErr(buf)
 	rootCmd.SetIn(strings.NewReader(stdin))
-	rootCmd.SetArgs(append([]string{"session"}, args...))
+	if len(args) > 0 && args[0] == "active" {
+		rootCmd.SetArgs(args)
+	} else {
+		rootCmd.SetArgs(append([]string{"session"}, args...))
+	}
 	err := rootCmd.Execute()
 	return buf.String(), err
 }
@@ -68,6 +75,7 @@ func addWorktree(t *testing.T, repo string) string {
 }
 
 func TestSessionSetContextFromLinkedWorktree(t *testing.T) {
+	clearSessionEnv(t)
 	repo := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere"}`)
 	wt := addWorktree(t, repo)
 
@@ -101,6 +109,7 @@ func TestSessionSetContextFromLinkedWorktree(t *testing.T) {
 }
 
 func TestSessionSetContextRefusesOutsideWorkspace(t *testing.T) {
+	clearSessionEnv(t)
 	repo := newGitRepo(t, filepath.Join(t.TempDir(), "plain"), "", "")
 
 	out, err := runSession(t, repo, "", "set-context", "--session-id", "s1", "--area", "a", "--project", "p")
@@ -113,6 +122,7 @@ func TestSessionSetContextRefusesOutsideWorkspace(t *testing.T) {
 }
 
 func TestSessionSetContextRejectsBadValuesWithoutUsage(t *testing.T) {
+	clearSessionEnv(t)
 	repo := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere"}`)
 	cases := [][]string{
 		{"--session-id", "s1", "--area", "  ", "--project", "p"},
@@ -141,5 +151,98 @@ func TestSessionStatuslineKeepsNestedWorkspaceSettings(t *testing.T) {
 	}
 	if !strings.Contains(out, "UPSTREAM") {
 		t.Errorf("statusline in a nested workspace = %q, want the configured upstream", out)
+	}
+}
+
+// clearSessionEnv unsets the session-ID variables resolveSessionID reads.
+func clearSessionEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("CG_SESSION_ID", "")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+}
+
+func TestResolveSessionIDOrder(t *testing.T) {
+	clearSessionEnv(t)
+	if got := resolveSessionID(""); got != "" {
+		t.Errorf("no sources: got %q, want empty", got)
+	}
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "claude")
+	if got := resolveSessionID(""); got != "claude" {
+		t.Errorf("Claude fallback: got %q", got)
+	}
+	t.Setenv("CG_SESSION_ID", "cg")
+	if got := resolveSessionID(""); got != "cg" {
+		t.Errorf("CG_SESSION_ID should win over CLAUDE_CODE_SESSION_ID: got %q", got)
+	}
+	if got := resolveSessionID(" flag "); got != "flag" {
+		t.Errorf("flag should win: got %q", got)
+	}
+}
+
+func TestSessionLifecycleEndToEnd(t *testing.T) {
+	clearSessionEnv(t)
+	repo := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere"}`)
+
+	// Session A claims p (session ID from the agent-neutral env var) and pauses.
+	t.Setenv("CG_SESSION_ID", "sA")
+	if out, err := runSession(t, repo, "", "set-context", "--area", "a", "--project", "p"); err != nil {
+		t.Fatalf("A set-context: %v\n%s", err, out)
+	}
+	if out, err := runSession(t, repo, `{"session_id":"sA"}`, "mark-dirty"); err != nil {
+		t.Fatalf("A mark-dirty: %v\n%s", err, out)
+	}
+	writeFile(t, repo, "projects/p/resume.md", "cursor\n")
+
+	// Session B sees p as paused, not live.
+	t.Setenv("CG_SESSION_ID", "sB")
+	out, err := runSession(t, repo, "", "active", "--slugs")
+	if err != nil || strings.TrimSpace(out) != "" {
+		t.Fatalf("paused project must not be in --slugs: %q (%v)", out, err)
+	}
+	out, _ = runSession(t, repo, "", "active")
+	if !strings.Contains(out, "\tsA\tpaused") {
+		t.Errorf("cg active should list sA as paused:\n%s", out)
+	}
+
+	// B resumes p: A's claim is handed over, and B never lists itself.
+	out, err = runSession(t, repo, "", "set-context", "--area", "a", "--project", "p")
+	if err != nil || !strings.Contains(out, "released session sA") {
+		t.Fatalf("B set-context should hand over from sA: %v\n%s", err, out)
+	}
+	if c, _ := session.ReadContext(repo, "sA"); c != nil {
+		t.Errorf("sA badge should be gone after hand-over: %+v", c)
+	}
+	if err := os.Remove(filepath.Join(repo, "projects", "p", "resume.md")); err != nil {
+		t.Fatal(err)
+	}
+	out, _ = runSession(t, repo, "", "active", "--slugs")
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("the caller must not list itself: %q", out)
+	}
+	// A third session (flag beats env) sees B live.
+	out, _ = runSession(t, repo, "", "active", "--slugs", "--session-id", "sC")
+	if strings.TrimSpace(out) != "p" {
+		t.Errorf("sC should see p live: %q", out)
+	}
+
+	// B end-wraps: release deletes the badge, and nobody sees p afterwards.
+	if out, err := runSession(t, repo, "", "release"); err != nil {
+		t.Fatalf("B release: %v\n%s", err, out)
+	}
+	if c, _ := session.ReadContext(repo, "sB"); c != nil {
+		t.Errorf("sB badge should be deleted by release: %+v", c)
+	}
+	out, _ = runSession(t, repo, "", "active", "--slugs", "--session-id", "sC")
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("a released session must not be listed: %q", out)
+	}
+}
+
+func TestSessionReleaseNeedsSessionID(t *testing.T) {
+	clearSessionEnv(t)
+	repo := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere"}`)
+	out, err := runSession(t, repo, "", "release")
+	if err == nil || !strings.Contains(err.Error(), "missing session ID") {
+		t.Fatalf("release without an ID: err = %v\n%s", err, out)
 	}
 }
