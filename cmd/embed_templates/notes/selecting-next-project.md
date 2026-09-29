@@ -43,7 +43,7 @@ Rank within a priority bucket is **mutable and user-owned**. Claude may suggest 
 
 ### Stale dirty sessions
 
-A listed live session that the user says is not running is a claim that was never released: the session crashed or ended without a wrap. Flag it and suggest either rejoining to wrap it, or releasing it with `cg session release --session-id <session_id>`.
+A listed live session that the user says is not running is a claim that was never released: the session crashed, or ended with unwrapped work (a clean session that closes releases its claim through the Claude Code `SessionEnd` hook). Flag it and suggest either rejoining to wrap it, or releasing it with `cg session release --session-id <session_id>`.
 
 ## Related
 

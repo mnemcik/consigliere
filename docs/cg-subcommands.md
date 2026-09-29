@@ -30,6 +30,7 @@ template.
 | `cg session statusline` | `statusline.sh` | **shipped** |
 | `cg session set-context [--session-id …] --area … --project …` | manual badge-file write | **shipped** |
 | `cg session release [--session-id …]` | wrap's `jq` `dirty: false` edit | **shipped** |
+| `cg session end` (SessionEnd hook body) | none | **shipped** |
 | `cg push-policy lookup <owner/repo>` | `lookup-push-policy.sh` | **shipped** |
 | `cg push-policy gate` | `external-repo-push-policy.sh` | **shipped** |
 | `cg active [--slugs\|--json] [--session-id …]` | `active-projects.sh` | **shipped** |
@@ -145,6 +146,7 @@ git-ignored.
 | Claim | `cg session set-context` | Creates or updates the badge. If the project is paused (`projects/<slug>/resume.md` exists), the pausing session's badge (written no later than `resume.md`) is deleted: this session is resuming it. |
 | Work | `cg session mark-dirty` (PostToolUse hook) | Sets `dirty` on the first file edit. |
 | End | `cg session release` (end-mode wrap) | Deletes the badge. |
+| Session closes | `cg session end` (Claude Code `SessionEnd` hook: exit, `/clear`, `/resume`, logout) | Deletes the badge if it is clean and the session did not pause its project. A dirty badge stays, because the worktree may hold unlanded work. |
 | Pause | none | The badge stays; `cg active` reports the project as paused while `resume.md` exists. |
 
 `cg active` never lists the caller's own session. It lists a badge as
@@ -157,3 +159,40 @@ resuming it, is listed from its `resume.md`. Otherwise a badge is
 within `session.dirtyWindowMin` when `dirty` is true. The windows only matter
 for claims that were never released (crash, closed terminal, no wrap). Files
 older than `session.pruneDays` are removed by the session gate.
+
+### Claude Code adapter: the `SessionEnd` hook
+
+The lifecycle commands work with any agent that can run a command. For
+Claude Code, `cg init` also installs `.claude/hooks/session-end.sh` and wires
+it to the `SessionEnd` event, so a session that closes without a wrap releases
+a clean claim on its own. The windows then only cover crashes and dirty
+sessions that ended without a wrap.
+
+A workspace created before this hook shipped needs two manual steps, because
+`cg init` never rewrites `.claude/settings.json` and `cg sync` does not add
+hooks. (`cg init --force` would install the wrapper, but it also re-runs the
+setup and rewrites the other framework-owned files.)
+
+1. Create `.claude/hooks/session-end.sh` and make it executable
+   (`chmod +x`):
+
+   ```bash
+   #!/usr/bin/env bash
+   if ! command -v cg >/dev/null 2>&1; then
+     exit 0
+   fi
+   exec cg session end
+   ```
+
+2. Add this entry under `"hooks"` in `.claude/settings.json`:
+
+```json
+"SessionEnd": [
+  {
+    "matcher": "",
+    "hooks": [
+      { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-end.sh", "timeout": 3 }
+    ]
+  }
+]
+```
