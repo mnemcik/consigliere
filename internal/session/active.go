@@ -43,10 +43,10 @@ type ActiveOptions struct {
 	ExcludeSessionID string
 }
 
-// ActiveProjects lists live sessions and paused projects. The badge of the
-// session that paused a project (written no later than its resume.md) is
-// reported as paused, whatever its age. A badge written after resume.md
-// belongs to a session resuming the project and is treated as live. A paused
+// ActiveProjects lists live sessions and paused projects. While a project has
+// a resume.md, the badge carrying the pause marker (the session that paused
+// it) is reported as paused, whatever its age. Other badges for the project,
+// such as a session resuming it, are treated as live. A paused
 // project with no badge left, and no live session resuming it, is listed from
 // its resume.md. Badges without a project are skipped. Results are sorted by
 // project, then state, then session ID.
@@ -74,11 +74,11 @@ func ActiveProjects(root string, opts ActiveOptions) ([]ActiveSession, error) {
 			Project: c.Project, Area: c.Area, Dirty: c.Dirty,
 			MTime: fi.ModTime(), SessionID: sid, State: StateLive,
 		}
-		pausedAt, paused, perr := PausedSince(opts.WorkspaceRoot, c.Project)
+		paused, perr := IsPaused(opts.WorkspaceRoot, c.Project)
 		if perr != nil {
 			return nil, perr
 		}
-		if paused && pausedBadge(fi.ModTime(), pausedAt) {
+		if paused && c.Paused {
 			s.State = StatePaused
 			covered[c.Project] = true
 			out = append(out, s)

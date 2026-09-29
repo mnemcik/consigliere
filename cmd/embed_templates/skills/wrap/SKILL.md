@@ -346,7 +346,13 @@ If the workspace tracks sessions with a badge file (`.claude/session-context/<se
   ```
 
   It deletes the badge file and succeeds when there is none. Do not edit the file by hand: rewriting it keeps the session listed for hours.
-- **Pause mode:** **keep the claim.** Paused state is dirty by design, and `cg active` reports the project as paused while its `resume.md` exists. The session that resumes the project takes the claim over with `cg session set-context`.
+- **Pause mode:** **keep the claim**, and mark this session as the one that paused the project:
+
+  ```sh
+  cg session pause --session-id <session_id>
+  ```
+
+  `cg active` then reports the project as paused while its `resume.md` exists, and a parallel session on the same project is not mistaken for the pausing one. The session that resumes the project takes the claim over with `cg session set-context`.
 
 Skip silently if the workspace doesn't use badge files.
 

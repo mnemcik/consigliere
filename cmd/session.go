@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -18,6 +19,7 @@ import (
 func init() {
 	sessionCmd.AddCommand(sessionEndCmd)
 	sessionCmd.AddCommand(sessionMarkDirtyCmd)
+	sessionCmd.AddCommand(sessionPauseCmd)
 	sessionCmd.AddCommand(sessionPullLatestCmd)
 	sessionCmd.AddCommand(sessionReleaseCmd)
 	sessionCmd.AddCommand(sessionSetContextCmd)
@@ -193,6 +195,51 @@ func init() {
 		_ = sessionSetContextCmd.MarkFlagRequired(name)
 	}
 	sessionReleaseCmd.Flags().StringVar(&releaseSessionID, "session-id", "", "session ID (see below for defaults)")
+	sessionPauseCmd.Flags().StringVar(&pauseSessionID, "session-id", "", "session ID (see below for defaults)")
+}
+
+var pauseSessionID string
+
+var sessionPauseCmd = &cobra.Command{
+	Use:   "pause",
+	Short: "Mark the session as the one that paused its project (pause-mode wrap)",
+	Long: `Sets the pause marker on the session's badge, so cg active, the resume
+hand-over and the SessionEnd hook can tell the session that paused a project
+from another session that worked on it. Run it when a session pauses, which
+the pause-mode wrap does after writing resume.md. The session keeps its claim.
+A session without a badge file is left alone. Claiming a project with
+cg session set-context clears the marker.
+
+` + sessionIDHelp,
+	Example: `  cg session pause --session-id 1b2c...`,
+	Args:    cobra.NoArgs,
+	RunE:    runSessionPause,
+}
+
+func runSessionPause(cmd *cobra.Command, _ []string) error {
+	cmd.SilenceUsage = true
+	id := resolveSessionID(pauseSessionID)
+	if !session.ValidSessionID(id) {
+		return fmt.Errorf("invalid or missing session ID %q (pass --session-id or set CG_SESSION_ID)", id)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	root, wsRoot, _ := sessionRoots(cmd.Context(), cwd)
+	if wsRoot == "" || root == "" {
+		return fmt.Errorf("not inside a Consigliere workspace: %s", cwd)
+	}
+	marked, err := session.MarkPaused(root, id, time.Now())
+	if err != nil {
+		return err
+	}
+	if marked {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Session paused: %s\n", id)
+	} else {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No badge for session %s; nothing to mark\n", id)
+	}
+	return nil
 }
 
 // sessionIDHelp documents resolveSessionID for every command that takes one.
