@@ -125,12 +125,44 @@ func TestWriteContext(t *testing.T) {
 
 func TestWriteContextRejectsUnsafeSessionID(t *testing.T) {
 	root := t.TempDir()
-	for _, id := range []string{"", ".", "..", "../escape", "a/b", `a\b`} {
+	for _, id := range []string{"", ".", "..", "../escape", "a/b", `a\b`, "a:b", " s ", "s1.json", "a..b"} {
 		if err := WriteContext(root, id, "a", "p"); err == nil {
 			t.Errorf("WriteContext(%q) should fail", id)
 		}
 	}
 	if _, err := os.Stat(ContextDir(root)); !os.IsNotExist(err) {
 		t.Error("rejected session IDs must not create the context directory")
+	}
+}
+
+func TestValidSessionIDAcceptsAgentIDs(t *testing.T) {
+	for _, id := range []string{"21b0b672-8e17-4ca7-a898-e5d9e7f818dc", "s1", "run_42"} {
+		if !ValidSessionID(id) {
+			t.Errorf("ValidSessionID(%q) = false, want true", id)
+		}
+	}
+}
+
+func TestWriteContextLeavesCorruptFileAlone(t *testing.T) {
+	root := t.TempDir()
+	writeCtx(t, root, "s1", `not json`)
+	if err := WriteContext(root, "s1", "a", "p"); err == nil {
+		t.Fatal("WriteContext over corrupt JSON should fail")
+	}
+	data, _ := os.ReadFile(ContextFile(root, "s1"))
+	if string(data) != "not json" {
+		t.Errorf("corrupt badge was overwritten: %q", data)
+	}
+}
+
+func TestMarkDirtyPreservesLargeIntegers(t *testing.T) {
+	root := t.TempDir()
+	writeCtx(t, root, "s1", `{"area":"a","project":"p","dirty":false,"big":9007199254740993}`)
+	if err := MarkDirty(root, "s1"); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(ContextFile(root, "s1"))
+	if !strings.Contains(string(data), `"big": 9007199254740993`) {
+		t.Errorf("large integer not preserved exactly:\n%s", data)
 	}
 }

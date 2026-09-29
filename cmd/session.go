@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -62,13 +63,8 @@ func runSessionMarkDirty(cmd *cobra.Command, _ []string) error {
 	if cwd == "" {
 		cwd, _ = os.Getwd()
 	}
-	// Badge files live at the main worktree root, matching start-gate and
-	// set-context; fall back to the walk-up root outside a git repo.
-	root, err := gitx.CommonRoot(cmd.Context(), cwd)
-	if err != nil {
-		root, _, err = workspace.FindRoot(cwd)
-	}
-	if err != nil || root == "" {
+	root, _, _ := sessionRoots(cmd.Context(), cwd)
+	if root == "" {
 		return nil
 	}
 
@@ -133,7 +129,9 @@ file (.claude/session-context/<session-id>.json under the main worktree root),
 creating it when absent. The status line renders the badge from this file and
 cg active lists sessions from it. Run it once the session-start gate's area and
 project are confirmed, and again whenever the session switches either one.
-Existing fields such as the dirty flag are preserved.`,
+Existing fields such as the dirty flag are preserved. It refuses to run
+outside a Consigliere workspace. The session ID must match [A-Za-z0-9_-]+.
+The file format is described in docs/cg-subcommands.md, "Session badge file".`,
 	Example: `  cg session set-context --session-id 1b2c... --area platform --project api-gateway`,
 	Args:    cobra.NoArgs,
 	RunE:    runSessionSetContext,
@@ -150,6 +148,9 @@ func init() {
 }
 
 func runSessionSetContext(cmd *cobra.Command, _ []string) error {
+	// Flag values are validated below; a bad value is not a usage error.
+	cmd.SilenceUsage = true
+	setContextSessionID = strings.TrimSpace(setContextSessionID)
 	if !session.ValidSessionID(setContextSessionID) {
 		return fmt.Errorf("invalid --session-id %q", setContextSessionID)
 	}
@@ -159,18 +160,15 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 	if setContextArea == "" || setContextProject == "" {
 		return fmt.Errorf("--area and --project must be non-empty")
 	}
-	cmd.SilenceUsage = true
 
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	// Badge files live at the main worktree root, matching start-gate.
-	root, err := gitx.CommonRoot(cmd.Context(), cwd)
-	if err != nil {
-		root, _, err = workspace.FindRoot(cwd)
-	}
-	if err != nil || root == "" {
+	// Refuse outside a workspace: inside any other git repo the badge root
+	// would still resolve, leaving a stray .claude/ the status line never reads.
+	root, wsRoot, _ := sessionRoots(cmd.Context(), cwd)
+	if wsRoot == "" || root == "" {
 		return fmt.Errorf("not inside a Consigliere workspace: %s", cwd)
 	}
 
@@ -253,14 +251,7 @@ func runSessionStatusline(cmd *cobra.Command, _ []string) error {
 		cwd, _ = os.Getwd()
 	}
 
-	// Badge files live at the main worktree root (where start-gate and
-	// set-context put them), so a session running in a linked worktree still
-	// finds its badge; fall back to the walk-up root outside a git repo.
-	root, err := gitx.CommonRoot(cmd.Context(), cwd)
-	if err != nil {
-		root, _, _ = workspace.FindRoot(cwd)
-	}
-	cfg, _ := workspace.Detect(root)
+	root, _, cfg := sessionRoots(cmd.Context(), cwd)
 	s := cfg.SessionSettings()
 
 	out := session.Statusline(cmd.Context(), root, session.StatuslineInput{
@@ -270,6 +261,25 @@ func runSessionStatusline(cmd *cobra.Command, _ []string) error {
 	}, s.StatuslineUpstream, s.BadgeFormat)
 	_, _ = fmt.Fprintln(cmd.OutOrStdout(), out)
 	return nil
+}
+
+// sessionRoots resolves where a session's badge file lives and which workspace
+// cwd belongs to. badgeRoot is the main worktree root (where start-gate puts
+// badge files), so a session in a linked worktree still finds its badge; it
+// falls back to the walk-up workspace root outside a git repo. wsRoot is the
+// walk-up workspace root ("" when cwd is not in a workspace). cfg is the
+// workspace config, read from wsRoot and else from badgeRoot, so a workspace
+// nested below the git top level keeps its settings.
+func sessionRoots(ctx context.Context, cwd string) (badgeRoot, wsRoot string, cfg *workspace.Config) {
+	wsRoot, cfg, _ = workspace.FindRoot(cwd)
+	badgeRoot, err := gitx.CommonRoot(ctx, cwd)
+	if err != nil {
+		badgeRoot = wsRoot
+	}
+	if cfg == nil && badgeRoot != "" {
+		cfg, _ = workspace.Detect(badgeRoot)
+	}
+	return badgeRoot, wsRoot, cfg
 }
 
 // decodeStdin reads all of r and unmarshals the JSON into v.
