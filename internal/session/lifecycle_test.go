@@ -110,7 +110,7 @@ func TestPauseMarkerIdentifiesThePausingSession(t *testing.T) {
 
 	// A and B both work on p; both badges predate the pause. B pauses.
 	for _, id := range []string{"A", "B"} {
-		if err := WriteContext(root, id, "a", "p"); err != nil {
+		if err := WriteContext(root, id, Claim{Area: "a", Project: "p"}); err != nil {
 			t.Fatal(err)
 		}
 		touch(t, ContextFile(root, id), earlier)
@@ -135,7 +135,7 @@ func TestPauseMarkerIdentifiesThePausingSession(t *testing.T) {
 	}
 
 	// C resumes p: only B's claim is handed over.
-	if err := WriteContext(root, "C", "a", "p"); err != nil {
+	if err := WriteContext(root, "C", Claim{Area: "a", Project: "p"}); err != nil {
 		t.Fatal(err)
 	}
 	retired, err := HandOver(root, ws, "C", "p")
@@ -151,7 +151,7 @@ func TestPauseMarkerIdentifiesThePausingSession(t *testing.T) {
 
 func TestSetContextClearsPauseMarker(t *testing.T) {
 	root := t.TempDir()
-	if err := WriteContext(root, "s1", "a", "p"); err != nil {
+	if err := WriteContext(root, "s1", Claim{Area: "a", Project: "p"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := MarkPaused(root, "s1", time.Now()); err != nil {
@@ -161,7 +161,7 @@ func TestSetContextClearsPauseMarker(t *testing.T) {
 		t.Fatalf("MarkPaused did not set the marker: %+v", c)
 	}
 	// The same session resumes its own pause (session IDs survive a resume).
-	if err := WriteContext(root, "s1", "a", "p"); err != nil {
+	if err := WriteContext(root, "s1", Claim{Area: "a", Project: "p"}); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(ContextFile(root, "s1"))

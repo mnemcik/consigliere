@@ -53,8 +53,8 @@ func MarkPaused(root, sessionID string, now time.Time) (bool, error) {
 			}
 			return err
 		}
-		m["paused"] = true
-		m["pausedAt"] = now.UTC().Format(time.RFC3339)
+		m[keyPaused] = true
+		m[keyPausedAt] = now.UTC().Format(time.RFC3339)
 		marked = true
 		return writeJSONAtomic(path, m)
 	})

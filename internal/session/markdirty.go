@@ -25,9 +25,9 @@ func markDirty(root, sessionID string) error {
 		}
 		return err
 	}
-	if dirty, ok := m["dirty"].(bool); ok && dirty {
+	if dirty, ok := m[keyDirty].(bool); ok && dirty {
 		return nil // already dirty; avoid a needless rewrite
 	}
-	m["dirty"] = true
+	m[keyDirty] = true
 	return writeJSONAtomic(path, m)
 }

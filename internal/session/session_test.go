@@ -91,7 +91,7 @@ func TestWriteContext(t *testing.T) {
 	root := t.TempDir()
 
 	// Missing directory and file → both created, dirty defaults to false.
-	if err := WriteContext(root, "s1", "platform", "api-gateway"); err != nil {
+	if err := WriteContext(root, "s1", Claim{Area: "platform", Project: "api-gateway"}); err != nil {
 		t.Fatalf("WriteContext on fresh workspace: %v", err)
 	}
 	c, err := ReadContext(root, "s1")
@@ -104,7 +104,7 @@ func TestWriteContext(t *testing.T) {
 
 	// Existing file → area/project replaced, dirty and unknown fields preserved.
 	writeCtx(t, root, "s2", `{"area":"old","project":"old","dirty":true,"note":"keep me","big":9007199254740993}`)
-	if err := WriteContext(root, "s2", "new-area", "new-project"); err != nil {
+	if err := WriteContext(root, "s2", Claim{Area: "new-area", Project: "new-project"}); err != nil {
 		t.Fatal(err)
 	}
 	var m map[string]any
@@ -123,10 +123,32 @@ func TestWriteContext(t *testing.T) {
 	}
 }
 
+// The writers' map keys and Context's JSON tags describe the same file; a
+// renamed tag without a renamed key would make writes invisible to readers.
+func TestContextKeysMatchTags(t *testing.T) {
+	data, err := json.Marshal(Context{Area: "a", Project: "p", Dirty: true, Paused: true, PausedAt: "2026-09-30T12:00:00Z"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	keys := []string{keyArea, keyProject, keyDirty, keyPaused, keyPausedAt}
+	if len(m) != len(keys) {
+		t.Errorf("Context has %d JSON fields, want %d: %s", len(m), len(keys), data)
+	}
+	for _, k := range keys {
+		if _, ok := m[k]; !ok {
+			t.Errorf("key %q is not a Context JSON tag: %s", k, data)
+		}
+	}
+}
+
 func TestWriteContextRejectsUnsafeSessionID(t *testing.T) {
 	root := t.TempDir()
 	for _, id := range []string{"", ".", "..", "../escape", "a/b", `a\b`, "a:b", " s ", "s1.json", "a..b"} {
-		if err := WriteContext(root, id, "a", "p"); err == nil {
+		if err := WriteContext(root, id, Claim{Area: "a", Project: "p"}); err == nil {
 			t.Errorf("WriteContext(%q) should fail", id)
 		}
 	}
@@ -146,7 +168,7 @@ func TestValidSessionIDAcceptsAgentIDs(t *testing.T) {
 func TestWriteContextLeavesCorruptFileAlone(t *testing.T) {
 	root := t.TempDir()
 	writeCtx(t, root, "s1", `not json`)
-	if err := WriteContext(root, "s1", "a", "p"); err == nil {
+	if err := WriteContext(root, "s1", Claim{Area: "a", Project: "p"}); err == nil {
 		t.Fatal("WriteContext over corrupt JSON should fail")
 	}
 	data, _ := os.ReadFile(ContextFile(root, "s1"))
