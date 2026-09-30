@@ -263,7 +263,7 @@ func TestSessionEndReleasesCleanClaimsSilently(t *testing.T) {
 	clearSessionEnv(t)
 	repo := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere"}`)
 	for id, dirty := range map[string]string{"clean": "false", "dirty": "true"} {
-		if err := session.WriteContext(repo, id, "a", "p"); err != nil {
+		if err := session.WriteContext(repo, id, session.Claim{Area: "a", Project: "p"}); err != nil {
 			t.Fatal(err)
 		}
 		if dirty == "true" {

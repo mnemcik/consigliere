@@ -29,14 +29,32 @@ func ContextFile(root, sessionID string) string {
 	return filepath.Join(ContextDir(root), sessionID+".json")
 }
 
+// Badge file keys. Writers update the file as a generic map (readContextMap)
+// so fields they do not own survive; these keys must match Context's JSON tags.
+const (
+	keyArea     = "area"
+	keyProject  = "project"
+	keyDirty    = "dirty"
+	keyPaused   = "paused"
+	keyPausedAt = "pausedAt"
+)
+
 // Context is the per-session badge state the status line renders.
 type Context struct {
 	Area    string `json:"area"`
 	Project string `json:"project"`
 	Dirty   bool   `json:"dirty"`
-	// Paused marks the badge of the session that paused its project
-	// (cg session pause). Claiming a project clears it.
-	Paused bool `json:"paused,omitempty"`
+	// Paused and PausedAt mark the badge of the session that paused its
+	// project (cg session pause). Claiming a project clears both.
+	Paused   bool   `json:"paused,omitempty"`
+	PausedAt string `json:"pausedAt,omitempty"`
+}
+
+// Claim is what a session records in its badge when it takes on work: the
+// area and project it works on.
+type Claim struct {
+	Area    string
+	Project string
 }
 
 // ReadContext loads the badge state for a session. It returns (nil, nil) when
@@ -67,12 +85,12 @@ func ValidSessionID(id string) bool {
 	return sessionIDPattern.MatchString(id)
 }
 
-// WriteContext records the area and project for a session in its badge state
+// WriteContext records a session's claim (area and project) in its badge state
 // file, creating the session-context directory and file when absent. Fields
 // already present (dirty, or keys added by other tools) are preserved, so it
 // is safe to call again when a session switches area or project. The pause
 // marker is cleared.
-func WriteContext(root, sessionID, area, project string) error {
+func WriteContext(root, sessionID string, c Claim) error {
 	if !ValidSessionID(sessionID) {
 		return fmt.Errorf("invalid session id %q", sessionID)
 	}
@@ -88,14 +106,14 @@ func WriteContext(root, sessionID, area, project string) error {
 		if err != nil {
 			return err
 		}
-		m["area"] = area
-		m["project"] = project
+		m[keyArea] = c.Area
+		m[keyProject] = c.Project
 		// Claiming a project makes this session the active one on it, including a
 		// session resuming its own pause (session IDs survive a resume).
-		delete(m, "paused")
-		delete(m, "pausedAt")
-		if _, ok := m["dirty"]; !ok {
-			m["dirty"] = false
+		delete(m, keyPaused)
+		delete(m, keyPausedAt)
+		if _, ok := m[keyDirty]; !ok {
+			m[keyDirty] = false
 		}
 		return writeJSONAtomic(path, m)
 	})

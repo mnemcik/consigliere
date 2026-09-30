@@ -322,7 +322,7 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("not inside a Consigliere workspace: %s", cwd)
 	}
 
-	if err := session.WriteContext(root, id, setContextArea, setContextProject); err != nil {
+	if err := session.WriteContext(root, id, session.Claim{Area: setContextArea, Project: setContextProject}); err != nil {
 		return err
 	}
 	out := cmd.OutOrStdout()
