@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.20.0](https://github.com/mnemcik/consigliere/compare/v1.19.0...v1.20.0) (2026-09-30)
+
+
+### Features
+
+* **session:** release clean claims on Claude Code SessionEnd ([d2c36f7](https://github.com/mnemcik/consigliere/commit/d2c36f77c1205bd8fb07d8ed8fa3a0f30f56aa71)), closes [#112](https://github.com/mnemcik/consigliere/issues/112)
+
+
+### Bug Fixes
+
+* **session:** add `cg session set-context` to create the badge file ([f3faf1f](https://github.com/mnemcik/consigliere/commit/f3faf1fd6f3de23b17e477a6e92933dc5daf5911)), closes [#89](https://github.com/mnemcik/consigliere/issues/89)
+* **session:** address review on set-context ([cc8b04b](https://github.com/mnemcik/consigliere/commit/cc8b04b59db8c35be0d1e34f64a61c47e3bdbee2))
+* **session:** delete a lock file only while holding its lock ([1f9a1cb](https://github.com/mnemcik/consigliere/commit/1f9a1cb16680be58ccb380f1811f60f0ea5b39c0))
+* **session:** identify the pausing session by an explicit pause marker ([#119](https://github.com/mnemcik/consigliere/issues/119)) ([b06c08e](https://github.com/mnemcik/consigliere/commit/b06c08e2ec5a76d3f02f6a4b4f1f18dca53dbd0d))
+* **session:** keep a resuming session live until resume.md is deleted ([3d92ac3](https://github.com/mnemcik/consigliere/commit/3d92ac3289ece7339b14e453cc54ea72304b1a25))
+* **session:** keep nested-workspace settings and refuse set-context outside a workspace ([0b40884](https://github.com/mnemcik/consigliere/commit/0b40884c57a7875ec9791263cc833d4f9cc7a8a4)), closes [#89](https://github.com/mnemcik/consigliere/issues/89)
+* **session:** release claims on wrap, hand over on resume, exclude the caller in cg active ([a4a349d](https://github.com/mnemcik/consigliere/commit/a4a349df5d107015cf5c969d19bcb08c4c0be924)), closes [#112](https://github.com/mnemcik/consigliere/issues/112)
+* **session:** serialise badge read-modify-writes with a per-session lock ([db5e1bc](https://github.com/mnemcik/consigliere/commit/db5e1bc021dad17e67939abde06882f28a79172e))
+* **session:** use OS advisory locks instead of O_EXCL lock files ([5a502fe](https://github.com/mnemcik/consigliere/commit/5a502fe302eb18b22094814b5a5aba8c6c29f786))
+
 ## [1.19.0](https://github.com/mnemcik/consigliere/compare/v1.18.0...v1.19.0) (2026-09-25)
 
 
