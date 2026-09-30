@@ -104,8 +104,11 @@ func inMainWorktree(ctx context.Context, cwd, root string) bool {
 
 // pruneStaleContexts removes badge files older than pruneDays, and lock files
 // whose badge is gone and that nobody has locked for pruneDays (best-effort).
-// A lock file is never removed while its badge exists: deleting a lock file
-// that is held would let a second writer lock a new file at the same path.
+// A lock file is deleted only while pruning holds its lock, so no writer holds
+// it at that moment, and a writer that opened it earlier notices the deletion
+// after locking and retries on the new file (see lockOpened). A lock file in
+// use is skipped. On Windows, deleting a file that is open may fail; the file
+// is then left for a later prune.
 func pruneStaleContexts(root string, pruneDays int) {
 	if pruneDays <= 0 {
 		return
@@ -130,11 +133,22 @@ func pruneStaleContexts(root string, pruneDays int) {
 	}
 	for _, l := range locks {
 		badge := strings.TrimSuffix(l, ".lock") + ".json"
-		if _, err := os.Stat(badge); err == nil {
+		if !old(l) || fileExists(badge) {
 			continue
 		}
-		if old(l) {
+		f, _, err := tryLockFile(l)
+		if err != nil || f == nil {
+			continue // in use, or cannot lock: leave it
+		}
+		if !fileExists(badge) { // a writer may have claimed the session meanwhile
 			_ = os.Remove(l)
 		}
+		unlockFile(f)
 	}
+}
+
+// fileExists reports whether p exists.
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
