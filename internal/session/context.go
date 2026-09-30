@@ -34,6 +34,9 @@ type Context struct {
 	Area    string `json:"area"`
 	Project string `json:"project"`
 	Dirty   bool   `json:"dirty"`
+	// Paused marks the badge of the session that paused its project
+	// (cg session pause). Claiming a project clears it.
+	Paused bool `json:"paused,omitempty"`
 }
 
 // ReadContext loads the badge state for a session. It returns (nil, nil) when
@@ -67,7 +70,8 @@ func ValidSessionID(id string) bool {
 // WriteContext records the area and project for a session in its badge state
 // file, creating the session-context directory and file when absent. Fields
 // already present (dirty, or keys added by other tools) are preserved, so it
-// is safe to call again when a session switches area or project.
+// is safe to call again when a session switches area or project. The pause
+// marker is cleared.
 func WriteContext(root, sessionID, area, project string) error {
 	if !ValidSessionID(sessionID) {
 		return fmt.Errorf("invalid session id %q", sessionID)
@@ -85,6 +89,10 @@ func WriteContext(root, sessionID, area, project string) error {
 	}
 	m["area"] = area
 	m["project"] = project
+	// Claiming a project makes this session the active one on it, including a
+	// session resuming its own pause (session IDs survive a resume).
+	delete(m, "paused")
+	delete(m, "pausedAt")
 	if _, ok := m["dirty"]; !ok {
 		m["dirty"] = false
 	}

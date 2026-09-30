@@ -17,30 +17,43 @@ func ResumeFile(wsRoot, project string) string {
 	return filepath.Join(wsRoot, "projects", project, "resume.md")
 }
 
-// PausedSince reports whether a project is paused and, if so, when: its
-// resume.md exists (the wrap skill's pause mode writes it). A missing file
-// means not paused; any other error is returned. The time lets callers tell the
-// pausing session's badge (written no later than resume.md) from a resuming
-// session's badge (written after it), since resume.md stays until the resuming
-// session has read it.
-func PausedSince(wsRoot, project string) (time.Time, bool, error) {
+// IsPaused reports whether a project is paused: its resume.md exists (the
+// wrap skill's pause mode writes it, and the resuming session deletes it once
+// it has read it). A missing file means not paused; any other error is
+// returned.
+func IsPaused(wsRoot, project string) (bool, error) {
 	if wsRoot == "" || project == "" {
-		return time.Time{}, false, nil
+		return false, nil
 	}
-	fi, err := os.Stat(ResumeFile(wsRoot, project))
-	if err != nil {
+	if _, err := os.Stat(ResumeFile(wsRoot, project)); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return time.Time{}, false, nil
+			return false, nil
 		}
-		return time.Time{}, false, err
+		return false, err
 	}
-	return fi.ModTime(), true, nil
+	return true, nil
 }
 
-// pausedBadge reports whether a badge written at badgeTime belongs to the
-// session that paused the project at pausedAt, rather than one resuming it.
-func pausedBadge(badgeTime, pausedAt time.Time) bool {
-	return !badgeTime.After(pausedAt)
+// MarkPaused records that a session paused its project: it sets the pause
+// marker ("paused": true and "pausedAt") in the session's badge. The marker is
+// what identifies the pausing session, so another session that worked on the
+// same project, or one resuming it, is never mistaken for it. It reports
+// whether a badge was marked; a session without a badge file is not an error.
+func MarkPaused(root, sessionID string, now time.Time) (bool, error) {
+	if !ValidSessionID(sessionID) {
+		return false, fmt.Errorf("invalid session id %q", sessionID)
+	}
+	path := ContextFile(root, sessionID)
+	m, err := readContextMap(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	m["paused"] = true
+	m["pausedAt"] = now.UTC().Format(time.RFC3339)
+	return true, writeJSONAtomic(path, m)
 }
 
 // Release ends a session's claim by deleting its badge file, so cg active no
@@ -57,13 +70,13 @@ func Release(root, sessionID string) error {
 }
 
 // HandOver retires the pausing session's claim on project when the caller
-// resumes it: every other badge for the project written no later than its
-// resume.md. A badge written after resume.md belongs to a session that already
-// resumed the project, so it is kept. It returns the retired session IDs,
+// resumes it: every other badge for the project that carries the pause marker.
+// Other badges for the project, such as a session that already resumed it or a
+// parallel session that never paused, are kept. It returns the retired session IDs,
 // sorted. It does nothing when the project is not paused, so two sessions that
 // claim the same fresh project both stay listed.
 func HandOver(root, wsRoot, callerID, project string) ([]string, error) {
-	pausedAt, paused, err := PausedSince(wsRoot, project)
+	paused, err := IsPaused(wsRoot, project)
 	if err != nil || !paused {
 		return nil, err
 	}
@@ -77,12 +90,8 @@ func HandOver(root, wsRoot, callerID, project string) ([]string, error) {
 		if sid == callerID || !ValidSessionID(sid) {
 			continue
 		}
-		fi, serr := os.Stat(f)
-		if serr != nil || !pausedBadge(fi.ModTime(), pausedAt) {
-			continue
-		}
 		c, rerr := ReadContext(root, sid)
-		if rerr != nil || c == nil || c.Project != project {
+		if rerr != nil || c == nil || c.Project != project || !c.Paused {
 			continue
 		}
 		if err := Release(root, sid); err != nil {

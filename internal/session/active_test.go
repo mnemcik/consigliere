@@ -59,12 +59,12 @@ func TestActiveProjectsPausedAndExcluded(t *testing.T) {
 	// Paused project with its pausing badge, older than the dirty window:
 	// still listed, as paused.
 	writeResume(t, ws, "paused-old", now.Add(-59*time.Hour))
-	mk("pauser", `{"area":"a","project":"paused-old","dirty":true}`, 60*time.Hour)
+	mk("pauser", `{"area":"a","project":"paused-old","dirty":true,"paused":true}`, 60*time.Hour)
 	// Paused project whose badge is gone: listed from resume.md alone.
 	writeResume(t, ws, "paused-bare", now.Add(-time.Hour))
-	// Paused project that a session resumed after the pause (its resume.md is
-	// not deleted yet): the resumer is live and the project is not also
-	// listed as paused.
+	// Paused project that a session resumed (its resume.md is not deleted
+	// yet): the resumer carries no marker, so it is live, and the project is
+	// not also listed as paused.
 	writeResume(t, ws, "resumed", now.Add(-2*time.Hour))
 	mk("resumer", `{"area":"a","project":"resumed","dirty":false}`, time.Hour)
 	// Live project, and the caller's own session.

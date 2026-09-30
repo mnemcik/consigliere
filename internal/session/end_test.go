@@ -19,8 +19,9 @@ func TestEndSession(t *testing.T) {
 
 	badge("clean", `{"area":"a","project":"p","dirty":false}`, now)
 	badge("dirty", `{"area":"a","project":"p","dirty":true}`, now)
-	badge("pauser", `{"area":"a","project":"paused","dirty":false}`, pausedAt.Add(-time.Minute))
+	badge("pauser", `{"area":"a","project":"paused","dirty":false,"paused":true}`, pausedAt.Add(-time.Minute))
 	badge("resumer", `{"area":"a","project":"paused","dirty":false}`, pausedAt.Add(time.Minute))
+	badge("stale-marker", `{"area":"a","project":"done","dirty":false,"paused":true}`, pausedAt)
 
 	cases := []struct {
 		id           string

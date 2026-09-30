@@ -31,6 +31,7 @@ template.
 | `cg session set-context [--session-id …] --area … --project …` | manual badge-file write | **shipped** |
 | `cg session release [--session-id …]` | wrap's `jq` `dirty: false` edit | **shipped** |
 | `cg session end` (SessionEnd hook body) | none | **shipped** |
+| `cg session pause [--session-id …]` | none | **shipped** |
 | `cg push-policy lookup <owner/repo>` | `lookup-push-policy.sh` | **shipped** |
 | `cg push-policy gate` | `external-repo-push-policy.sh` | **shipped** |
 | `cg active [--slugs\|--json] [--session-id …]` | `active-projects.sh` | **shipped** |
@@ -126,9 +127,11 @@ git-ignored.
 {
   "area": "platform",       // area slug, set by `cg session set-context`
   "project": "api-gateway", // project slug, set by `cg session set-context`
-  "dirty": false            // true once the session edits files
-                            //   (`cg session mark-dirty`); the end-mode wrap
-                            //   clears it
+  "dirty": false,           // true once the session edits files
+                            //   (`cg session mark-dirty`)
+  "paused": true,           // only on the badge of the session that paused
+  "pausedAt": "2026-09-29T14:00:00Z" //   its project (`cg session pause`);
+                            //   cleared by `cg session set-context`
 }
 ```
 
@@ -143,17 +146,19 @@ git-ignored.
 
 | Step | Command | Effect |
 |------|---------|--------|
-| Claim | `cg session set-context` | Creates or updates the badge. If the project is paused (`projects/<slug>/resume.md` exists), the pausing session's badge (written no later than `resume.md`) is deleted: this session is resuming it. |
+| Claim | `cg session set-context` | Creates or updates the badge and clears its pause marker. If the project is paused (`projects/<slug>/resume.md` exists), the pausing session's badge is deleted: this session is resuming it. |
 | Work | `cg session mark-dirty` (PostToolUse hook) | Sets `dirty` on the first file edit. |
 | End | `cg session release` (end-mode wrap) | Deletes the badge. |
 | Session closes | `cg session end` (Claude Code `SessionEnd` hook: exit, `/clear`, `/resume`, logout) | Deletes the badge if it is clean and the session did not pause its project. A dirty badge stays, because the worktree may hold unlanded work. |
-| Pause | none | The badge stays; `cg active` reports the project as paused while `resume.md` exists. |
+| Pause | `cg session pause` (pause-mode wrap) | Sets the pause marker (`"paused": true`, `"pausedAt"`) on the badge, which stays. `cg active` reports the project as paused while `resume.md` exists. |
 
-`cg active` never lists the caller's own session. It lists a badge as
-`paused` when its project has a `resume.md` and the badge was written no later
-than it, whatever the badge's age. A badge written after `resume.md` belongs to
-the session resuming the project and is `live`, so `resume.md` can stay until
-that session has read it. A paused project with no badge, and no live session
+`cg active` never lists the caller's own session. It lists the pausing
+session's badge as `paused` while its project has a `resume.md`, whatever the
+badge's age. The pausing session is the one whose badge carries the pause
+marker. Any other badge for the project is `live`, including a parallel
+session that never paused and a session resuming it before it has deleted
+`resume.md`. A pause made with a cg release that predates the marker has no
+marked badge: its badge counts as `live` until its window expires. A paused project with no badge, and no live session
 resuming it, is listed from its `resume.md`. Otherwise a badge is
 `live` while its modification time is within `session.activeWindowMin`, or
 within `session.dirtyWindowMin` when `dirty` is true. The windows only matter

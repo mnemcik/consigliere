@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -23,7 +22,7 @@ import (
 func runSession(t *testing.T, dir, stdin string, args ...string) (string, error) {
 	t.Helper()
 	t.Chdir(dir)
-	for _, c := range []*cobra.Command{sessionSetContextCmd, sessionReleaseCmd, activeCmd} {
+	for _, c := range []*cobra.Command{sessionSetContextCmd, sessionReleaseCmd, sessionPauseCmd, activeCmd} {
 		c.SilenceUsage = false // a previous run's RunE sets it on the shared command
 		c.Flags().VisitAll(func(f *pflag.Flag) {
 			_ = f.Value.Set(f.DefValue)
@@ -193,16 +192,8 @@ func TestSessionLifecycleEndToEnd(t *testing.T) {
 		t.Fatalf("A mark-dirty: %v\n%s", err, out)
 	}
 	writeFile(t, repo, "projects/p/resume.md", "cursor\n")
-	// A's badge predates the pause, and B resumes later. Set the times
-	// explicitly: coarse filesystem clocks can give quick writes equal mtimes.
-	pausedAt := time.Now().Add(-time.Hour)
-	for path, mt := range map[string]time.Time{
-		session.ContextFile(repo, "sA"):                   pausedAt.Add(-time.Minute),
-		filepath.Join(repo, "projects", "p", "resume.md"): pausedAt,
-	} {
-		if err := os.Chtimes(path, mt, mt); err != nil {
-			t.Fatal(err)
-		}
+	if out, err := runSession(t, repo, "", "pause"); err != nil || !strings.Contains(out, "Session paused: sA") {
+		t.Fatalf("A pause: %v\n%s", err, out)
 	}
 
 	// Session B sees p as paused, not live.
