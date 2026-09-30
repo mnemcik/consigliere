@@ -102,24 +102,39 @@ func inMainWorktree(ctx context.Context, cwd, root string) bool {
 	return rt == rr
 }
 
-// pruneStaleContexts removes badge and lock files older than pruneDays
-// (best-effort).
+// pruneStaleContexts removes badge files older than pruneDays, and lock files
+// whose badge is gone and that nobody has locked for pruneDays (best-effort).
+// A lock file is never removed while its badge exists: deleting a lock file
+// that is held would let a second writer lock a new file at the same path.
 func pruneStaleContexts(root string, pruneDays int) {
 	if pruneDays <= 0 {
 		return
 	}
 	cutoff := time.Now().Add(-time.Duration(pruneDays) * 24 * time.Hour)
-	var matches []string
-	for _, pattern := range []string{"*.json", "*.lock"} {
-		m, err := filepath.Glob(filepath.Join(ContextDir(root), pattern))
-		if err != nil {
-			return
-		}
-		matches = append(matches, m...)
+	old := func(p string) bool {
+		fi, err := os.Stat(p)
+		return err == nil && fi.ModTime().Before(cutoff)
 	}
-	for _, m := range matches {
-		if fi, err := os.Stat(m); err == nil && fi.ModTime().Before(cutoff) {
-			_ = os.Remove(m)
+	badges, err := filepath.Glob(filepath.Join(ContextDir(root), "*.json"))
+	if err != nil {
+		return
+	}
+	for _, b := range badges {
+		if old(b) {
+			_ = os.Remove(b)
+		}
+	}
+	locks, err := filepath.Glob(filepath.Join(ContextDir(root), "*.lock"))
+	if err != nil {
+		return
+	}
+	for _, l := range locks {
+		badge := strings.TrimSuffix(l, ".lock") + ".json"
+		if _, err := os.Stat(badge); err == nil {
+			continue
+		}
+		if old(l) {
+			_ = os.Remove(l)
 		}
 	}
 }

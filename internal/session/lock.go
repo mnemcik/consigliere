@@ -10,15 +10,16 @@ import (
 
 // Badge writers run as separate processes (hook bodies, agent commands), so
 // two of them can read the same badge and the later write drops the earlier
-// change. withBadgeLock serialises each read-modify-write per session with a
-// lock file created exclusively next to the badge.
+// change. withBadgeLock serialises each read-modify-write per session with an
+// OS advisory lock (flock on Unix, LockFileEx on Windows) held on a lock file
+// next to the badge. The OS releases the lock when its holder exits, so a
+// crashed writer never leaves a stale lock behind, and lock files are never
+// deleted while a session's badge exists.
 //
 // The lock fails open: a hook must never hang or fail the session, so after
-// lockWait the change runs without the lock. A lock older than lockStale is
-// left over from a crashed writer and is removed.
+// lockWait the change runs without the lock.
 var (
 	lockWait  = time.Second // below the 1.5 s budget Claude Code gives SessionEnd hooks
-	lockStale = 10 * time.Second
 	lockRetry = 10 * time.Millisecond
 )
 
@@ -28,38 +29,30 @@ func lockFile(root, sessionID string) string {
 	return filepath.Join(ContextDir(root), sessionID+".lock")
 }
 
-// withBadgeLock runs fn while holding the session's badge lock. When the
-// session-context directory does not exist yet there is no badge to race on,
-// so fn runs without a lock (WriteContext creates the directory itself).
+// withBadgeLock runs fn while holding the session's badge lock. When the lock
+// cannot be taken (no session-context directory yet, an OS error, or another
+// writer holding it beyond lockWait), fn runs without it.
 func withBadgeLock(root, sessionID string, fn func() error) error {
-	path := lockFile(root, sessionID)
-	if acquireBadgeLock(path) {
-		defer func() { _ = os.Remove(path) }()
+	if f := acquireBadgeLock(lockFile(root, sessionID)); f != nil {
+		defer unlockFile(f)
 	}
 	return fn()
 }
 
-// acquireBadgeLock creates the lock file exclusively and reports whether it
-// holds it. It returns false, and the caller proceeds unlocked, when the lock
-// cannot be taken: no session-context directory yet, an error other than
-// "exists", or another writer holding it beyond lockWait.
-func acquireBadgeLock(path string) bool {
+// acquireBadgeLock returns the open, locked lock file, or nil when the caller
+// should proceed unlocked. A successful lock refreshes the file's modification
+// time, which the session gate uses to prune lock files nobody uses.
+func acquireBadgeLock(path string) *os.File {
 	deadline := time.Now().Add(lockWait)
 	for {
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-		if err == nil {
-			_ = f.Close()
-			return true
+		f, busy, err := tryLockFile(path)
+		if f != nil {
+			now := time.Now()
+			_ = os.Chtimes(path, now, now)
+			return f
 		}
-		if !errors.Is(err, fs.ErrExist) {
-			return false // no directory yet, or cannot lock: fail open
-		}
-		if fi, serr := os.Stat(path); serr == nil && time.Since(fi.ModTime()) > lockStale {
-			_ = os.Remove(path) // a crashed writer left it behind
-			continue
-		}
-		if time.Now().After(deadline) {
-			return false // held too long: fail open rather than block the session
+		if err != nil || !busy || time.Now().After(deadline) {
+			return nil // fail open rather than block the session
 		}
 		time.Sleep(lockRetry)
 	}
