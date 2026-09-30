@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.20.1](https://github.com/mnemcik/consigliere/compare/v1.20.0...v1.20.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **wrap:** point Phase 4 at insights/DRAFTS.md, the index cg init creates ([#128](https://github.com/mnemcik/consigliere/issues/128)) ([953b29f](https://github.com/mnemcik/consigliere/commit/953b29f9ffbe8f5d1d6a488cfad9c15ad3a166f1))
+* **wrap:** release the session claim before the summary and give Phase 6 a summary line ([#126](https://github.com/mnemcik/consigliere/issues/126)) ([1b9dc0c](https://github.com/mnemcik/consigliere/commit/1b9dc0ce976f07339821932662cb9f2ddea30bf9))
+
 ## [1.20.0](https://github.com/mnemcik/consigliere/compare/v1.19.0...v1.20.0) (2026-09-30)
 
 
