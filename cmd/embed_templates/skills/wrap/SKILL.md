@@ -294,48 +294,9 @@ Skip with a one-line note if the session had no worktree, no external-repo branc
 
 ### Phase 9: Summary
 
-Present a brief summary to the user. Sections shown are mode-dependent.
+Three steps, in this order: handle the session claim, present the summary, print the completion marker. The claim comes first because the summary reports its outcome and nothing may follow the marker.
 
-**End mode:**
-
-```
-## Session wrapped
-
-**Project files updated:**
-- [project-name] — log.md (session entry), todo.md (2 items added, 1 checked off)
-
-**Notes captured:**
-- Updated notes/azure-apim-gotchas.md with header versioning finding
-
-**Insights:** None this session
-
-**Propagation:** Updated areas/api-management.md with header versioning detail
-
-**Committed:** abc1234 — pushed to main
-
-**Cleanup:** Removed worktree <workspace>--old-project (project done); deleted local branch feat/xyz (PR #42 merged)
-```
-
-**Pause mode:**
-
-```
-## Session paused
-
-**Project files updated:**
-- [project-name] — log.md (session entry), todo.md (1 item added)
-
-**Resume context captured:** projects/[project-name]/resume.md
-- Cursor: <one-line summary of where work stopped>
-- Next action: <one-line summary of next step>
-
-**WIP commit:** abc1234 — pushed to origin/session/<slug> (branch backup; not landed to main)
-
-**Worktree:** kept alive at <workspace-parent>/<workspace>--<slug>
-```
-
-Keep it scannable. The user should be able to glance at this and confirm nothing was missed.
-
-#### Session claim
+#### Session claim (before the summary)
 
 If the workspace tracks sessions with a badge file (`.claude/session-context/<session_id>.json` at the workspace root, written by `cg session set-context`):
 
@@ -354,11 +315,68 @@ If the workspace tracks sessions with a badge file (`.claude/session-context/<se
 
   `cg active` then reports the project as paused while its `resume.md` exists, and a parallel session on the same project is not mistaken for the pausing one. The session that resumes the project takes the claim over with `cg session set-context`.
 
-Skip silently if the workspace doesn't use badge files.
+Skip if the workspace doesn't use badge files, and omit the **Session claim** line from the summary.
+
+#### Summary block
+
+Present a brief summary to the user. Sections shown are mode-dependent. Every phase that ran gets its line, including the ones that found nothing: *"None"* tells the user the phase was checked, while a missing line reads as skipped.
+
+**End mode:**
+
+```
+## Session wrapped
+
+**Project files updated:**
+- [project-name] — log.md (session entry), todo.md (2 items added, 1 checked off)
+
+**Notes captured:**
+- Updated notes/azure-apim-gotchas.md with header versioning finding
+
+**Insights:** None this session
+
+**Propagation:** Updated areas/api-management.md with header versioning detail
+
+**Improvements:** None found
+
+**Committed:** abc1234 — pushed to main
+
+**Cleanup:** Removed worktree <workspace>--old-project (project done); deleted local branch feat/xyz (PR #42 merged)
+
+**Session claim:** Released
+```
+
+**Pause mode:**
+
+```
+## Session paused
+
+**Project files updated:**
+- [project-name] — log.md (session entry), todo.md (1 item added)
+
+**Notes captured:** None
+
+**Insights:** None this session
+
+**Propagation:** None
+
+**Improvements:** None found
+
+**Resume context captured:** projects/[project-name]/resume.md
+- Cursor: <one-line summary of where work stopped>
+- Next action: <one-line summary of next step>
+
+**WIP commit:** abc1234 — pushed to origin/session/<slug> (branch backup; not landed to main)
+
+**Worktree:** kept alive at <workspace-parent>/<workspace>--<slug>
+
+**Session claim:** Kept, marked as paused
+```
+
+Keep it scannable. The user should be able to glance at this and confirm nothing was missed.
 
 #### Terminal completion marker
 
-After the summary block (and after handling the session claim if applicable), print one final line that is unambiguously the end of the wrap. The marker is mode-specific:
+After the summary block, print one final line that is unambiguously the end of the wrap. The marker is mode-specific:
 
 - **End mode:**
 
