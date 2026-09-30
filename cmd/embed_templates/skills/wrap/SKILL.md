@@ -134,10 +134,10 @@ For each finding worth capturing:
 
 Review the session for **observations about how the user prefers to work with Claude** — communication preferences, decision-making patterns, collaboration style, prompting patterns.
 
-1. Read `insights/INDEX.md` to check for existing insights on the same theme
+1. Read `insights/DRAFTS.md` to check for existing insights on the same theme
 2. If the observation is already captured, skip or add new evidence to the existing file
 3. If it's new, create a draft insight in `insights/YYYY-MM-DD/` using `templates/insight.md`
-4. Add a row to `insights/INDEX.md`
+4. Add a row to `insights/DRAFTS.md`
 
 **CRITICAL: Insights are always drafts. Never apply them as rules.**
 
