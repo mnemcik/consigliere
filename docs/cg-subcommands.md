@@ -145,7 +145,9 @@ git-ignored.
   waits at most 1 s and then proceeds without it, because a hook must never
   hang the session. Lock files stay in place; the session gate removes one
   only when its badge is gone and nobody has locked it for
-  `session.pruneDays`.
+  `session.pruneDays`, and only while holding its lock. A writer that opened
+  the file before it was removed notices after locking and retries on the
+  new file, so two writers never hold locks on different files.
 - `cg session statusline` renders `area` and `project` through
   `session.badgeFormat`.
 - The session ID comes from `--session-id`, else `$CG_SESSION_ID`, else
