@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -477,12 +478,6 @@ func copyEmbeddedFile(dir, src, dst string, overwrite bool) (created, skipped []
 	return copyEmbeddedFileMode(dir, src, dst, overwrite, 0o644)
 }
 
-// copyEmbeddedExecutable is copyEmbeddedFile with the executable bit set — used
-// for the hook/statusline wrappers Claude Code invokes.
-func copyEmbeddedExecutable(dir, src, dst string, overwrite bool) (created, skipped []string) {
-	return copyEmbeddedFileMode(dir, src, dst, overwrite, 0o755)
-}
-
 func copyEmbeddedFileMode(dir, src, dst string, overwrite bool, mode os.FileMode) (created, skipped []string) {
 	destPath := filepath.Join(dir, dst)
 	if !overwrite && fileExists(destPath) {
@@ -554,7 +549,7 @@ func installedClaudeFiles(dir string) map[string]manifest.Artifact {
 			continue
 		}
 		got, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(f.dst)))
-		if err != nil || string(got) != string(want) {
+		if err != nil || !bytes.Equal(got, want) {
 			continue
 		}
 		out[f.dst] = manifest.Artifact{Hash: manifest.HashContent(string(want))}

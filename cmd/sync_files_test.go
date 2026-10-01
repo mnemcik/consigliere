@@ -127,8 +127,8 @@ func TestApplySyncClaudeFilesRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, it := range report2.Items {
-		leftAlone := it.ID == command || it.ID == foreign
-		if it.Status != syncpkg.StatusUpToDate && !(leftAlone && it.Status == syncpkg.StatusDrifted) {
+		leftAloneDrift := (it.ID == command || it.ID == foreign) && it.Status == syncpkg.StatusDrifted
+		if it.Status != syncpkg.StatusUpToDate && !leftAloneDrift {
 			t.Errorf("after apply, %s %s = %q", it.Kind, it.ID, it.Status)
 		}
 	}

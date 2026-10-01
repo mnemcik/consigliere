@@ -258,7 +258,7 @@ func contains(s []string, v string) bool {
 
 func readFile(t *testing.T, path string) string {
 	t.Helper()
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // test helper; every caller passes a path under t.TempDir()
 	if err != nil {
 		t.Fatalf("reading %s: %v", path, err)
 	}
