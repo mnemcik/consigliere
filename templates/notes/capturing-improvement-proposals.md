@@ -3,7 +3,7 @@
 ## Meta
 
 - **Category:** process
-- **Tags:** `meta-framework`, `continuous-improvement`, `ideas`
+- **Tags:** `meta-framework`, `continuous-improvement`, `ideas`, `ai-instructions`
 - **Framework note:** shipped by Consigliere and loaded on demand when a workspace-improvement proposal needs persisting. Safe to edit for your workspace.
 
 ## Summary

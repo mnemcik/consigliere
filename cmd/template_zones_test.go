@@ -15,7 +15,7 @@ import (
 // later edit can't silently reintroduce orphan content that `cg sync` would
 // then leave frozen forever.
 func TestEmbeddedCLAUDEHasNoOrphanContent(t *testing.T) {
-	const path = "embed_templates/workspace/CLAUDE.md"
+	const path = "workspace/CLAUDE.md"
 	data, err := embeddedFS.ReadFile(path)
 	if err != nil {
 		t.Fatalf("reading embedded %s: %v", path, err)

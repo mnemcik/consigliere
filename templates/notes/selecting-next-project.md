@@ -3,7 +3,7 @@
 ## Meta
 
 - **Category:** process
-- **Tags:** `projects`, `prioritization`, `active-projects`
+- **Tags:** `projects`, `prioritization`, `active-projects`, `ai-instructions`
 - **Framework note:** shipped by Consigliere and loaded on demand when the user asks what to work on next. Safe to edit for your workspace.
 
 ## Summary

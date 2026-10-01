@@ -3,7 +3,7 @@
 ## Meta
 
 - **Category:** process
-- **Tags:** `project-lifecycle`, `areas`, `classification`
+- **Tags:** `project-lifecycle`, `areas`, `classification`, `ai-instructions`
 - **Framework note:** shipped by Consigliere and loaded on demand when a project has outgrown single-project tracking. Safe to edit for your workspace.
 
 ## Summary

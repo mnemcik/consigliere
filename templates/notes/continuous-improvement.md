@@ -3,7 +3,7 @@
 ## Meta
 
 - **Category:** process
-- **Tags:** `meta-framework`, `improvements`, `feedback-loop`
+- **Tags:** `meta-framework`, `improvements`, `feedback-loop`, `ai-instructions`
 - **Framework note:** shipped by Consigliere and loaded on demand when looking for ways to improve how the workspace itself works. Safe to edit for your workspace.
 
 ## Summary
