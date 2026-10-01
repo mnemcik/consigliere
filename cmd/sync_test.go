@@ -112,6 +112,7 @@ func TestBuildSyncReportCleanWhenAligned(t *testing.T) {
 	}
 }
 
+// mustWrite writes content to path or fails the test.
 func mustWrite(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -119,6 +120,7 @@ func mustWrite(t *testing.T, path, content string) {
 	}
 }
 
+// hashesOf hashes whole-file content, keyed as given.
 func hashesOf(noteBytes map[string][]byte) map[string]string {
 	out := map[string]string{}
 	for k, v := range noteBytes {
@@ -247,6 +249,7 @@ func TestApplySyncRoundTrip(t *testing.T) {
 	}
 }
 
+// contains reports whether v is in s.
 func contains(s []string, v string) bool {
 	for _, x := range s {
 		if x == v {
@@ -256,6 +259,7 @@ func contains(s []string, v string) bool {
 	return false
 }
 
+// readFile returns the file at path or fails the test.
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path) //nolint:gosec // test helper; every caller passes a path under t.TempDir()

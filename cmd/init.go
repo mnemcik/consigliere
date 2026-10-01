@@ -52,6 +52,9 @@ var initCmd = &cobra.Command{
 	RunE:  runInit,
 }
 
+// runInit bootstraps a workspace in the current directory: folders, templates,
+// framework notes, CLAUDE.md, the sync manifest and, unless declined, the
+// Claude Code integration files.
 func runInit(cmd *cobra.Command, args []string) error {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -252,28 +255,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// PROFILE.md — wizard answers, if provided, override the default template.
-	profilePath := filepath.Join(dir, "PROFILE.md")
-	if wizardInit {
-		if fileExists(profilePath) && !forceInit {
-			skipped = append(skipped, "PROFILE.md")
-		} else {
-			if err := os.WriteFile(profilePath, []byte(wizard.RenderProfile(&answers)), 0o644); err != nil {
-				return fmt.Errorf("writing PROFILE.md: %w", err)
-			}
-			created = append(created, "PROFILE.md (from wizard)")
-		}
-	} else {
-		c, s := copyEmbeddedFile(dir, "workspace/PROFILE.md", "PROFILE.md", false)
-		created = append(created, c...)
-		skipped = append(skipped, s...)
-	}
-
-	// .gitignore
-	c, s := copyEmbeddedFile(dir, "workspace/.gitignore", ".gitignore", false)
-	created = append(created, c...)
-	skipped = append(skipped, s...)
-
 	// Claude Code integration: slash commands, skills, hook wrappers and the
 	// status line. All framework-owned, so --force rewrites them; `cg sync`
 	// keeps them current after that (see frameworkClaudeFiles).
@@ -308,6 +289,28 @@ func runInit(cmd *cobra.Command, args []string) error {
 			created = append(created, manifestRel)
 		}
 	}
+
+	// PROFILE.md — wizard answers, if provided, override the default template.
+	profilePath := filepath.Join(dir, "PROFILE.md")
+	if wizardInit {
+		if fileExists(profilePath) && !forceInit {
+			skipped = append(skipped, "PROFILE.md")
+		} else {
+			if err := os.WriteFile(profilePath, []byte(wizard.RenderProfile(&answers)), 0o644); err != nil {
+				return fmt.Errorf("writing PROFILE.md: %w", err)
+			}
+			created = append(created, "PROFILE.md (from wizard)")
+		}
+	} else {
+		c, s := copyEmbeddedFile(dir, "workspace/PROFILE.md", "PROFILE.md", false)
+		created = append(created, c...)
+		skipped = append(skipped, s...)
+	}
+
+	// .gitignore
+	c, s := copyEmbeddedFile(dir, "workspace/.gitignore", ".gitignore", false)
+	created = append(created, c...)
+	skipped = append(skipped, s...)
 
 	// Wizard-only post-bootstrap steps: first area + optional git init.
 	if wizardInit && answers.HasFirstArea() {
@@ -474,10 +477,14 @@ func isRecursiveStatusline(cmd string) bool {
 	return strings.Contains(cmd, "cg session statusline")
 }
 
+// copyEmbeddedFile copies src from the embed tree to dst under dir as a
+// regular file, skipping an existing dst unless overwrite is set.
 func copyEmbeddedFile(dir, src, dst string, overwrite bool) (created, skipped []string) {
 	return copyEmbeddedFileMode(dir, src, dst, overwrite, 0o644)
 }
 
+// copyEmbeddedFileMode is copyEmbeddedFile with an explicit file mode. It
+// returns dst in created when written, or in skipped when it already existed.
 func copyEmbeddedFileMode(dir, src, dst string, overwrite bool, mode os.FileMode) (created, skipped []string) {
 	destPath := filepath.Join(dir, dst)
 	if !overwrite && fileExists(destPath) {
@@ -519,6 +526,8 @@ type frameworkFile struct {
 	mode os.FileMode // 0o755 for anything Claude Code executes
 }
 
+//go:generate go run ../scripts/claudefilehistory -repo .. -o claude_file_history_gen.go
+
 // frameworkClaudeFiles is the single list of framework-owned .claude/ files.
 // `cg init` installs it and `cg sync` reconciles it, so the two cannot disagree
 // about what cg owns. Skills ship and version with the binary (no per-skill
@@ -535,6 +544,23 @@ var frameworkClaudeFiles = []frameworkFile{
 	{"workspace/.claude/hooks/pull-latest-main.sh", ".claude/hooks/pull-latest-main.sh", 0o755},
 	{"workspace/.claude/hooks/external-repo-push-policy.sh", ".claude/hooks/external-repo-push-policy.sh", 0o755},
 	{"workspace/.claude/statusline.sh", ".claude/statusline.sh", 0o755},
+}
+
+// knownClaudeFileHash reports whether hash is the content of some version of
+// the framework .claude/ file at workspace path id that a cg release shipped
+// (or that this binary ships). Such a file is provably cg's bytes, unedited.
+func knownClaudeFileHash(id, hash string) bool {
+	for _, f := range frameworkClaudeFiles {
+		if f.dst != id {
+			continue
+		}
+		for _, h := range claudeFileHistory[f.src] {
+			if h == hash {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // installedClaudeFiles returns a manifest record for each framework .claude/

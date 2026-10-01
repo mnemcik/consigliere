@@ -79,7 +79,9 @@ re-clone so `cg sync` can reconcile after the binary self-updates.
   file only when what is on disk equals what it ships. Absent from manifests
   written before cg tracked these files — see *Adopting untracked files* below.
 - **`schemaVersion`** — bumped only on an incompatible manifest format change.
-  Adding `files` is not one: older binaries ignore it.
+  Adding `files` is not one: older binaries read the manifest fine, but one that
+  rewrites it drops the `files` key. Nothing is lost by that: the next sync on a
+  newer binary recovers the records the same way it adopts untracked files.
 
 ## How `cg sync` uses it
 
@@ -99,6 +101,10 @@ binary ships):
 - **removed** — recorded but no longer shipped. Flagged (not deleted).
 - **missing** — recorded but gone from disk. Flagged.
 
+After an apply, every **up-to-date** artifact's record points at the framework
+content too. That matters when a drift is resolved by taking the framework copy
+by hand: the next framework change then reads as updatable, not as drift again.
+
 Without flags, `cg sync` is a **dry run**: it prints a grouped report and writes
 nothing. With **`--apply`** it writes the safe changes — updates *updatable*
 sections in place (preserving sentinels), notes (whole-file, keeping any
@@ -116,12 +122,29 @@ its manifest. The first `cg sync --apply` sorts each one by what is on disk:
 |---|---|---|
 | absent | new | installs it and records it (how a skill that shipped after `cg init` arrives) |
 | identical to what the binary ships | new | records it; the bytes do not change |
-| different | drifted | leaves it alone and unrecorded; resolve it by hand |
+| identical to a version an earlier cg release shipped | updatable | updates it to the current version |
+| anything else | drifted | leaves it alone and unrecorded; resolve it by hand |
+
+The middle case is what makes this work for an old workspace: its files are
+mostly older shipped versions, unedited. cg knows them from
+`cmd/claude_file_history_gen.go`, the SHA-256 of every version of every
+`.claude/` file in every release, generated from the git tags by
+`go generate ./cmd`. `TestClaudeFileHistoryCoversEmbed` fails if a file changes
+without regenerating it.
 
 A workspace that declined the Claude Code integration at `cg init` (the
 wizard's slash-command question) has none of the files and no records. `cg
-sync` reads that as "not wanted" and does not install them. Once any one of the
-files exists, or is recorded, the workspace counts as opted in.
+sync` reads that as "not wanted" and does not install them. It counts as opted
+in once a file is recorded, or once one of the files on disk is a version cg
+shipped. A file of your own at one of these paths, such as a `statusline.sh` you
+wrote, does not opt you in to the rest.
+
+**Hooks need wiring.** A hook wrapper only runs if `.claude/settings.json` calls
+it, and `settings.json` is yours, so `cg sync` never edits it. A hook that a
+later cg release adds is installed by sync but does nothing until you add it to
+`settings.json`. A hook cg stops shipping is reported as `removed`, and
+`settings.json` keeps calling it until you take it out. Skills and slash
+commands need no wiring: Claude Code picks them up from their directories.
 
 The optional `/cg-sync` Claude skill reads the report plus the user's
 `user:section` rules to flag *semantic* contradictions (a new framework rule

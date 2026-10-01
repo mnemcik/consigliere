@@ -245,3 +245,176 @@ func TestApplySyncNewSectionAlreadyOnDiskIsNotDuplicated(t *testing.T) {
 		t.Error("section not recorded")
 	}
 }
+
+// Every framework .claude/ file's current content must be in the generated
+// history, which is how a contributor is made to regenerate it: a file changed
+// without `go generate ./cmd` would leave its previous released version
+// unknown, and every workspace still on that version would read as edited.
+func TestClaudeFileHistoryCoversEmbed(t *testing.T) {
+	for _, f := range frameworkClaudeFiles {
+		data, err := embeddedFS.ReadFile(f.src)
+		if err != nil {
+			t.Fatalf("reading embedded %s: %v", f.src, err)
+		}
+		if !knownClaudeFileHash(f.dst, manifest.HashContent(string(data))) {
+			t.Errorf("%s changed but claude_file_history_gen.go was not regenerated; run `go generate ./cmd`", f.src)
+		}
+	}
+}
+
+// withHistory adds a shipped version of src to the history for one test.
+func withHistory(t *testing.T, src, content string) {
+	t.Helper()
+	orig := claudeFileHistory[src]
+	claudeFileHistory[src] = append(append([]string(nil), orig...), manifest.HashContent(content))
+	t.Cleanup(func() { claudeFileHistory[src] = orig })
+}
+
+// The motivating case: a workspace from before cg tracked .claude/ files still
+// has an older shipped wrap skill, unedited. It has no record, but its bytes
+// match a released version, so sync must update it rather than call it drifted.
+func TestSyncUpdatesUnrecordedFileAtAShippedVersion(t *testing.T) {
+	dir := t.TempDir()
+	const id = ".claude/skills/wrap/SKILL.md"
+	const old = "---\nname: wrap\n---\nwrap as cg v1.11.0 shipped it\n"
+	withHistory(t, "skills/wrap/SKILL.md", old)
+	mustWrite(t, filepath.Join(dir, "CLAUDE.md"), "# CLAUDE.md\n")
+	if err := os.MkdirAll(filepath.Join(dir, ".claude", "skills", "wrap"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(dir, filepath.FromSlash(id)), old)
+	mf := &manifest.Manifest{SchemaVersion: manifest.SchemaVersion, Sections: map[string]manifest.Artifact{}, Notes: map[string]manifest.Artifact{}}
+
+	fw, err := embeddedClaudeFileContents()
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := buildSyncReport(dir, mf, "# CLAUDE.md\n", nil, hashFiles(fw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := statusOf(report, id); got != syncpkg.StatusUpdatable {
+		t.Fatalf("%s = %q, want updatable", id, got)
+	}
+	if _, err := applySync(dir, mf, report, nil, nil, fw); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, filepath.Join(dir, filepath.FromSlash(id))); got != string(fw[id]) {
+		t.Error("shipped-version skill was not updated to the current one")
+	}
+}
+
+// A file of the user's own at one of cg's paths does not opt the workspace in:
+// sync must not install the rest of the integration on the strength of it.
+func TestUsersOwnFileDoesNotOptIn(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "CLAUDE.md"), "# CLAUDE.md\n")
+	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(dir, ".claude", "statusline.sh"), "#!/bin/sh\necho mine\n")
+	mf := &manifest.Manifest{SchemaVersion: manifest.SchemaVersion}
+
+	fw, err := embeddedClaudeFileContents()
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := buildSyncReport(dir, mf, "# CLAUDE.md\n", nil, hashFiles(fw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range report.Items {
+		if it.Kind == syncpkg.KindFile {
+			t.Errorf("user's own statusline opted the workspace in: %s %s", it.ID, it.Status)
+		}
+	}
+}
+
+// After a drift is resolved by taking the framework copy, the record must move
+// to that copy. Otherwise the next framework change reads as a user edit again.
+func TestApplySyncRecordsTakenFrameworkCopy(t *testing.T) {
+	dir := t.TempDir()
+	const id = ".claude/hooks/session-end.sh"
+	mustWrite(t, filepath.Join(dir, "CLAUDE.md"), "# CLAUDE.md\n")
+	if err := os.MkdirAll(filepath.Join(dir, ".claude", "hooks"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(dir, filepath.FromSlash(id)), "v2\n") // the user took v2 by hand
+	mf := &manifest.Manifest{
+		SchemaVersion: manifest.SchemaVersion,
+		Sections:      map[string]manifest.Artifact{},
+		Notes:         map[string]manifest.Artifact{},
+		Files:         map[string]manifest.Artifact{id: {Hash: manifest.HashContent("v1\n")}},
+	}
+
+	v2 := map[string][]byte{id: []byte("v2\n")}
+	report, err := buildSyncReport(dir, mf, "# CLAUDE.md\n", nil, hashFiles(v2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := statusOf(report, id); got != syncpkg.StatusUpToDate {
+		t.Fatalf("%s = %q, want up-to-date", id, got)
+	}
+	if _, err := applySync(dir, mf, report, nil, nil, v2); err != nil {
+		t.Fatal(err)
+	}
+
+	v3 := map[string][]byte{id: []byte("v3\n")}
+	report, err = buildSyncReport(dir, mf, "# CLAUDE.md\n", nil, hashFiles(v3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := statusOf(report, id); got != syncpkg.StatusUpdatable {
+		t.Errorf("after taking v2, framework v3 gives %q, want updatable", got)
+	}
+}
+
+// An unsafe target must fail the apply before anything is written: CLAUDE.md
+// rewritten with the manifest left behind would turn untouched sections into
+// drift on the next release.
+func TestApplySyncChecksPathsBeforeWriting(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	claude := "# CLAUDE.md\n<!-- cg:section:start=s -->\nv1\n<!-- cg:section:end=s -->\n"
+	mustWrite(t, filepath.Join(dir, "CLAUDE.md"), claude)
+	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, ".claude", "skills")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	mf := &manifest.Manifest{
+		SchemaVersion: manifest.SchemaVersion,
+		Sections:      map[string]manifest.Artifact{"s": {Hash: manifest.HashContent("v1")}},
+		Notes:         map[string]manifest.Artifact{},
+		// One recorded file: the workspace uses cg's .claude/ files, so the
+		// skill is a candidate to install.
+		Files: map[string]manifest.Artifact{".claude/statusline.sh": {Hash: manifest.HashContent("gone\n")}},
+	}
+	frameworkCLAUDE := "# CLAUDE.md\n<!-- cg:section:start=s -->\nv2\n<!-- cg:section:end=s -->\n"
+	files := map[string][]byte{".claude/skills/wrap/SKILL.md": []byte("skill\n")}
+
+	report, err := buildSyncReport(dir, mf, frameworkCLAUDE, nil, hashFiles(files))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applySync(dir, mf, report, manifest.ParseSections(frameworkCLAUDE), nil, files); err == nil {
+		t.Fatal("expected apply to refuse a target behind a symlink")
+	}
+	if got := readFile(t, filepath.Join(dir, "CLAUDE.md")); got != claude {
+		t.Error("CLAUDE.md was written before the unsafe path was refused")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "wrap", "SKILL.md")); err == nil {
+		t.Error("wrote through the symlink")
+	}
+}
+
+// statusOf returns the status of the item with id, or "" if absent.
+func statusOf(r syncpkg.Report, id string) syncpkg.Status {
+	for _, it := range r.Items {
+		if it.ID == id {
+			return it.Status
+		}
+	}
+	return ""
+}

@@ -39,6 +39,8 @@ artifact you have edited (those are reported for you to resolve).`,
 	RunE: runSync,
 }
 
+// runSync reports, and with --apply writes, the reconciliation of the
+// workspace's framework content with what this binary ships.
 func runSync(cmd *cobra.Command, args []string) error {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -180,6 +182,19 @@ func applySync(dir string, mf *manifest.Manifest, report syncpkg.Report, framewo
 		return res, fmt.Errorf("resolving workspace root: %w", err)
 	}
 
+	// Check every note and file target before writing anything, so an unsafe
+	// path (a symlinked .claude/skills/, say) fails the apply up front instead
+	// of after CLAUDE.md is rewritten and before the manifest records it.
+	for _, it := range report.Items {
+		if it.Kind == syncpkg.KindSection ||
+			(it.Status != syncpkg.StatusUpdatable && it.Status != syncpkg.StatusNew) {
+			continue
+		}
+		if _, perr := writablePath(realRoot, dir, it.ID); perr != nil {
+			return res, fmt.Errorf("%s %w", it.Kind, perr)
+		}
+	}
+
 	claudePath := filepath.Join(dir, "CLAUDE.md")
 	content, err := readFileAllowMissing(claudePath)
 	if err != nil {
@@ -240,6 +255,9 @@ func applySync(dir string, mf *manifest.Manifest, report syncpkg.Report, framewo
 		if perr != nil {
 			return res, fmt.Errorf("note %w", perr)
 		}
+		if mkErr := os.MkdirAll(filepath.Dir(notePath), 0o755); mkErr != nil {
+			return res, fmt.Errorf("creating dir for %s: %w", it.ID, mkErr)
+		}
 		// The framework owns the body; any frontmatter on the note belongs to
 		// the workspace (a derived `title:`, tags for an editor's tag pane).
 		// Carry it across, or a body update would silently delete it.
@@ -281,6 +299,9 @@ func applySync(dir string, mf *manifest.Manifest, report syncpkg.Report, framewo
 		if perr != nil {
 			return res, fmt.Errorf("file %w", perr)
 		}
+		if mkErr := os.MkdirAll(filepath.Dir(filePath), 0o755); mkErr != nil {
+			return res, fmt.Errorf("creating dir for %s: %w", it.ID, mkErr)
+		}
 		mode := frameworkFileMode(it.ID)
 		if werr := os.WriteFile(filePath, body, mode); werr != nil { //nolint:gosec // filePath is confirmed inside dir by writablePath
 			return res, fmt.Errorf("writing %s: %w", it.ID, werr)
@@ -296,6 +317,8 @@ func applySync(dir string, mf *manifest.Manifest, report syncpkg.Report, framewo
 		res.Files = append(res.Files, it.ID)
 	}
 
+	recordUpToDate(mf, report, frameworkSections, frameworkNoteBytes, frameworkFileBytes)
+
 	mf.FrameworkVersion = Version
 	if serr := mf.Save(dir); serr != nil {
 		return res, fmt.Errorf("saving manifest: %w", serr)
@@ -305,7 +328,7 @@ func applySync(dir string, mf *manifest.Manifest, report syncpkg.Report, framewo
 }
 
 // writablePath resolves a manifest id (a workspace-relative path) to the file
-// apply may write, creating its parent directory. Ids come from the manifest
+// apply may write. Ids come from the manifest
 // and the framework listing, so it refuses anything that lands outside the
 // workspace -- an id like "../../etc/x.md", or a path reached through a
 // symlink -- and a symlink at the target itself, which os.WriteFile would
@@ -318,10 +341,43 @@ func writablePath(realRoot, dir, id string) (string, error) {
 	if fi, err := os.Lstat(target); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 		return "", fmt.Errorf("%q is a symlink; refusing to write through it", id)
 	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return "", fmt.Errorf("creating dir for %s: %w", id, err)
-	}
 	return target, nil
+}
+
+// recordUpToDate points the manifest record of every up-to-date artifact at the
+// framework's content. An artifact can be up to date with a stale record or
+// none: the user resolved a drift by taking the framework copy, or a file the
+// manifest never tracked already matched. Leaving the old record would make
+// the next framework change read as a user edit.
+func recordUpToDate(mf *manifest.Manifest, report syncpkg.Report, sections map[string]string, notes, files map[string][]byte) {
+	for _, it := range report.Items {
+		if it.Status != syncpkg.StatusUpToDate {
+			continue
+		}
+		switch it.Kind {
+		case syncpkg.KindSection:
+			if inner, ok := sections[it.ID]; ok {
+				if mf.Sections == nil {
+					mf.Sections = make(map[string]manifest.Artifact)
+				}
+				mf.Sections[it.ID] = manifest.Artifact{Hash: manifest.HashContent(inner)}
+			}
+		case syncpkg.KindNote:
+			if body, ok := notes[it.ID]; ok {
+				if mf.Notes == nil {
+					mf.Notes = make(map[string]manifest.Artifact)
+				}
+				mf.Notes[it.ID] = manifest.Artifact{Hash: manifest.HashBody(string(body))}
+			}
+		case syncpkg.KindFile:
+			if body, ok := files[it.ID]; ok {
+				if mf.Files == nil {
+					mf.Files = make(map[string]manifest.Artifact)
+				}
+				mf.Files[it.ID] = manifest.Artifact{Hash: manifest.HashContent(string(body))}
+			}
+		}
+	}
 }
 
 // frameworkFileMode is the mode cg installs a framework .claude/ file with.
@@ -473,14 +529,26 @@ func buildSyncReport(dir string, mf *manifest.Manifest, frameworkCLAUDE string, 
 	onDiskNotes := onDiskHashes(dir, recordedNotes, frameworkNotes, manifest.HashBody)
 
 	recordedFiles := artifactHashes(mf.Files)
-	if !claudeFilesInstalled(dir, recordedFiles, frameworkFiles) {
+	onDiskFiles := onDiskHashes(dir, recordedFiles, frameworkFiles, manifest.HashContent)
+	if !claudeFilesInstalled(recordedFiles, onDiskFiles, frameworkFiles) {
 		// The workspace declined Claude Code integration at `cg init` (the
 		// wizard's slash-command question). That answer is not stored, so infer
-		// it: nothing recorded and none of the files on disk means "not wanted",
-		// and sync must not install them behind the user's back.
+		// it, and do not install the files behind the user's back.
 		frameworkFiles = nil
+		onDiskFiles = onDiskHashes(dir, recordedFiles, nil, manifest.HashContent)
 	}
-	onDiskFiles := onDiskHashes(dir, recordedFiles, frameworkFiles, manifest.HashContent)
+	// A file with no record (the workspace predates cg tracking .claude/ files,
+	// or an older binary rewrote the manifest without them) whose bytes match a
+	// version cg once shipped is unedited: treat that version as the record, so
+	// it classifies as updatable instead of drifted.
+	for id, onDisk := range onDiskFiles {
+		if _, ok := recordedFiles[id]; ok {
+			continue
+		}
+		if fw, ok := frameworkFiles[id]; ok && onDisk != fw && knownClaudeFileHash(id, onDisk) {
+			recordedFiles[id] = onDisk
+		}
+	}
 
 	return syncpkg.Classify(
 		onDiskSections, artifactHashes(mf.Sections), frameworkSections,
@@ -490,13 +558,15 @@ func buildSyncReport(dir string, mf *manifest.Manifest, frameworkCLAUDE string, 
 }
 
 // claudeFilesInstalled reports whether the workspace uses cg's .claude/ files at
-// all: any of them recorded in the manifest, or any of them present on disk.
-func claudeFilesInstalled(dir string, recorded, framework map[string]string) bool {
+// all: any of them recorded in the manifest, or any of them on disk with bytes
+// cg shipped. A file of the user's own at one of these paths does not count,
+// so a statusline.sh someone wrote does not opt them in to the rest.
+func claudeFilesInstalled(recorded, onDisk, framework map[string]string) bool {
 	if len(recorded) > 0 {
 		return true
 	}
-	for id := range framework {
-		if fileExists(filepath.Join(dir, filepath.FromSlash(id))) {
+	for id, h := range onDisk {
+		if h == framework[id] || knownClaudeFileHash(id, h) {
 			return true
 		}
 	}

@@ -84,7 +84,9 @@ alone. Walk the user through it one at a time:
 3. Remind the user: the durable fix for "I keep editing a framework section" is to move the
    override into a `user:section` block, which `cg sync` never touches.
 4. A drifted **`.claude/` file** (a skill, command, hook wrapper or the status line) has no
-   `user:section`: the file is framework-owned whole. The durable fix there is a file under a
+   `user:section`: the file is framework-owned whole. For **take theirs**, the framework copy
+   is in the `cg` source at `templates/` (the matching release tag); after replacing the file,
+   re-run `cg sync --apply` so the manifest records it. The durable fix there is a file under a
    name cg does not ship, such as the user's own skill directory, which `cg sync` never touches.
 
 ## Step 5: Confirm
