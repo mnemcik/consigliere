@@ -7,7 +7,9 @@ import "embed"
 
 // FS is the framework content embedded into the cg binary. The pattern list
 // is explicit so this Go file stays out of it; all: keeps dotfiles such as
-// workspace/.claude/ and workspace/.gitignore.
+// workspace/.claude/ and workspace/.gitignore inside the listed directories.
+// TestEmbedCoversTree fails if anything under this directory is left out,
+// for example a new top-level entry missing from the list.
 //
 //go:embed all:commands all:notes all:project all:skills all:workspace *.md
 var FS embed.FS

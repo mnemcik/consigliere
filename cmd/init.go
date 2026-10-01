@@ -211,8 +211,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Framework notes live under notesEmbedRoot in the embed tree; the same
 	// sub-FS drives both the on-disk copy and the manifest registration so they
-	// can never disagree. Empty today — the directory carries only a .gitkeep
-	// until the load-on-demand work ships framework notes.
+	// can never disagree.
 	notesSub, notesErr := fs.Sub(embeddedFS, notesEmbedRoot)
 	notesCopyOK := false
 	if notesErr != nil {
