@@ -18,7 +18,6 @@ reviews:
   collapse_walkthrough: false
 
   path_filters:
-    - "!cmd/embed_templates/**"
     - "!dist/**"
     - "!vendor/**"
 
@@ -45,6 +44,14 @@ reviews:
         Watch for deprecations — `brews:` is slated for removal in v3 and
         `homebrew_casks.binary` (singular) is deprecated since v2.12.6.
         Flag any use of deprecated fields.
+    - path: "cmd/embed_templates/**"
+      instructions: |
+        Framework content embedded into the binary and installed by `cg init`
+        (templates, framework notes, the workspace CLAUDE.md, skills, slash
+        commands, hooks). This tree is what ships. Flag backward-incompatible
+        changes to generated workspace structure, file names, or template
+        variables, and references to files or commands a `cg init`'d workspace
+        does not have.
     - path: "templates/**"
       instructions: |
         Embedded framework templates. Flag backward-incompatible changes to
