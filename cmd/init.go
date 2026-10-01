@@ -235,10 +235,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// content from the user's edits. The manifest is derived from the embedded
 	// templates (the canonical content for this version), not the on-disk copies,
 	// which may be preserved user copies under --force. See docs/workspace-sync.md.
+	var mf *manifest.Manifest
 	if claudeMD, rerr := embeddedFS.ReadFile(claudeSrc); rerr != nil {
 		fmt.Fprintf(os.Stderr, "warning: cannot read embedded CLAUDE.md for manifest: %v\n", rerr)
 	} else {
-		mf := manifest.FromCLAUDE(string(claudeMD), Version)
+		mf = manifest.FromCLAUDE(string(claudeMD), Version)
 		// Only register notes in the manifest if the copy succeeded, so a manifest
 		// entry never points at a file that was not written.
 		if notesErr == nil && notesCopyOK {
@@ -247,12 +248,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 			} else {
 				mf.Notes = notes
 			}
-		}
-		manifestRel := filepath.Join(manifest.Dir, manifest.File)
-		if werr := mf.Save(dir); werr != nil {
-			fmt.Fprintf(os.Stderr, "warning: cannot write %s: %v\n", manifestRel, werr)
-		} else {
-			created = append(created, manifestRel)
 		}
 	}
 
@@ -278,44 +273,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 	created = append(created, c...)
 	skipped = append(skipped, s...)
 
-	// Claude Code slash commands (.claude/commands/)
+	// Claude Code integration: slash commands, skills, hook wrappers and the
+	// status line. All framework-owned, so --force rewrites them; `cg sync`
+	// keeps them current after that (see frameworkClaudeFiles).
 	if answers.InstallSlash {
-		commands := map[string]string{
-			"commands/match-project.md": filepath.Join(".claude", "commands", "match-project.md"),
-			"commands/cg-init.md":       filepath.Join(".claude", "commands", "cg-init.md"),
-			"commands/cg-sync.md":       filepath.Join(".claude", "commands", "cg-sync.md"),
-		}
-		for src, dst := range commands {
-			c, s := copyEmbeddedFile(dir, src, dst, forceInit)
-			created = append(created, c...)
-			skipped = append(skipped, s...)
-		}
-
-		// Claude Code skills (.claude/skills/<name>/SKILL.md). Skills ship and
-		// version with the binary (no per-skill version); the wrap skill moved
-		// here from the standalone marketplace plugin.
-		skills := map[string]string{
-			"skills/wrap/SKILL.md": filepath.Join(".claude", "skills", "wrap", "SKILL.md"),
-		}
-		for src, dst := range skills {
-			c, s := copyEmbeddedFile(dir, src, dst, forceInit)
-			created = append(created, c...)
-			skipped = append(skipped, s...)
-		}
-
-		// Claude Code hook wrappers + status line: framework-owned, so --force
-		// rewrites them (and they carry the executable bit). They delegate to the
-		// cg binary (DEC-004); a missing cg degrades to a no-op, not a hook error.
-		wrappers := map[string]string{
-			"workspace/.claude/hooks/session-start-gate.sh":        filepath.Join(".claude", "hooks", "session-start-gate.sh"),
-			"workspace/.claude/hooks/mark-session-dirty.sh":        filepath.Join(".claude", "hooks", "mark-session-dirty.sh"),
-			"workspace/.claude/hooks/session-end.sh":               filepath.Join(".claude", "hooks", "session-end.sh"),
-			"workspace/.claude/hooks/pull-latest-main.sh":          filepath.Join(".claude", "hooks", "pull-latest-main.sh"),
-			"workspace/.claude/hooks/external-repo-push-policy.sh": filepath.Join(".claude", "hooks", "external-repo-push-policy.sh"),
-			"workspace/.claude/statusline.sh":                      filepath.Join(".claude", "statusline.sh"),
-		}
-		for src, dst := range wrappers {
-			c, s := copyEmbeddedExecutable(dir, src, dst, forceInit)
+		for _, f := range frameworkClaudeFiles {
+			c, s := copyEmbeddedFileMode(dir, f.src, filepath.FromSlash(f.dst), forceInit, f.mode)
 			created = append(created, c...)
 			skipped = append(skipped, s...)
 		}
@@ -330,6 +293,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 			c, s := copyEmbeddedFile(dir, src, dst, false)
 			created = append(created, c...)
 			skipped = append(skipped, s...)
+		}
+	}
+
+	// Saved after the .claude/ files are installed so the manifest can record
+	// them (the .claude/ files are only recorded once they are on disk).
+	if mf != nil {
+		mf.Files = installedClaudeFiles(dir)
+		manifestRel := filepath.Join(manifest.Dir, manifest.File)
+		if werr := mf.Save(dir); werr != nil {
+			fmt.Fprintf(os.Stderr, "warning: cannot write %s: %v\n", manifestRel, werr)
+		} else {
+			created = append(created, manifestRel)
 		}
 	}
 
@@ -538,6 +513,53 @@ func copyEmbeddedFileMode(dir, src, dst string, overwrite bool, mode os.FileMode
 	}
 
 	return []string{dst}, nil
+}
+
+// frameworkFile is a framework-owned file that cg installs under .claude/ and
+// `cg sync` keeps current. user-owned files (settings.json, the gate template)
+// are deliberately not in this list: they are written once and never again.
+type frameworkFile struct {
+	src  string      // path in the embed tree
+	dst  string      // workspace-relative, forward-slash; also the manifest key
+	mode os.FileMode // 0o755 for anything Claude Code executes
+}
+
+// frameworkClaudeFiles is the single list of framework-owned .claude/ files.
+// `cg init` installs it and `cg sync` reconciles it, so the two cannot disagree
+// about what cg owns. Skills ship and version with the binary (no per-skill
+// version); hook wrappers delegate to the cg binary, so a missing cg degrades
+// to a no-op rather than a hook error.
+var frameworkClaudeFiles = []frameworkFile{
+	{"commands/match-project.md", ".claude/commands/match-project.md", 0o644},
+	{"commands/cg-init.md", ".claude/commands/cg-init.md", 0o644},
+	{"commands/cg-sync.md", ".claude/commands/cg-sync.md", 0o644},
+	{"skills/wrap/SKILL.md", ".claude/skills/wrap/SKILL.md", 0o644},
+	{"workspace/.claude/hooks/session-start-gate.sh", ".claude/hooks/session-start-gate.sh", 0o755},
+	{"workspace/.claude/hooks/mark-session-dirty.sh", ".claude/hooks/mark-session-dirty.sh", 0o755},
+	{"workspace/.claude/hooks/session-end.sh", ".claude/hooks/session-end.sh", 0o755},
+	{"workspace/.claude/hooks/pull-latest-main.sh", ".claude/hooks/pull-latest-main.sh", 0o755},
+	{"workspace/.claude/hooks/external-repo-push-policy.sh", ".claude/hooks/external-repo-push-policy.sh", 0o755},
+	{"workspace/.claude/statusline.sh", ".claude/statusline.sh", 0o755},
+}
+
+// installedClaudeFiles returns a manifest record for each framework .claude/
+// file whose on-disk bytes equal what this binary ships. A file that differs
+// (a preserved user edit on a non-force re-init) is left unrecorded, so
+// `cg sync` reports it as drifted rather than treating it as cg's own.
+func installedClaudeFiles(dir string) map[string]manifest.Artifact {
+	out := make(map[string]manifest.Artifact)
+	for _, f := range frameworkClaudeFiles {
+		want, err := embeddedFS.ReadFile(f.src)
+		if err != nil {
+			continue
+		}
+		got, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(f.dst)))
+		if err != nil || string(got) != string(want) {
+			continue
+		}
+		out[f.dst] = manifest.Artifact{Hash: manifest.HashContent(string(want))}
+	}
+	return out
 }
 
 // copyFrameworkNotes copies every framework note from srcFS into <dir>/<destPrefix>/,

@@ -1,7 +1,8 @@
 # Workspace Content Sync
 
-How a Consigliere workspace's **content** (the `CLAUDE.md` rules and framework
-notes) is upgraded in place when the framework ships new or changed content —
+How a Consigliere workspace's **content** (the `CLAUDE.md` rules, framework
+notes, and the skills, slash commands, hook wrappers and status line under
+`.claude/`) is upgraded in place when the framework ships new or changed content —
 without manual copy-paste, and without clobbering the user's own customizations.
 
 > **Status:** foundation landed (manifest + ownership contract). The `cg sync`
@@ -13,7 +14,7 @@ without manual copy-paste, and without clobbering the user's own customizations.
 | Concern | Command | What it changes | Owner |
 |---|---|---|---|
 | Replace the `cg` **binary** with a newer release | `cg update` | the executable on `$PATH` | release pipeline |
-| Reconcile a workspace's **content** with the framework | `cg sync` | `CLAUDE.md` sections + framework notes in the workspace | this subsystem |
+| Reconcile a workspace's **content** with the framework | `cg sync` | `CLAUDE.md` sections, framework notes and framework `.claude/` files in the workspace | this subsystem |
 
 They are sequential — self-update the binary, then sync the workspace — but
 independent. The verbs are kept disjoint on purpose.
@@ -34,6 +35,15 @@ by HTML-comment sentinels:
 Framework **notes** (`notes/<topic>.md` shipped by the framework) are
 framework-owned too, but a whole file can't carry an in-band sentinel, so their
 ownership is recorded in the manifest rather than in the file.
+
+The same goes for the framework's **`.claude/` files**: the slash commands
+(`.claude/commands/`), the skills (`.claude/skills/`), the hook wrappers
+(`.claude/hooks/`) and `.claude/statusline.sh`. `cmd/init.go`'s
+`frameworkClaudeFiles` is the single list; `cg init` installs it and `cg sync`
+reconciles it. `.claude/settings.json` and `.claude/cg/session-gate.md` are
+**user-owned** — written once by `cg init`, never by `cg sync`. Hooks an
+extension installs are the extension's, not the framework's, and are not
+tracked here either.
 
 ## The manifest
 
@@ -63,7 +73,13 @@ re-clone so `cg sync` can reconcile after the binary self-updates.
   here automatically, so each record always has a backing file. Empty today —
   the framework ships no notes yet; the load-on-demand work populates the embed
   tree and these records light up with no further `cg init` changes.
+- **`files`** — keyed by workspace-relative path under `.claude/`, with the
+  SHA-256 of the **whole** file. Unlike notes, frontmatter is included: a
+  skill's `name:` and `description:` are framework content. `cg init` records a
+  file only when what is on disk equals what it ships. Absent from manifests
+  written before cg tracked these files — see *Adopting untracked files* below.
 - **`schemaVersion`** — bumped only on an incompatible manifest format change.
+  Adding `files` is not one: older binaries ignore it.
 
 ## How `cg sync` uses it
 
@@ -76,16 +92,36 @@ binary ships):
   since changed it. The user never touched it, so it is safe to auto-update.
 - **drifted** — on-disk content matches neither. The user edited a framework
   artifact: **never clobbered.** Reported for a manual / skill-driven decision.
-- **new** — a managed artifact the current framework adds. Inserted.
+  Also: an artifact the framework ships but the manifest never recorded, where
+  a *different* file already sits on disk. cg cannot prove it wrote those bytes.
+- **new** — a managed artifact the current framework adds, absent on disk or
+  already byte-identical. Inserted, and recorded.
 - **removed** — recorded but no longer shipped. Flagged (not deleted).
 - **missing** — recorded but gone from disk. Flagged.
 
 Without flags, `cg sync` is a **dry run**: it prints a grouped report and writes
 nothing. With **`--apply`** it writes the safe changes — updates *updatable*
-sections in place (preserving sentinels) and notes (whole-file), inserts *new*
-ones, updates the manifest hashes for what it wrote, and bumps the recorded
+sections in place (preserving sentinels), notes (whole-file, keeping any
+workspace frontmatter) and `.claude/` files (whole-file, with the mode `cg init`
+installs them with), inserts *new* ones, updates the manifest hashes for what it wrote, and bumps the recorded
 framework version. Drifted, removed, and missing artifacts are never modified;
 they are reported. Apply is idempotent.
+
+### Adopting untracked files
+
+A workspace initialised before cg tracked `.claude/` files has none of them in
+its manifest. The first `cg sync --apply` sorts each one by what is on disk:
+
+| On disk | Status | Apply |
+|---|---|---|
+| absent | new | installs it and records it (how a skill that shipped after `cg init` arrives) |
+| identical to what the binary ships | new | records it; the bytes do not change |
+| different | drifted | leaves it alone and unrecorded; resolve it by hand |
+
+A workspace that declined the Claude Code integration at `cg init` (the
+wizard's slash-command question) has none of the files and no records. `cg
+sync` reads that as "not wanted" and does not install them. Once any one of the
+files exists, or is recorded, the workspace counts as opted in.
 
 The optional `/cg-sync` Claude skill reads the report plus the user's
 `user:section` rules to flag *semantic* contradictions (a new framework rule

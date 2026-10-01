@@ -33,18 +33,21 @@ const (
 	StatusMissing Status = "missing"
 )
 
-// Kind distinguishes the two managed-artifact families.
+// Kind distinguishes the managed-artifact families.
 type Kind string
 
 const (
 	KindSection Kind = "section"
 	KindNote    Kind = "note"
+	// KindFile is a framework-owned file under .claude/ (skills, slash
+	// commands, hook wrappers, the status line), tracked whole-file.
+	KindFile Kind = "file"
 )
 
 // Item is one classified artifact.
 type Item struct {
 	Kind   Kind
-	ID     string // CLAUDE.md section id, or workspace-relative note path
+	ID     string // CLAUDE.md section id, or workspace-relative note/file path
 	Status Status
 }
 
@@ -57,8 +60,16 @@ type Report struct {
 // hashes. A nil pointer means the artifact is absent from that source.
 func classify(onDisk, recorded, framework *string) Status {
 	switch {
+	case recorded == nil && framework != nil && onDisk != nil && *onDisk != *framework:
+		// The framework ships an artifact the manifest never tracked, and a
+		// different file already sits at its path: a workspace initialised before
+		// the artifact was tracked, or the user's own file with the same name.
+		// Either way cg cannot prove it wrote those bytes, so it must not
+		// overwrite them.
+		return StatusDrifted
 	case recorded == nil && framework != nil:
-		// The framework brings an artifact the manifest never tracked.
+		// The framework brings an artifact the manifest never tracked (absent on
+		// disk, or already byte-identical — apply records it either way).
 		return StatusNew
 	case recorded != nil && framework == nil:
 		// The framework dropped an artifact the manifest still tracks.
@@ -112,22 +123,28 @@ func ClassifyKind(kind Kind, onDisk, recorded, framework map[string]string) []It
 	return items
 }
 
-// Classify builds the full Report from the section and note hash maps for all
-// three sources, ordered deterministically by kind (sections before notes) then id.
+// Classify builds the full Report from the section, note and .claude/ file hash
+// maps for all three sources, ordered deterministically by kind (sections,
+// then notes, then files) then id.
 func Classify(
 	onDiskSections, recordedSections, frameworkSections map[string]string,
 	onDiskNotes, recordedNotes, frameworkNotes map[string]string,
+	onDiskFiles, recordedFiles, frameworkFiles map[string]string,
 ) Report {
 	items := ClassifyKind(KindSection, onDiskSections, recordedSections, frameworkSections)
 	items = append(items, ClassifyKind(KindNote, onDiskNotes, recordedNotes, frameworkNotes)...)
+	items = append(items, ClassifyKind(KindFile, onDiskFiles, recordedFiles, frameworkFiles)...)
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].Kind != items[j].Kind {
-			return items[i].Kind == KindSection // sections first
+			return kindOrder[items[i].Kind] < kindOrder[items[j].Kind]
 		}
 		return items[i].ID < items[j].ID
 	})
 	return Report{Items: items}
 }
+
+// kindOrder is the report's kind ordering.
+var kindOrder = map[Kind]int{KindSection: 0, KindNote: 1, KindFile: 2}
 
 // ByStatus groups the report's items by status, preserving the report's order.
 func (r Report) ByStatus() map[Status][]Item {

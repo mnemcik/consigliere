@@ -58,7 +58,7 @@ func TestBuildSyncReportClassifiesSectionsAndNotes(t *testing.T) {
 		"notes/fresh.md":  manifest.HashContent("brand new note"), // new
 	}
 
-	report, err := buildSyncReport(dir, mf, frameworkCLAUDE, frameworkNotes)
+	report, err := buildSyncReport(dir, mf, frameworkCLAUDE, frameworkNotes, nil)
 	if err != nil {
 		t.Fatalf("buildSyncReport: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestBuildSyncReportCleanWhenAligned(t *testing.T) {
 		Sections:         map[string]manifest.Artifact{"s": {Hash: manifest.HashContent("body")}},
 		Notes:            map[string]manifest.Artifact{},
 	}
-	report, err := buildSyncReport(dir, mf, claude, map[string]string{})
+	report, err := buildSyncReport(dir, mf, claude, map[string]string{}, nil)
 	if err != nil {
 		t.Fatalf("buildSyncReport: %v", err)
 	}
@@ -177,11 +177,12 @@ func TestApplySyncRoundTrip(t *testing.T) {
 		"notes/fresh.md":  []byte("fresh note"),
 	}
 
-	report, err := buildSyncReport(dir, mf, frameworkCLAUDE, hashesOf(frameworkNoteBytes))
+	report, err := buildSyncReport(dir, mf, frameworkCLAUDE, hashesOf(frameworkNoteBytes), nil)
 	if err != nil {
 		t.Fatalf("buildSyncReport: %v", err)
 	}
-	appliedS, appliedN, err := applySync(dir, mf, report, manifest.ParseSections(frameworkCLAUDE), frameworkNoteBytes)
+	applied, err := applySync(dir, mf, report, manifest.ParseSections(frameworkCLAUDE), frameworkNoteBytes, nil)
+	appliedS, appliedN := applied.Sections, applied.Notes
 	if err != nil {
 		t.Fatalf("applySync: %v", err)
 	}
@@ -234,7 +235,7 @@ func TestApplySyncRoundTrip(t *testing.T) {
 	}
 
 	// --- convergence: only the user-edited drift remains actionable ---
-	report2, err := buildSyncReport(dir, reloaded, frameworkCLAUDE, hashesOf(frameworkNoteBytes))
+	report2, err := buildSyncReport(dir, reloaded, frameworkCLAUDE, hashesOf(frameworkNoteBytes), nil)
 	if err != nil {
 		t.Fatalf("buildSyncReport (2nd): %v", err)
 	}
@@ -293,14 +294,14 @@ func TestApplySyncPreservesWorkspaceFrontmatter(t *testing.T) {
 	const v2Body = "# Note\n\n## Meta\n\n- **Tags:** `a`, `ai-instructions`\n"
 	fw := map[string][]byte{"notes/fw.md": []byte(v2Body)}
 
-	report, err := buildSyncReport(dir, mf, "# CLAUDE.md\n", hashesOf(fw))
+	report, err := buildSyncReport(dir, mf, "# CLAUDE.md\n", hashesOf(fw), nil)
 	if err != nil {
 		t.Fatalf("buildSyncReport: %v", err)
 	}
-	if _, appliedN, aerr := applySync(dir, mf, report, nil, fw); aerr != nil {
+	if applied, aerr := applySync(dir, mf, report, nil, fw, nil); aerr != nil {
 		t.Fatalf("applySync: %v", aerr)
-	} else if !contains(appliedN, "notes/fw.md") {
-		t.Fatalf("note was not updated; appliedNotes = %v -- frontmatter must not block a body update", appliedN)
+	} else if !contains(applied.Notes, "notes/fw.md") {
+		t.Fatalf("note was not updated; appliedNotes = %v -- frontmatter must not block a body update", applied.Notes)
 	}
 
 	got := readFile(t, filepath.Join(dir, "notes", "fw.md"))
@@ -329,11 +330,11 @@ func TestApplySyncRejectsEscapingNoteID(t *testing.T) {
 
 	escaping := "../escaped.md"
 	fw := map[string][]byte{escaping: []byte("pwned")}
-	report, err := buildSyncReport(dir, mf, "# CLAUDE.md\n", hashesOf(fw))
+	report, err := buildSyncReport(dir, mf, "# CLAUDE.md\n", hashesOf(fw), nil)
 	if err != nil {
 		t.Fatalf("buildSyncReport: %v", err)
 	}
-	if _, _, aerr := applySync(dir, mf, report, nil, fw); aerr == nil {
+	if _, aerr := applySync(dir, mf, report, nil, fw, nil); aerr == nil {
 		t.Error("expected an error for a note id resolving outside the workspace")
 	}
 	if _, serr := os.Stat(filepath.Join(filepath.Dir(dir), "escaped.md")); serr == nil {
@@ -372,11 +373,11 @@ func TestApplySyncRejectsSymlinkedNote(t *testing.T) {
 	}
 
 	fw := map[string][]byte{"notes/fw.md": []byte("framework v2\n")}
-	report, err := buildSyncReport(dir, mf, "# CLAUDE.md\n", hashesOf(fw))
+	report, err := buildSyncReport(dir, mf, "# CLAUDE.md\n", hashesOf(fw), nil)
 	if err != nil {
 		t.Fatalf("buildSyncReport: %v", err)
 	}
-	if _, _, aerr := applySync(dir, mf, report, nil, fw); aerr == nil {
+	if _, aerr := applySync(dir, mf, report, nil, fw, nil); aerr == nil {
 		t.Error("expected an error for a symlinked note")
 	}
 	if got := readFile(t, outside); got != sentinel {
@@ -412,11 +413,11 @@ func TestApplySyncRejectsSymlinkedParentDir(t *testing.T) {
 	}
 
 	fw := map[string][]byte{"notes/fw.md": []byte("framework v2\n")}
-	report, err := buildSyncReport(dir, mf, "# CLAUDE.md\n", hashesOf(fw))
+	report, err := buildSyncReport(dir, mf, "# CLAUDE.md\n", hashesOf(fw), nil)
 	if err != nil {
 		t.Fatalf("buildSyncReport: %v", err)
 	}
-	if _, _, aerr := applySync(dir, mf, report, nil, fw); aerr == nil {
+	if _, aerr := applySync(dir, mf, report, nil, fw, nil); aerr == nil {
 		t.Error("expected an error for a note under a symlinked directory")
 	}
 	if _, serr := os.Stat(filepath.Join(outsideDir, "fw.md")); serr == nil {
