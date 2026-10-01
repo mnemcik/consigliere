@@ -12,6 +12,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"flag"
@@ -148,7 +149,7 @@ func main() {
 
 // git runs a git subcommand in repo and returns its stdout.
 func git(repo string, args ...string) ([]byte, error) {
-	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...) //nolint:gosec // fixed git subcommands over repo-local refs
+	cmd := exec.CommandContext(context.Background(), "git", append([]string{"-C", repo}, args...)...) //nolint:gosec // fixed git subcommands over repo-local refs
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
