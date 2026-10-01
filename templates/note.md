@@ -9,6 +9,9 @@
 - **Source session:** brief description of what prompted this
 
 <!-- Categories: tool-gotchas | workflow | architecture | process | research | reference | troubleshooting -->
+<!-- Reserved tag: `ai-instructions` marks a note whose content governs how Claude behaves,
+     as opposed to one documenting how a tool behaves. It exists so the behavioural rules can be
+     found and reviewed as a set. Framework notes shipped by cg carry it already. -->
 
 ## Summary
 

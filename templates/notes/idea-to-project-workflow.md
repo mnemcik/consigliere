@@ -3,7 +3,7 @@
 ## Meta
 
 - **Category:** workflow
-- **Tags:** `idea-workflow`, `knowledge-base-structure`, `workflow`
+- **Tags:** `idea-workflow`, `knowledge-base-structure`, `workflow`, `ai-instructions`
 - **Framework note:** shipped by Consigliere and loaded on demand when an idea is captured, explored, turned into a project, parked, or rejected. Safe to edit for your workspace.
 
 ## Summary

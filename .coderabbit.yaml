@@ -18,7 +18,6 @@ reviews:
   collapse_walkthrough: false
 
   path_filters:
-    - "!cmd/embed_templates/**"
     - "!dist/**"
     - "!vendor/**"
 
@@ -47,9 +46,12 @@ reviews:
         Flag any use of deprecated fields.
     - path: "templates/**"
       instructions: |
-        Embedded framework templates. Flag backward-incompatible changes to
-        generated workspace structure, file names, or template variables —
-        they affect every `cg init`'d workspace.
+        Framework content embedded into the binary and installed by `cg init`
+        (item templates, framework notes, the workspace CLAUDE.md, skills,
+        slash commands, hooks). This is the only copy and it is what ships.
+        Flag backward-incompatible changes to generated workspace structure,
+        file names, or template variables, and references to files or commands
+        a `cg init`'d workspace does not have.
     - path: "CLAUDE.md"
       instructions: |
         Framework rules for Consigliere workspaces. Content changes here

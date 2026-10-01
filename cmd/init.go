@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +18,7 @@ import (
 	"github.com/mnemcik/consigliere/internal/manifest"
 	"github.com/mnemcik/consigliere/internal/wizard"
 	"github.com/mnemcik/consigliere/internal/workspace"
+	"github.com/mnemcik/consigliere/templates"
 )
 
 // validSlug matches a canonical area slug: lowercase letters/digits separated
@@ -26,8 +26,8 @@ import (
 // whose path is derived from the slug.
 var validSlug = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
-//go:embed all:embed_templates
-var embeddedFS embed.FS
+// embeddedFS is the framework content shipped in the binary (see package templates).
+var embeddedFS = templates.FS
 
 // gateTemplateRel is the workspace-relative path of the editable session-gate
 // template; the generated .cg.json points session.gateTemplate at it.
@@ -107,17 +107,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Copy content templates
 	contentTemplates := map[string]string{
-		"embed_templates/idea.md":               filepath.Join("templates", "idea.md"),
-		"embed_templates/note.md":               filepath.Join("templates", "note.md"),
-		"embed_templates/insight.md":            filepath.Join("templates", "insight.md"),
-		"embed_templates/area.md":               filepath.Join("templates", "area.md"),
-		"embed_templates/subagent-briefing.md":  filepath.Join("templates", "subagent-briefing.md"),
-		"embed_templates/project/README.md":     filepath.Join("templates", "project", "README.md"),
-		"embed_templates/project/decisions.md":  filepath.Join("templates", "project", "decisions.md"),
-		"embed_templates/project/todo.md":       filepath.Join("templates", "project", "todo.md"),
-		"embed_templates/project/log.md":        filepath.Join("templates", "project", "log.md"),
-		"embed_templates/project/references.md": filepath.Join("templates", "project", "references.md"),
-		"embed_templates/project/resume.md":     filepath.Join("templates", "project", "resume.md"),
+		"idea.md":               filepath.Join("templates", "idea.md"),
+		"note.md":               filepath.Join("templates", "note.md"),
+		"insight.md":            filepath.Join("templates", "insight.md"),
+		"area.md":               filepath.Join("templates", "area.md"),
+		"subagent-briefing.md":  filepath.Join("templates", "subagent-briefing.md"),
+		"project/README.md":     filepath.Join("templates", "project", "README.md"),
+		"project/decisions.md":  filepath.Join("templates", "project", "decisions.md"),
+		"project/todo.md":       filepath.Join("templates", "project", "todo.md"),
+		"project/log.md":        filepath.Join("templates", "project", "log.md"),
+		"project/references.md": filepath.Join("templates", "project", "references.md"),
+		"project/resume.md":     filepath.Join("templates", "project", "resume.md"),
 	}
 	for src, dst := range contentTemplates {
 		c, s := copyEmbeddedFile(dir, src, dst, false)
@@ -269,22 +269,22 @@ func runInit(cmd *cobra.Command, args []string) error {
 			created = append(created, "PROFILE.md (from wizard)")
 		}
 	} else {
-		c, s := copyEmbeddedFile(dir, "embed_templates/workspace/PROFILE.md", "PROFILE.md", false)
+		c, s := copyEmbeddedFile(dir, "workspace/PROFILE.md", "PROFILE.md", false)
 		created = append(created, c...)
 		skipped = append(skipped, s...)
 	}
 
 	// .gitignore
-	c, s := copyEmbeddedFile(dir, "embed_templates/workspace/.gitignore", ".gitignore", false)
+	c, s := copyEmbeddedFile(dir, "workspace/.gitignore", ".gitignore", false)
 	created = append(created, c...)
 	skipped = append(skipped, s...)
 
 	// Claude Code slash commands (.claude/commands/)
 	if answers.InstallSlash {
 		commands := map[string]string{
-			"embed_templates/commands/match-project.md": filepath.Join(".claude", "commands", "match-project.md"),
-			"embed_templates/commands/cg-init.md":       filepath.Join(".claude", "commands", "cg-init.md"),
-			"embed_templates/commands/cg-sync.md":       filepath.Join(".claude", "commands", "cg-sync.md"),
+			"commands/match-project.md": filepath.Join(".claude", "commands", "match-project.md"),
+			"commands/cg-init.md":       filepath.Join(".claude", "commands", "cg-init.md"),
+			"commands/cg-sync.md":       filepath.Join(".claude", "commands", "cg-sync.md"),
 		}
 		for src, dst := range commands {
 			c, s := copyEmbeddedFile(dir, src, dst, forceInit)
@@ -296,7 +296,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		// version with the binary (no per-skill version); the wrap skill moved
 		// here from the standalone marketplace plugin.
 		skills := map[string]string{
-			"embed_templates/skills/wrap/SKILL.md": filepath.Join(".claude", "skills", "wrap", "SKILL.md"),
+			"skills/wrap/SKILL.md": filepath.Join(".claude", "skills", "wrap", "SKILL.md"),
 		}
 		for src, dst := range skills {
 			c, s := copyEmbeddedFile(dir, src, dst, forceInit)
@@ -308,12 +308,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		// rewrites them (and they carry the executable bit). They delegate to the
 		// cg binary (DEC-004); a missing cg degrades to a no-op, not a hook error.
 		wrappers := map[string]string{
-			"embed_templates/workspace/.claude/hooks/session-start-gate.sh":        filepath.Join(".claude", "hooks", "session-start-gate.sh"),
-			"embed_templates/workspace/.claude/hooks/mark-session-dirty.sh":        filepath.Join(".claude", "hooks", "mark-session-dirty.sh"),
-			"embed_templates/workspace/.claude/hooks/session-end.sh":               filepath.Join(".claude", "hooks", "session-end.sh"),
-			"embed_templates/workspace/.claude/hooks/pull-latest-main.sh":          filepath.Join(".claude", "hooks", "pull-latest-main.sh"),
-			"embed_templates/workspace/.claude/hooks/external-repo-push-policy.sh": filepath.Join(".claude", "hooks", "external-repo-push-policy.sh"),
-			"embed_templates/workspace/.claude/statusline.sh":                      filepath.Join(".claude", "statusline.sh"),
+			"workspace/.claude/hooks/session-start-gate.sh":        filepath.Join(".claude", "hooks", "session-start-gate.sh"),
+			"workspace/.claude/hooks/mark-session-dirty.sh":        filepath.Join(".claude", "hooks", "mark-session-dirty.sh"),
+			"workspace/.claude/hooks/session-end.sh":               filepath.Join(".claude", "hooks", "session-end.sh"),
+			"workspace/.claude/hooks/pull-latest-main.sh":          filepath.Join(".claude", "hooks", "pull-latest-main.sh"),
+			"workspace/.claude/hooks/external-repo-push-policy.sh": filepath.Join(".claude", "hooks", "external-repo-push-policy.sh"),
+			"workspace/.claude/statusline.sh":                      filepath.Join(".claude", "statusline.sh"),
 		}
 		for src, dst := range wrappers {
 			c, s := copyEmbeddedExecutable(dir, src, dst, forceInit)
@@ -324,8 +324,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 		// settings.json (hook/statusLine wiring) and the gate template are
 		// user-customizable, so they are never clobbered — even on --force.
 		userOwned := map[string]string{
-			"embed_templates/workspace/.claude/settings.json":      filepath.Join(".claude", "settings.json"),
-			"embed_templates/workspace/.claude/cg/session-gate.md": filepath.Join(".claude", "cg", "session-gate.md"),
+			"workspace/.claude/settings.json":      filepath.Join(".claude", "settings.json"),
+			"workspace/.claude/cg/session-gate.md": filepath.Join(".claude", "cg", "session-gate.md"),
 		}
 		for src, dst := range userOwned {
 			c, s := copyEmbeddedFile(dir, src, dst, false)

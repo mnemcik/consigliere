@@ -38,11 +38,9 @@ and no release required. See [`docs/auto-update.md`](docs/auto-update.md) for th
 
 ```
 cmd/                    # CLI commands (cobra)
-  embed_templates/      # Templates embedded into the binary
 internal/
   workspace/            # Workspace detection and config
-templates/              # Source templates (copied to embed_templates)
-skills/                 # Claude Code skill wrappers
+templates/              # Framework content embedded into the binary (package templates)
 ```
 
 ### Adding a new command
@@ -54,14 +52,9 @@ skills/                 # Claude Code skill wrappers
 
 ### Updating templates
 
-Templates live in two places:
-- `templates/` — the source of truth (human-editable)
-- `cmd/embed_templates/` — copy used by Go's `embed` (must stay in sync)
+Everything `cg init` installs lives in `templates/`: item templates, framework notes, the workspace `CLAUDE.md`, slash commands, skills and hooks. It is the only copy. `templates/embed.go` embeds it into the binary, so an edit there ships with the next build and there is nothing to sync.
 
-After editing a template in `templates/`, copy it to `cmd/embed_templates/`:
-```bash
-cp templates/idea.md cmd/embed_templates/idea.md
-```
+A new top-level file or directory must be added to the `//go:embed` pattern list in `templates/embed.go`.
 
 ## Submitting changes
 
@@ -80,8 +73,8 @@ Releases are automated by [release-please](https://github.com/googleapis/release
    PR title is validated by the **PR Title Lint** check and — because we squash-merge —
    becomes the single commit on `main` that release-please reads.
 2. release-please keeps an open **"chore: release X.Y.Z"** Release PR that accumulates
-   the `CHANGELOG.md` section, the version, and the `templates/workspace/.cg.json`
-   version bump derived from the merged commits.
+   the `CHANGELOG.md` section and the version bump derived from the merged commits.
+   The version `cg init` writes into `.cg.json` comes from the binary, not a file.
 3. **To ship, merge the Release PR.** release-please then tags the repo and creates the
    GitHub Release; that release event triggers GoReleaser, which builds the
    cross-platform binaries, checksums, Homebrew cask, and `install.sh` artifacts.

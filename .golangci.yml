@@ -62,8 +62,6 @@ linters:
         text: G101
         linters:
           - gosec
-    paths:
-      - cmd/embed_templates
 
 formatters:
   enable:

@@ -3,7 +3,7 @@
 ## Meta
 
 - **Category:** process
-- **Tags:** `information-propagation`, `knowledge-base-structure`, `workflow`
+- **Tags:** `information-propagation`, `knowledge-base-structure`, `workflow`, `ai-instructions`
 - **Framework note:** shipped by Consigliere and loaded on demand when new information surfaces during a session. Safe to edit for your workspace.
 
 ## Summary
