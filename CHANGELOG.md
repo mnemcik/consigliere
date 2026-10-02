@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.21.0](https://github.com/mnemcik/consigliere/compare/v1.20.1...v1.21.0) (2026-10-02)
+
+
+### Features
+
+* **sync:** reconcile framework .claude/ files (skills, commands, hooks) ([#132](https://github.com/mnemcik/consigliere/issues/132)) ([83a5bac](https://github.com/mnemcik/consigliere/commit/83a5bac56c128233acf7b3447ef611310759748e))
+
 ## [1.20.1](https://github.com/mnemcik/consigliere/compare/v1.20.0...v1.20.1) (2026-09-30)
 
 
