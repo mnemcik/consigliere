@@ -4,7 +4,8 @@
 //
 // Scope: this is the *binary* side of upgrades — swapping the `cg` executable
 // itself. It is distinct from `cg sync` (internal/sync, internal/manifest),
-// which reconciles workspace *content* (CLAUDE.md sections + framework notes).
+// which reconciles workspace *content* (CLAUDE.md sections, framework notes and
+// framework .claude/ files).
 // `cg sync` = content; `cg update` = binary.
 //
 // The package never imports cmd. The currently-running version is threaded in

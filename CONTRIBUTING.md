@@ -56,6 +56,8 @@ Everything `cg init` installs lives in `templates/`: item templates, framework n
 
 A new top-level file or directory must be added to the `//go:embed` pattern list in `templates/embed.go`.
 
+After changing a slash command, skill, hook wrapper or the status line, run `go generate ./cmd`. It regenerates `cmd/claude_file_history_gen.go`, the hashes `cg sync` uses to tell an unedited old copy in a workspace from an edited one. `TestClaudeFileHistoryCoversEmbed` fails until you do. The generator reads the release tags, so fetch them first (`git fetch --tags`).
+
 ## Submitting changes
 
 - Open a pull request against `main`.

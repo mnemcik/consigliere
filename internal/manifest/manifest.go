@@ -1,7 +1,7 @@
 // Package manifest tracks the framework-managed artifacts in a Consigliere
-// workspace — the CLAUDE.md sections and framework notes that `cg` owns — so a
-// future `cg sync` can distinguish what `cg` last wrote from what the user has
-// since changed.
+// workspace — the CLAUDE.md sections, framework notes and .claude/ files that
+// `cg` owns — so `cg sync` can distinguish what `cg` last wrote from what the
+// user has since changed.
 //
 // It records, per managed artifact, a content hash of what `cg` last wrote plus
 // the framework version, in `.cg/manifest.json`. This is durable workspace
@@ -53,6 +53,13 @@ type Manifest struct {
 	// Notes maps a workspace-relative framework-note path to its artifact
 	// record. Empty until the load-on-demand project ships framework notes.
 	Notes map[string]Artifact `json:"notes"`
+	// Files maps a workspace-relative path under .claude/ (a skill, slash
+	// command, hook wrapper or the status line) to its artifact record. The
+	// hash covers the whole file, frontmatter included: a skill's `name:` and
+	// `description:` are framework content, not workspace decoration. Absent
+	// in manifests written before cg tracked these files; `cg sync` then
+	// records each one the first time it can prove the file is unedited.
+	Files map[string]Artifact `json:"files,omitempty"`
 }
 
 // sectionStartRe matches a framework-section start sentinel and captures its id.

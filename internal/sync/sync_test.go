@@ -14,6 +14,9 @@ func TestClassifySingleArtifact(t *testing.T) {
 		// still record the artifact in the manifest, so it can't be "up-to-date".
 		{"new: framework adds, not recorded, on disk identical", ptrTo("a"), nil, ptrTo("a"), StatusNew},
 		{"new: framework adds, absent on disk and manifest", nil, nil, ptrTo("a"), StatusNew},
+		// Not recorded, shipped, and a *different* file already on disk: cg never
+		// wrote it, so overwriting it would destroy someone's content.
+		{"drifted: framework adds, not recorded, different file on disk", ptrTo("z"), nil, ptrTo("a"), StatusDrifted},
 		{"removed: manifest has it, framework dropped", ptrTo("a"), ptrTo("a"), nil, StatusRemoved},
 		{"removed even if user drifted it", ptrTo("z"), ptrTo("a"), nil, StatusRemoved},
 		{"missing: recorded + shipped but gone from disk", nil, ptrTo("a"), ptrTo("b"), StatusMissing},
@@ -60,16 +63,20 @@ func TestClassifyKindCoversUnionOfIDs(t *testing.T) {
 	}
 }
 
-func TestClassifyOrdersSectionsThenNotesThenID(t *testing.T) {
+func TestClassifyOrdersSectionsThenNotesThenFilesThenID(t *testing.T) {
 	r := Classify(
 		map[string]string{"zebra": "1", "alpha": "1"}, nil, map[string]string{"zebra": "1", "alpha": "1"},
 		map[string]string{"notes/b.md": "1"}, nil, map[string]string{"notes/b.md": "1", "notes/a.md": "1"},
+		nil, nil, map[string]string{".claude/skills/wrap/SKILL.md": "1", ".claude/commands/a.md": "1"},
 	)
 	order := make([]string, 0, len(r.Items))
 	for _, it := range r.Items {
 		order = append(order, string(it.Kind)+":"+it.ID)
 	}
-	want := []string{"section:alpha", "section:zebra", "note:notes/a.md", "note:notes/b.md"}
+	want := []string{
+		"section:alpha", "section:zebra", "note:notes/a.md", "note:notes/b.md",
+		"file:.claude/commands/a.md", "file:.claude/skills/wrap/SKILL.md",
+	}
 	if len(order) != len(want) {
 		t.Fatalf("order = %v, want %v", order, want)
 	}
@@ -85,6 +92,7 @@ func TestReportByStatusAndActionable(t *testing.T) {
 	clean := Classify(
 		map[string]string{"a": "1"}, map[string]string{"a": "1"}, map[string]string{"a": "1"},
 		nil, nil, nil,
+		nil, nil, nil,
 	)
 	if clean.Actionable() {
 		t.Error("a fully up-to-date report must not be actionable")
@@ -93,6 +101,7 @@ func TestReportByStatusAndActionable(t *testing.T) {
 	dirty := Classify(
 		map[string]string{"a": "1"}, map[string]string{"a": "1"}, map[string]string{"a": "2"},
 		nil, nil, map[string]string{"notes/x.md": "1"},
+		nil, nil, nil,
 	)
 	if !dirty.Actionable() {
 		t.Error("a report with updatable/new items must be actionable")

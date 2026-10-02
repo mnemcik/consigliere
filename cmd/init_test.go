@@ -303,6 +303,23 @@ func TestInitSeedsManifest(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "notes", ".gitkeep")); err == nil {
 		t.Error("notes/.gitkeep must not be copied into the workspace")
 	}
+
+	// Every framework .claude/ file is recorded, with the hash of what is on disk.
+	for _, f := range frameworkClaudeFiles {
+		art, ok := mf.Files[f.dst]
+		if !ok {
+			t.Errorf("expected %q in the manifest files", f.dst)
+			continue
+		}
+		onDisk, rerr := os.ReadFile(filepath.Join(dir, filepath.FromSlash(f.dst)))
+		if rerr != nil {
+			t.Errorf("expected %s on disk: %v", f.dst, rerr)
+			continue
+		}
+		if want := manifest.HashContent(string(onDisk)); art.Hash != want {
+			t.Errorf("file %q: manifest hash != on-disk hash (fresh init should not show drift)", f.dst)
+		}
+	}
 	if _, err := os.Stat(filepath.Join(dir, "notes", "INDEX.md")); err != nil {
 		t.Errorf("expected notes/INDEX.md to exist: %v", err)
 	}

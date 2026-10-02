@@ -12,7 +12,7 @@ releases.
 | Concern | Command | What it changes | Owner |
 |---|---|---|---|
 | Replace the `cg` **binary** with a newer release | `cg update` | the executable on `$PATH` | this subsystem |
-| Reconcile a workspace's **content** with the framework | `cg sync` | `CLAUDE.md` sections + framework notes in the workspace | [workspace sync](workspace-sync.md) |
+| Reconcile a workspace's **content** with the framework | `cg sync` | `CLAUDE.md` sections, framework notes and framework `.claude/` files in the workspace | [workspace sync](workspace-sync.md) |
 
 They are independent. `cg update` swaps the binary; `cg sync` reconciles the
 files in a workspace. The verbs are kept disjoint on purpose.

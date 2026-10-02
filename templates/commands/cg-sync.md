@@ -1,7 +1,7 @@
 ---
 description: >-
-  Reconcile a Consigliere workspace's framework content (CLAUDE.md sections and framework
-  notes) with the installed cg version. Runs `cg sync`, then drives the judgment calls the
+  Reconcile a Consigliere workspace's framework content (CLAUDE.md sections, framework
+  notes, and the skills, commands and hooks under .claude/) with the installed cg version. Runs `cg sync`, then drives the judgment calls the
   deterministic command can't: reviewing the user's own rules against incoming framework
   rules for semantic contradictions before applying. Use when the user wants to upgrade
   their workspace content after updating the cg binary, or asks to "sync the workspace",
@@ -65,8 +65,8 @@ Once the user is comfortable, apply:
 cg sync --apply
 ```
 
-This updates the untouched (`updatable`) framework sections and notes, inserts the `new`
-ones, updates the manifest, and bumps the recorded framework version. It **never** touches a
+This updates the untouched (`updatable`) framework sections, notes and `.claude/` files
+(skills, slash commands, hook wrappers, the status line), inserts the `new` ones, updates the manifest, and bumps the recorded framework version. It **never** touches a
 `drifted` artifact.
 
 ## Step 4: Resolve drift
@@ -83,6 +83,11 @@ alone. Walk the user through it one at a time:
    - **reconcile** — merge the intent by hand with `Edit`, then the user owns the result.
 3. Remind the user: the durable fix for "I keep editing a framework section" is to move the
    override into a `user:section` block, which `cg sync` never touches.
+4. A drifted **`.claude/` file** (a skill, command, hook wrapper or the status line) has no
+   `user:section`: the file is framework-owned whole. For **take theirs**, the framework copy
+   is in the `cg` source at `templates/` (the matching release tag); after replacing the file,
+   re-run `cg sync --apply` so the manifest records it. The durable fix there is a file under a
+   name cg does not ship, such as the user's own skill directory, which `cg sync` never touches.
 
 ## Step 5: Confirm
 
