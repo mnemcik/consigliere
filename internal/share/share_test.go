@@ -177,6 +177,9 @@ func TestRenderInsertsMetaWhenMissing(t *testing.T) {
 	if !strings.Contains(got, "# P\n\n## Meta\n\n- **Status:** In Progress\n") {
 		t.Errorf("Meta not inserted after the title:\n%s", got)
 	}
+	if !strings.Contains(got, "- **Areas:** `product-config`\n\nBody.") {
+		t.Errorf("want exactly one blank line between the inserted Meta and the body:\n%s", got)
+	}
 }
 
 func TestRenderErrors(t *testing.T) {

@@ -199,7 +199,12 @@ func insertAfterTitle(lines, block []string) string {
 		out = append(out, "")
 	}
 	out = append(out, block...)
-	out = append(out, lines[at:]...)
+	// block ends with its own blank separator, so drop the title's.
+	rest := lines[at:]
+	for len(rest) > 0 && strings.TrimSpace(rest[0]) == "" {
+		rest = rest[1:]
+	}
+	out = append(out, rest...)
 	return strings.Join(out, "\n")
 }
 
