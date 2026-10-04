@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.23.0](https://github.com/mnemcik/consigliere/compare/v1.22.0...v1.23.0) (2026-10-04)
+
+
+### Features
+
+* **templates:** new items carry YAML frontmatter instead of ## Meta ([#143](https://github.com/mnemcik/consigliere/issues/143)) ([a433cd0](https://github.com/mnemcik/consigliere/commit/a433cd04738717118e8177ebc7072404dd4b4e96))
+
 ## [1.22.0](https://github.com/mnemcik/consigliere/compare/v1.21.0...v1.22.0) (2026-10-04)
 
 
