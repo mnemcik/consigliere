@@ -10,7 +10,8 @@
 // Rules, in pipeline order:
 //   - only allowlisted files leave: README.md, decisions.md and todo.md by
 //     default, others when explicitly included; resume.md never does
-//   - YAML frontmatter is dropped (it is a derived copy, and carries priority)
+//   - YAML frontmatter is dropped (it carries priority); README's shareable
+//     fields are read from it first, then from ## Meta
 //   - content between share:exclude markers is removed; a malformed marker is
 //     an error, never a best-effort guess
 //   - README's ## Meta block is rewritten from the project index to a fixed
@@ -115,13 +116,14 @@ func Render(in *Input) (map[string]string, error) {
 }
 
 func renderFile(in *Input, name string, targets map[string]string) (string, error) {
+	fm := frontmatterMeta(in.Files[name])
 	body := stripFrontmatter(in.Files[name])
 	body, err := applyExclusions(body)
 	if err != nil {
 		return "", err
 	}
 	if name == readmeFile {
-		body = rewriteMeta(body, in.Project)
+		body = rewriteMeta(body, in.Project, fm)
 	}
 	body = strings.ReplaceAll(body, OwnerPlaceholder, in.Stamp.Owner)
 

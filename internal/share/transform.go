@@ -4,26 +4,78 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
-// stripFrontmatter drops a leading YAML frontmatter block. Workspace
-// frontmatter is a derived copy of the index metadata and carries fields that
-// must not leave (priority); the published Meta block is rebuilt instead.
-func stripFrontmatter(body string) string {
+// frontmatterDelim opens and closes a YAML frontmatter block.
+const frontmatterDelim = "---"
+
+// splitFrontmatter separates a leading YAML frontmatter block from the rest of
+// body. ok is false when body has no block, including an unterminated one,
+// which is not frontmatter and is left in place.
+func splitFrontmatter(body string) (fm, rest string, ok bool) {
 	lines := strings.Split(body, "\n")
-	if len(lines) == 0 || strings.TrimRight(lines[0], "\r") != "---" {
-		return body
+	if strings.TrimRight(lines[0], "\r") != frontmatterDelim {
+		return "", body, false
 	}
 	for i := 1; i < len(lines); i++ {
-		if strings.TrimRight(lines[i], "\r") == "---" {
-			rest := lines[i+1:]
-			for len(rest) > 0 && strings.TrimSpace(rest[0]) == "" {
-				rest = rest[1:]
-			}
-			return strings.Join(rest, "\n")
+		if strings.TrimRight(lines[i], "\r") == frontmatterDelim {
+			return strings.Join(lines[1:i], "\n"), strings.Join(lines[i+1:], "\n"), true
 		}
 	}
-	return body // unterminated: not frontmatter, leave it
+	return "", body, false
+}
+
+// stripFrontmatter drops a leading YAML frontmatter block. Workspace
+// frontmatter carries fields that must not leave (priority); the published
+// Meta block is rebuilt instead, taking the shareable fields from
+// frontmatterMeta.
+func stripFrontmatter(body string) string {
+	_, rest, ok := splitFrontmatter(body)
+	if !ok {
+		return body
+	}
+	lines := strings.Split(rest, "\n")
+	for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
+		lines = lines[1:]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// keptFrontmatter is the frontmatter counterpart of keptMetaFields. The keys
+// are pointers so an absent key is told apart from an empty one.
+type keptFrontmatter struct {
+	Created    *string `yaml:"created"`
+	OutputType *string `yaml:"output_type"`
+	Origin     *string `yaml:"origin"`
+}
+
+// frontmatterMeta reads the shareable fields from a leading YAML frontmatter
+// block, keyed by the Meta label they are published under. A README migrated
+// to frontmatter has no ## Meta block left to read them from. A missing,
+// unterminated or malformed block yields nothing, so the ## Meta fallback
+// still applies.
+func frontmatterMeta(body string) map[string]string {
+	raw, _, ok := splitFrontmatter(body)
+	if !ok {
+		return nil
+	}
+	var fm keptFrontmatter
+	if yaml.Unmarshal([]byte(raw), &fm) != nil {
+		return nil
+	}
+	out := map[string]string{}
+	for label, v := range map[string]*string{
+		"Started":     fm.Created,
+		"Output type": fm.OutputType,
+		originLabel:   fm.Origin,
+	} {
+		if v != nil {
+			out[label] = strings.TrimSpace(*v)
+		}
+	}
+	return out
 }
 
 // applyExclusions removes every line between a share:exclude:start marker and
@@ -63,13 +115,18 @@ var metaFieldRe = regexp.MustCompile(`^\s*-\s+\*\*([^*]+):\*\*\s*(.*)$`)
 
 // Meta fields copied from the source README when present. Status and Areas
 // come from the index; everything else is dropped.
-var keptMetaFields = []string{"Started", "Output type", "Origin"}
+var keptMetaFields = []string{"Started", "Output type", originLabel}
+
+// originLabel is kept only when it points outside the workspace.
+const originLabel = "Origin"
 
 // rewriteMeta replaces README's ## Meta section with the shareable subset:
 // Status and Areas from the project index, then Started, Output type and
-// Origin from the source. Origin survives only when it is an external
-// reference (a ticket key or URL), not a path into the workspace.
-func rewriteMeta(body string, p Project) string {
+// Origin from the source. fm holds those fields as read from frontmatter; a
+// key present there wins over the same field in ## Meta. Origin survives only
+// when it is an external reference (a ticket key or URL), not a path into the
+// workspace.
+func rewriteMeta(body string, p Project, fm map[string]string) string {
 	lines := strings.Split(body, "\n")
 	start, end := -1, len(lines)
 	for i, line := range lines {
@@ -93,6 +150,9 @@ func rewriteMeta(body string, p Project) string {
 			}
 		}
 	}
+	for k, v := range fm {
+		source[k] = v
+	}
 
 	block := []string{"## Meta", ""}
 	if p.Status != "" {
@@ -107,7 +167,7 @@ func rewriteMeta(body string, p Project) string {
 	}
 	for _, key := range keptMetaFields {
 		v, ok := source[key]
-		if !ok || v == "" || (key == "Origin" && !isExternalReference(v)) {
+		if !ok || v == "" || (key == originLabel && !isExternalReference(v)) {
 			continue
 		}
 		block = append(block, "- **"+key+":** "+v)
