@@ -274,3 +274,50 @@ func TestRenderRejectsUnsupportedLinkForm(t *testing.T) {
 		t.Fatalf("want unsupported-link-form error, got %v", err)
 	}
 }
+
+// A README migrated to frontmatter has no ## Meta block, so the shareable
+// fields must come from frontmatter or they silently vanish from the export.
+func TestRenderReadsMigratedFrontmatter(t *testing.T) {
+	in := pilotInput()
+	in.Files["README.md"] = "---\ntitle: \"P\"\npriority: high\ncreated: 2026-01-01\noutput_type: tool\norigin: VPAAS-1068\n---\n\n# P\n\n## Problem\n"
+	got := renderREADME(t, in)
+	for _, want := range []string{
+		"# P\n\n## Meta\n\n- **Status:** In Progress\n",
+		"- **Started:** 2026-01-01",
+		"- **Output type:** tool",
+		"- **Origin:** VPAAS-1068",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\n---\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "high") {
+		t.Errorf("priority leaked:\n%s", got)
+	}
+}
+
+func TestRenderFrontmatterWinsPerField(t *testing.T) {
+	in := pilotInput()
+	in.Files["README.md"] = "---\ncreated: 2026-01-01\norigin: ideas/x.md\n---\n\n# P\n\n## Meta\n\n- **Started:** 2026-02-02\n- **Output type:** documentation\n- **Origin:** VPAAS-1\n\n## Problem\n"
+	got := renderREADME(t, in)
+	if !strings.Contains(got, "- **Started:** 2026-01-01") || strings.Contains(got, "2026-02-02") {
+		t.Errorf("frontmatter created did not win over Meta Started:\n%s", got)
+	}
+	if !strings.Contains(got, "- **Output type:** documentation") {
+		t.Errorf("field absent from frontmatter did not fall back to Meta:\n%s", got)
+	}
+	// Frontmatter's origin wins, and it is a workspace path, so nothing is
+	// published -- the Meta value must not resurface in its place.
+	if strings.Contains(got, "Origin") {
+		t.Errorf("Origin published despite a private frontmatter value:\n%s", got)
+	}
+}
+
+func TestRenderMalformedFrontmatterFallsBackToMeta(t *testing.T) {
+	in := pilotInput()
+	in.Files["README.md"] = "---\ncreated: [unclosed\n---\n\n# P\n\n## Meta\n\n- **Started:** 2026-02-02\n\n## Problem\n"
+	got := renderREADME(t, in)
+	if !strings.Contains(got, "- **Started:** 2026-02-02") {
+		t.Errorf("malformed frontmatter blocked the Meta fallback:\n%s", got)
+	}
+}
