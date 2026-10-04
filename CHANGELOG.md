@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.22.0](https://github.com/mnemcik/consigliere/compare/v1.21.0...v1.22.0) (2026-10-04)
+
+
+### Features
+
+* **share:** read shareable README fields from frontmatter ([#141](https://github.com/mnemcik/consigliere/issues/141)) ([4010d2c](https://github.com/mnemcik/consigliere/commit/4010d2c933dc22e7f3821f427092b522c09ee3bb))
+
 ## [1.21.0](https://github.com/mnemcik/consigliere/compare/v1.20.1...v1.21.0) (2026-10-02)
 
 
