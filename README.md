@@ -128,6 +128,7 @@ The CLAUDE.md rules instruct AI assistants to:
 | `cg init --force` | 🔄 Re-initialize (preserves CLAUDE.md and PROFILE.md) |
 | `cg match <prompt>` | 🔍 Find a project matching your description |
 | `cg status` | 📊 Workspace overview |
+| `cg migrate [--apply]` | 🗂️ Convert items from `## Meta` blocks to YAML frontmatter; dry run unless `--apply`, and refreshes unedited item templates |
 | `cg version` | ℹ️ Print installed version |
 | `cg update check` | 🔎 Check whether a newer `cg` release is available |
 | `cg update upgrade` | ⬆️ Download, verify, and install the latest release in place |
