@@ -1,14 +1,14 @@
+---
+title: "{Idea Title}"
+status: raw  # raw → exploring → ready → parked | rejected
+areas: [area-slug]
+tags: [tag1, tag2]
+created: YYYY-MM-DD
+---
+
 # {Idea Title}
 
-## Meta
-
-- **Status:** raw
-- **Areas:** [`area-slug`](../areas/area-slug.md)
-- **Tags:** `tag1`, `tag2`
-- **Created:** YYYY-MM-DD
-
-<!-- Statuses: raw → exploring → ready → parked | rejected -->
-<!-- When status reaches "ready", create a project from templates/project.md -->
+<!-- When status reaches "ready", create a project from templates/project/ -->
 
 ## What
 

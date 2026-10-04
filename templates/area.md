@@ -1,11 +1,12 @@
+---
+title: "{Area Name}"
+slug: "{slug}"
+tags: []  # free-form, e.g. [microservice, compliance, active]; empty is fine
+created: YYYY-MM-DD
+last_reviewed: YYYY-MM-DD  # date only; what the review found goes in ## Review History
+---
+
 # {Area Name}
-
-## Meta
-
-- **Slug:** `{slug}`
-- **Tags:** {comma-separated free-form tags; e.g. `microservice, compliance, active`. Leave empty to add later.}
-- **Created:** YYYY-MM-DD
-- **Last reviewed:** YYYY-MM-DD
 
 ## Overview
 
@@ -28,6 +29,12 @@ Known architectural decisions, constraints, compliance requirements, or technica
 ## Current State
 
 What is the current state of this area? What is working, what is not?
+
+## Review History
+
+Newest first. One entry per review: the date and what was checked or changed. The date of the latest entry goes in `last_reviewed` above.
+
+- YYYY-MM-DD — created.
 
 ## Related Areas
 

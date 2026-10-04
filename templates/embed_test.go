@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // TestEmbedCoversTree fails when a file under templates/ is missing from FS:
@@ -48,5 +50,46 @@ func TestEmbedCoversTree(t *testing.T) {
 	}
 	if len(onDisk) == 0 {
 		t.Fatal("found no files under templates/; the test is not looking at the tree")
+	}
+}
+
+// TestItemTemplatesHaveValidFrontmatter pins the item templates to the
+// frontmatter form. An unquoted `{placeholder}` is a YAML flow mapping, so a
+// template edit that drops the quotes would still look right but hand every
+// new item a block that parses to the wrong type -- or not at all.
+func TestItemTemplatesHaveValidFrontmatter(t *testing.T) {
+	for _, p := range []string{"project/README.md", "idea.md", "area.md", "note.md", "insight.md"} {
+		b, err := fs.ReadFile(FS, p)
+		if err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+		doc := string(b)
+		if !strings.HasPrefix(doc, "---\n") {
+			t.Errorf("%s does not open with frontmatter", p)
+			continue
+		}
+		end := strings.Index(doc[4:], "\n---\n")
+		if end < 0 {
+			t.Errorf("%s: unterminated frontmatter", p)
+			continue
+		}
+		var fm map[string]any
+		if err := yaml.Unmarshal([]byte(doc[4:4+end]), &fm); err != nil {
+			t.Errorf("%s: frontmatter is not valid YAML: %v", p, err)
+			continue
+		}
+		for k, v := range fm {
+			switch v.(type) {
+			case string, []any:
+			default:
+				t.Errorf("%s: %s is a %T, want a string or a list (unquoted placeholder?)", p, k, v)
+			}
+		}
+		if _, ok := fm["title"].(string); !ok {
+			t.Errorf("%s: no title (the only required key, DEC-009)", p)
+		}
+		if strings.Contains(doc, "## Meta") {
+			t.Errorf("%s still carries a ## Meta block", p)
+		}
 	}
 }

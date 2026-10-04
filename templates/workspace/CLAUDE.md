@@ -109,7 +109,7 @@ Add new tags freely. Run `scripts/area-tags.sh` (if present) to list all tags cu
 <!-- cg:section:start=area-rules -->
 ### Area Rules
 
-Every project, idea, and note MUST carry an `Areas:` field linking to one or more areas; areas are reference hubs (link to them, don't duplicate their content). When starting work on a project — or on any external repo — read the matching area file first for its context, constraints, and conventions.
+Every project, idea, and note MUST carry an `areas` field naming one or more area slugs (frontmatter `areas:`); areas are reference hubs (link to them, don't duplicate their content). When starting work on a project — or on any external repo — read the matching area file first for its context, constraints, and conventions.
 
 For the full area rules (multi-area items, creating a new area, the `Last reviewed` freshness check), the project-linking rule, and the external-repo → area lookup, load [`notes/area-rules.md`](notes/area-rules.md).
 <!-- cg:section:end=area-rules -->
@@ -308,7 +308,7 @@ For the full preference order, the gap-handling rule, and the reasoning, load [`
 
 - Idea statuses: `raw` → `exploring` → `ready` → `parked` | `rejected`
 - Project statuses: `defining` → `in-progress` → `done` | `on-hold`
-- Project priorities: `high` | `medium` | `low` — stored in each project's README.md Meta section and in `projects/TODO.md` (sorted by priority)
+- Project priorities: `high` | `medium` | `low` — stored in each project's README.md frontmatter (`priority:`) and in `projects/TODO.md` (sorted by priority)
 - **Rank within a priority bucket** in `projects/TODO.md` is the row order and is **user-owned** — suggest re-ranking, but never silently reorder rows.
 - Area tags: free-form, multi-valued. The current tag vocabulary is listed in the **Area Tags** section above. **Reuse an existing tag before inventing a near-duplicate.**
 - Tags on ideas are free-form. Use them to group and filter; reuse existing values where they fit.

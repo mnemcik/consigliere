@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // RenderProfile returns the contents of a PROFILE.md filled from the wizard
@@ -51,12 +53,8 @@ func RenderArea(a *Answers, today string) string {
 		return ""
 	}
 	var b strings.Builder
+	b.WriteString(areaFrontmatter(a, today))
 	fmt.Fprintf(&b, "# %s\n\n", a.AreaName)
-	b.WriteString("## Meta\n\n")
-	fmt.Fprintf(&b, "- **Slug:** `%s`\n", a.AreaSlug)
-	fmt.Fprintf(&b, "- **Tags:** %s\n", normalizeTags(a.AreaTags))
-	fmt.Fprintf(&b, "- **Created:** %s\n", today)
-	fmt.Fprintf(&b, "- **Last reviewed:** %s\n\n", today)
 
 	b.WriteString("## Overview\n\n")
 	if a.AreaOverview != "" {
@@ -70,10 +68,35 @@ func RenderArea(a *Answers, today string) string {
 	b.WriteString("## Key Contacts\n\n| Role | Who | Notes |\n|------|-----|-------|\n| — | — | — |\n\n")
 	b.WriteString("## Architecture & Constraints\n\nKnown architectural decisions, constraints, compliance requirements, or technical debt.\n\n")
 	b.WriteString("## Current State\n\nWhat is the current state of this area? What is working, what is not?\n\n")
+	b.WriteString("## Review History\n\nNewest first. One entry per review: the date and what was checked or changed. The date of the latest entry goes in `last_reviewed` above.\n\n")
+	fmt.Fprintf(&b, "- %s — created.\n\n", today)
 	b.WriteString("## Related Areas\n\nLinks to other areas that interact with or depend on this one.\n\n")
 	b.WriteString("## Associated Items\n\n<!-- Updated automatically when projects/ideas/notes reference this area -->\n\n")
 	b.WriteString("### Projects\n\n### Ideas\n\n### Notes\n")
 	return b.String()
+}
+
+// areaFrontmatter renders the YAML frontmatter block that opens an area file.
+// The user-supplied fields are marshalled rather than formatted, so an area
+// name carrying a colon, a quote or a leading `{` still yields valid YAML. The
+// dates are written bare, as in the templates, so tools read them as dates;
+// today is always a cg-generated YYYY-MM-DD.
+func areaFrontmatter(a *Answers, today string) string {
+	fm := struct {
+		Title string   `yaml:"title"`
+		Slug  string   `yaml:"slug"`
+		Tags  []string `yaml:"tags,flow"`
+	}{a.AreaName, a.AreaSlug, tagList(a.AreaTags)}
+	if fm.Tags == nil {
+		fm.Tags = []string{}
+	}
+	out, err := yaml.Marshal(fm)
+	if err != nil {
+		// Marshalling a struct of strings cannot fail; keep the file valid
+		// markdown regardless.
+		return ""
+	}
+	return fmt.Sprintf("---\n%screated: %s\nlast_reviewed: %s\n---\n\n", out, today, today)
 }
 
 // InsertAreaIndexRow appends a table row for the new area to the flat
@@ -196,9 +219,12 @@ func escapeTableCell(s string) string {
 // around each entry, lowercases, drops empties and duplicates while preserving
 // first-seen order, and rejoins as "tag1, tag2". Empty input yields "".
 func normalizeTags(s string) string {
-	if strings.TrimSpace(s) == "" {
-		return ""
-	}
+	return strings.Join(tagList(s), ", ")
+}
+
+// tagList splits a comma-separated tag string into lower-cased, de-duplicated
+// tags, in first-seen order.
+func tagList(s string) []string {
 	seen := make(map[string]struct{})
 	var out []string
 	for _, part := range strings.Split(s, ",") {
@@ -212,5 +238,5 @@ func normalizeTags(s string) string {
 		seen[t] = struct{}{}
 		out = append(out, t)
 	}
-	return strings.Join(out, ", ")
+	return out
 }

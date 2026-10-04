@@ -1,14 +1,14 @@
+---
+title: "{Note Title}"
+category: workflow  # tool-gotchas | workflow | architecture | process | research | reference | troubleshooting
+areas: [area-slug]
+tags: [tag1, tag2]
+created: YYYY-MM-DD
+source_session: "brief description of what prompted this"
+---
+
 # {Note Title}
 
-## Meta
-
-- **Category:** `category`
-- **Areas:** [`area-slug`](../areas/area-slug.md)
-- **Tags:** `tag1`, `tag2`
-- **Created:** YYYY-MM-DD
-- **Source session:** brief description of what prompted this
-
-<!-- Categories: tool-gotchas | workflow | architecture | process | research | reference | troubleshooting -->
 <!-- Reserved tag: `ai-instructions` marks a note whose content governs how Claude behaves,
      as opposed to one documenting how a tool behaves. It exists so the behavioural rules can be
      found and reviewed as a set. Framework notes shipped by cg carry it already. -->

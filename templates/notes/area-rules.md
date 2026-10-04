@@ -8,15 +8,15 @@
 
 ## Summary
 
-Areas are the single source of truth for a domain's context; projects, ideas, and notes link to them rather than duplicating. This note holds the full area rules, the project-linking rule, and the external-repo → area lookup. The "every item needs an `Areas:` field / read the area first" headline stays inline in `CLAUDE.md`.
+Areas are the single source of truth for a domain's context; projects, ideas, and notes link to them rather than duplicating. This note holds the full area rules, the project-linking rule, and the external-repo → area lookup. The "every item needs an `areas` field / read the area first" headline stays inline in `CLAUDE.md`.
 
 ## Area Rules
 
-1. **Every project, idea, and note MUST have an `Areas:` field** linking to one or more areas. Use the area slug(s).
+1. **Every project, idea, and note MUST have an `areas` field** naming one or more area slugs: `areas: [slug]` in frontmatter, or the `**Areas:**` bullet in a file still using a `## Meta` block.
 2. **Areas are reference hubs, not duplicators.** When a project needs context about a system (contacts, constraints, architecture), link to the area file instead of writing it again. If the context doesn't exist in the area yet, add it there first, then reference it.
 3. **Items can belong to multiple areas.** Use the primary area first, then secondary areas.
 4. **When creating a new area,** use `templates/area.md`, add it to `areas/INDEX.md`, and add any new tags (with short descriptions) to the Area Tags section in CLAUDE.md.
-5. **When reading an area for a project,** check the `Last reviewed` date. If it's older than 2 weeks, verify the content is still accurate before relying on it.
+5. **When reading an area for a project,** check its `last_reviewed` date (`**Last reviewed:**` in an area still using `## Meta`). If it's older than 2 weeks, verify the content is still accurate before relying on it.
 
 ## Linking to Areas from Projects
 

@@ -1,14 +1,14 @@
+---
+title: "{Project Title}"
+status: defining  # defining → in-progress → done | on-hold
+priority: medium  # high | medium | low
+areas: [area-slug]
+created: YYYY-MM-DD
+origin: "ideas/{idea-file}.md"  # delete the line if there is none
+output_type: tool  # tool | jira-feature | documentation | automation | other
+---
+
 # {Project Title}
-
-## Meta
-
-- **Status:** defining
-- **Areas:** [`area-slug`](../../areas/area-slug.md)
-- **Started:** YYYY-MM-DD
-- **Origin:** ideas/{idea-file}.md or N/A
-- **Output type:** {tool | jira-feature | documentation | automation | other}
-
-<!-- Statuses: defining → in-progress → done | on-hold -->
 
 ## Problem
 

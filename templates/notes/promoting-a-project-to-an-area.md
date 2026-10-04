@@ -30,10 +30,10 @@ Any **one** of these signals is usually enough; two or more makes it obvious:
 1. **Create the area file** at `areas/<slug>.md` from `templates/area.md`. Summarise active architectural invariants from the project's `decisions.md` in the area's **Architecture & Constraints** section, linking back to `decisions.md` for the full supersession history. Populate **Current State** with the open feature tracks as bullet candidates (each destined to become its own project).
 2. **Register the area.** Add it to `areas/INDEX.md`; reuse existing **Area Tags** before inventing near-duplicates (add any genuinely new tag to the workspace's tag vocabulary).
 3. **Retire the source project.**
-   - Rewrite `README.md`: a title reflecting the bounded release, status `done`, an explicit `Done when:` checklist with every box ticked, `Areas:` pointing to the new area.
+   - Rewrite `README.md`: a title reflecting the bounded release, status `done`, an explicit `Done when:` checklist with every box ticked, `areas` naming the new area.
    - Rewrite `todo.md`: point forward to the area's open feature tracks; preserve the full `Completed` list as the release's history.
    - Prepend a retirement entry to `log.md` explaining the promotion, listing new cross-references, and naming the first spawned project.
-4. **Spawn the first bounded project** from the area's open feature tracks (usually just the one you're picking up now). Each new project gets an explicit `Done when:` and links its `Areas:` field to the new area.
+4. **Spawn the first bounded project** from the area's open feature tracks (usually just the one you're picking up now). Each new project gets an explicit `Done when:` and names the new area in its `areas` field.
 5. **Update `projects/TODO.md`.** Mark the retired project `Done`, repoint its Areas column to the new area, and add a row for each spawned project.
 6. **Update cross-references in related areas.** Any area that listed the old project under **Associated Items → Projects** should remove that entry and add the new area to its **Related Areas** list. Don't duplicate project links across both the owning area and related areas — only the owning area lists the projects.
 7. **Update the session-context badge** if you're continuing in the same session — the active area/project now differ from session start — re-run `cg session set-context --session-id <id> --area <new-area> --project <project>`.
