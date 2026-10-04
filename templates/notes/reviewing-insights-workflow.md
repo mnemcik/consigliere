@@ -29,20 +29,20 @@ Insights live in `insights/` and are indexed in `insights/DRAFTS.md`. New insigh
 1. **Pick the target section in `CLAUDE.md`.** Match the rule's subject to an existing section. If it fits none, propose a new section or subsection before editing.
 2. **Add the rule** to `CLAUDE.md`. Prefer concise wording — trim the insight's "Suggested Rule" where needed, keep the essence. Show the user the final wording and target section before saving.
 3. **Decide inline vs. note.** If the rule applies every session, it belongs inline in `CLAUDE.md`. If it only applies in specific circumstances, add a short trigger + pointer in `CLAUDE.md` and put the full detail in a dedicated note (the load-on-demand pattern — see [`claude-md-hygiene.md`](claude-md-hygiene.md)). This keeps `CLAUDE.md` lean.
-4. **Update the insight file meta:** `Status:` → `promoted`; add `- **Promoted:** YYYY-MM-DD — added to CLAUDE.md → "<section>"` (or to `<note path>` if extracted).
+4. **Update the insight's metadata:** `status: promoted`; add `promoted: "YYYY-MM-DD — added to CLAUDE.md → <section>"` (or `→ <note path>` if extracted). Metadata lives in frontmatter; in an insight not yet migrated, edit its `## Meta` bullets instead (`**Status:**`, `**Promoted:**`).
 5. **Update the index row** in `insights/DRAFTS.md`: change Status `draft` → `promoted`. Do not move the row — the table is single-source.
 6. If promotion makes an older insight redundant, mark the older one `superseded` in the same pass (or fold its content in).
 
 ## Reject mechanics
 
 1. **Ask for a one-line reason.**
-2. **Update the insight file meta:** `Status:` → `rejected`; add `- **Rejected:** YYYY-MM-DD — <reason>`.
+2. **Update the insight's metadata:** `status: rejected`; add `rejected: "YYYY-MM-DD — <reason>"` (same frontmatter-or-`## Meta` rule as above).
 3. **Update the index row:** Status `draft` → `rejected`.
 4. **Keep the file** — rejected insights stay as history documenting what was considered and why it didn't apply.
 
 ## Defer
 
-Leave the insight as `draft` and move on. No file changes required. If the user gives a reason (e.g., "wait for another occurrence"), append `- **Reviewed:** YYYY-MM-DD — deferred, <reason>` to the meta so the next review knows it was already seen.
+Leave the insight as `draft` and move on. No file changes required. If the user gives a reason (e.g., "wait for another occurrence"), add `reviewed: "YYYY-MM-DD — deferred, <reason>"` to its metadata so the next review knows it was already seen.
 
 ## One-table convention
 

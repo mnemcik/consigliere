@@ -22,7 +22,7 @@ After any session where new information is discussed or identified, existing tra
 ## How to propagate
 
 1. **Identify affected areas** — which area(s) does the new information touch?
-2. **Update the area file** — add the new information to the appropriate section (Architecture & Constraints, Current State, Key Contacts, etc.). Update the `Last reviewed` date.
+2. **Update the area file** — add the new information to the appropriate section (Architecture & Constraints, Current State, Key Contacts, etc.). Update `last_reviewed` to today and add a dated entry to the area's `## Review History` saying what changed (in an area still using `## Meta`, update its `**Last reviewed:**` bullet).
 3. **Check associated items** — read the area's Associated Items section. For each linked project/idea/note, check if the new information changes its status, scope, dependencies, or open questions. Update if needed.
 4. **Check cross-area impact** — read the area's Related Areas section. If the new information affects a related area, update that too.
 5. **Update indexes** — if a project status changed, update `projects/TODO.md`. If an idea status changed, update `ideas/BACKLOG.md`.

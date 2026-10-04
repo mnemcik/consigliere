@@ -1,8 +1,12 @@
 package wizard
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestSanitizeSlug(t *testing.T) {
@@ -89,15 +93,66 @@ func TestRenderArea(t *testing.T) {
 	got := RenderArea(&a, "2026-04-24")
 	for _, s := range []string{
 		"# Pension Calculation",
-		"- **Slug:** `pension-calc`",
-		"- **Tags:** microservice, compliance",
-		"- **Created:** 2026-04-24",
+		"## Review History\n",
+		"- 2026-04-24 — created.",
 		"Computes pension benefits.",
 	} {
 		if !strings.Contains(got, s) {
 			t.Errorf("RenderArea missing %q", s)
 		}
 	}
+	if strings.Contains(got, "## Meta") {
+		t.Errorf("RenderArea still writes a ## Meta block:\n%s", got)
+	}
+	fm := areaFM(t, got)
+	want := map[string]any{
+		"title": "Pension Calculation",
+		"slug":  "pension-calc",
+		"tags":  []any{"microservice", "compliance"},
+		// Bare, so YAML reads them as dates, matching the templates.
+		"created":       time.Date(2026, 4, 24, 0, 0, 0, 0, time.UTC),
+		"last_reviewed": time.Date(2026, 4, 24, 0, 0, 0, 0, time.UTC),
+	}
+	if !reflect.DeepEqual(fm, want) {
+		t.Errorf("frontmatter = %#v\nwant %#v", fm, want)
+	}
+}
+
+// A name a hand-formatted block would break: a colon, quotes and a leading
+// brace all need quoting to stay valid YAML.
+func TestRenderAreaFrontmatterQuotesAwkwardNames(t *testing.T) {
+	a := Answers{AreaSlug: "x", AreaName: `{Odd}: "quoted" name`, AreaTags: "B, b, a"}
+	fm := areaFM(t, RenderArea(&a, "2026-04-24"))
+	if fm["title"] != `{Odd}: "quoted" name` {
+		t.Errorf("title = %#v", fm["title"])
+	}
+	if !reflect.DeepEqual(fm["tags"], []any{"b", "a"}) {
+		t.Errorf("tags = %#v, want lower-cased and de-duplicated", fm["tags"])
+	}
+}
+
+func TestRenderAreaNoTagsIsEmptyList(t *testing.T) {
+	fm := areaFM(t, RenderArea(&Answers{AreaSlug: "x", AreaName: "X"}, "2026-04-24"))
+	if tags, ok := fm["tags"].([]any); !ok || len(tags) != 0 {
+		t.Errorf("tags = %#v, want an explicit empty list", fm["tags"])
+	}
+}
+
+// areaFM parses the frontmatter block at the top of a rendered area file.
+func areaFM(t *testing.T, doc string) map[string]any {
+	t.Helper()
+	if !strings.HasPrefix(doc, "---\n") {
+		t.Fatalf("no frontmatter at the top:\n%s", doc)
+	}
+	end := strings.Index(doc[4:], "\n---\n")
+	if end < 0 {
+		t.Fatalf("unterminated frontmatter:\n%s", doc)
+	}
+	var fm map[string]any
+	if err := yaml.Unmarshal([]byte(doc[4:4+end]), &fm); err != nil {
+		t.Fatalf("frontmatter is not valid YAML: %v\n%s", err, doc)
+	}
+	return fm
 }
 
 func TestInsertAreaIndexRow_EmptyTable(t *testing.T) {

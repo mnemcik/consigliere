@@ -1,13 +1,12 @@
+---
+title: "{Insight Title}"
+status: draft  # draft → promoted | rejected
+tags: [tag1, tag2]
+created: YYYY-MM-DD  # the date the behaviour was observed
+session_context: "brief description of the session where this was observed"
+---
+
 # {Insight Title}
-
-## Meta
-
-- **Status:** draft
-- **Tags:** `tag1`, `tag2`
-- **Observed:** YYYY-MM-DD
-- **Session context:** brief description of the session where this was observed
-
-<!-- Statuses: draft → promoted | rejected -->
 
 ## Observation
 
