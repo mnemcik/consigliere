@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.24.0](https://github.com/mnemcik/consigliere/compare/v1.23.0...v1.24.0) (2026-10-04)
+
+
+### Features
+
+* **migrate:** cg migrate converts items from ## Meta to frontmatter ([#145](https://github.com/mnemcik/consigliere/issues/145)) ([823fe8b](https://github.com/mnemcik/consigliere/commit/823fe8bb700ad4656806e526678119c3cb2fcf29))
+
 ## [1.23.0](https://github.com/mnemcik/consigliere/compare/v1.22.0...v1.23.0) (2026-10-04)
 
 
