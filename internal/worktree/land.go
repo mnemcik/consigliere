@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/mnemcik/consigliere/internal/cgerr"
 	"github.com/mnemcik/consigliere/internal/gitx"
@@ -28,7 +29,8 @@ type LandOptions struct {
 	BranchPrefix string
 	// LandingBranch is the branch to land onto (e.g. "main").
 	LandingBranch string
-	// Strategy is "direct-to-main" or "pr".
+	// Strategy is "direct-to-main", "pr" or "local". Callers resolve an unset
+	// value with EffectiveStrategy; empty here means the default.
 	Strategy string
 	// TargetSHA, when set, asserts that commit is reachable from HEAD before
 	// landing — an optional manual reachability guard. No caller requires it
@@ -46,6 +48,10 @@ type LandResult struct {
 }
 
 // Land lands the session worktree's HEAD onto the landing branch.
+//
+// local: no remote. Rebases onto the local landing branch when needed and
+// fast-forwards it to HEAD, together with the checkout that holds it (see
+// landLocal).
 //
 // direct-to-main: pushes HEAD → origin/<landingBranch>; on a non-ff rejection
 // it fetches, rebases onto origin/<landingBranch>, and retries (up to
@@ -107,14 +113,20 @@ func Land(ctx context.Context, opt *LandOptions, logw io.Writer) (LandResult, er
 	}
 
 	switch strategy {
-	case workspace.StrategyDirectToMain:
+	case workspace.StrategyDirectToMain, workspace.StrategyPR:
+		if err := requireOrigin(ctx, dir, strategy); err != nil {
+			return LandResult{}, err
+		}
+		if strategy == workspace.StrategyPR {
+			return landPR(ctx, dir, branch, landingBranch, logf)
+		}
 		return landDirect(ctx, dir, branch, landingBranch, retries, logf)
-	case workspace.StrategyPR:
-		return landPR(ctx, dir, branch, landingBranch, logf)
+	case workspace.StrategyLocal:
+		return landLocal(ctx, dir, branch, landingBranch, retries, logf)
 	default:
 		return LandResult{}, cgerr.New(cgerr.ExitUsage,
-			"unknown landing strategy %q (want %q or %q)",
-			strategy, workspace.StrategyDirectToMain, workspace.StrategyPR)
+			"unknown landing strategy %q (want %q, %q or %q)",
+			strategy, workspace.StrategyDirectToMain, workspace.StrategyPR, workspace.StrategyLocal)
 	}
 }
 
@@ -304,6 +316,149 @@ func gitError(err error) string {
 		}
 	}
 	return strings.TrimSpace(lines[0])
+}
+
+// errLandRaced reports that the landing branch moved between the rebase and
+// the fast-forward (another session landed first), or that its checkout's
+// index was locked for a moment. Both clear on a retry.
+var errLandRaced = errors.New("landing branch moved or its checkout was busy")
+
+// landRetryDelay is the pause before retrying a raced local land. A variable
+// so tests can shorten it.
+var landRetryDelay = 200 * time.Millisecond
+
+// landLocal lands HEAD onto the local landing branch, for a workspace with no
+// remote. The local branch is the integration point every session reads, so
+// unlike landDirect's best-effort syncLandingCheckout, moving it IS the land:
+// when the checkout that holds it cannot fast-forward, the land fails
+// (ExitLandingBlocked) rather than reporting success over a stale checkout.
+//
+// Lands are serialised by acquireLandLock. Each attempt rebases onto the
+// landing branch if HEAD does not already contain it, then advances the
+// branch. Something outside cg moving the branch, or holding the checkout's
+// index.lock, shows up as a rejected fast-forward; it backs off, rebases and
+// retries, up to maxRetries.
+func landLocal(ctx context.Context, dir, branch, landingBranch string, maxRetries int, logf func(string, ...any)) (LandResult, error) {
+	branchRef := "refs/heads/" + landingBranch
+	if !gitx.RefExists(ctx, dir, branchRef) {
+		return LandResult{}, cgerr.New(cgerr.ExitUsage, "landing branch %s does not exist", landingBranch)
+	}
+	release, err := acquireLandLock(ctx, dir, logf)
+	if err != nil {
+		return LandResult{}, err
+	}
+	defer release()
+
+	for attempt := 1; ; attempt++ {
+		if !gitx.IsAncestor(ctx, dir, branchRef, "HEAD") {
+			logf("rebasing %s onto %s\n", branch, landingBranch)
+			if err := gitx.Rebase(ctx, dir, branchRef); err != nil {
+				conflicts, _ := gitx.ConflictedFiles(ctx, dir)
+				where := strings.Join(conflicts, " ")
+				if where == "" {
+					where = "<see git status>"
+				}
+				return LandResult{}, cgerr.New(cgerr.ExitConflict,
+					"rebase conflict on: %s — resolve with 'git rebase --continue' then re-run", where)
+			}
+		}
+		head, err := gitx.RevParse(ctx, dir, "HEAD")
+		if err != nil {
+			return LandResult{}, err
+		}
+		logf("attempt %d: moving %s to %s\n", attempt, landingBranch, short(head))
+		err = advanceLanding(ctx, dir, landingBranch, head, logf)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, errLandRaced) {
+			return LandResult{}, err
+		}
+		if attempt > maxRetries {
+			return LandResult{}, cgerr.New(cgerr.ExitPushFail,
+				"local land failed after %d retries: %v", maxRetries, err)
+		}
+		logf("%v; retrying\n", err)
+		time.Sleep(time.Duration(attempt) * landRetryDelay)
+	}
+
+	if !gitx.IsAncestor(ctx, dir, "HEAD", branchRef) {
+		return LandResult{}, cgerr.New(cgerr.ExitAssertFail,
+			"post-land assertion failed: HEAD is NOT on %s", landingBranch)
+	}
+	landed, err := gitx.RevParse(ctx, dir, "HEAD")
+	if err != nil {
+		return LandResult{}, err
+	}
+	logf("assertion passed: %s is on %s\n", landed, landingBranch)
+	return LandResult{Strategy: workspace.StrategyLocal, SHA: landed}, nil
+}
+
+// advanceLanding fast-forwards the local landing branch to sha.
+//
+// Checked out in a worktree (normally the main one): `merge --ff-only` there,
+// so the branch and the files move together and git's post-merge hook runs.
+// git refuses when an uncommitted change or untracked file is in the way, and
+// that refusal blocks the land. An uncommitted change the merge does not
+// touch is left as it is, the same as a `git pull` would.
+//
+// Checked out nowhere: a compare-and-swap update-ref, refused while any
+// worktree is mid-rebase of the branch. A checked-out branch is never moved
+// with update-ref, which would leave its checkout silently stale.
+func advanceLanding(ctx context.Context, dir, landingBranch, sha string, logf func(string, ...any)) error {
+	branchRef := "refs/heads/" + landingBranch
+	trees, err := gitx.WorktreeList(ctx, dir)
+	if err != nil {
+		return err
+	}
+	blocked := func(path, why, advice string) error {
+		return cgerr.New(cgerr.ExitLandingBlocked,
+			"%s (%s) cannot move to the landed commit: %s — %s, then re-run 'cg worktree land'",
+			path, landingBranch, why, advice)
+	}
+	for _, w := range trees {
+		if w.Branch == landingBranch {
+			if _, serr := os.Stat(w.Path); serr != nil {
+				return blocked(w.Path, "its directory is missing", "run 'git worktree prune' to drop the stale entry")
+			}
+			if !gitx.IsAncestor(ctx, dir, w.Head, sha) {
+				return errLandRaced
+			}
+			// LC_ALL=C keeps git's messages in English, which gitError parses.
+			if _, err := gitx.RunEnv(ctx, w.Path, []string{"LC_ALL=C"}, "merge", "--ff-only", "--quiet", sha); err != nil {
+				msg := gitError(err)
+				if strings.Contains(msg, "index.lock") || strings.Contains(msg, "cannot lock ref") || strings.Contains(err.Error(), "Not possible to fast-forward") {
+					return errLandRaced
+				}
+				return blocked(w.Path, msg, "commit, stash or move the files in the way")
+			}
+			logf("fast-forwarded %s in %s\n", landingBranch, w.Path)
+			return nil
+		}
+		if w.Detached && gitx.RebasingBranch(ctx, w.Path) == branchRef {
+			return blocked(w.Path, "a rebase of it is in progress", "finish or abort the rebase there")
+		}
+	}
+	old, err := gitx.RevParse(ctx, dir, branchRef)
+	if err != nil {
+		return err
+	}
+	if !gitx.IsAncestor(ctx, dir, old, sha) {
+		return errLandRaced
+	}
+	if _, err := gitx.Run(ctx, dir, "update-ref", "-m", "cg worktree land", branchRef, sha, old); err != nil {
+		return errLandRaced
+	}
+	logf("moved local %s to %s\n", landingBranch, short(sha))
+	return nil
+}
+
+// short abbreviates an object id for log lines.
+func short(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }
 
 func landPR(ctx context.Context, dir, branch, landingBranch string, logf func(string, ...any)) (LandResult, error) {

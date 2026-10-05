@@ -23,7 +23,7 @@ func init() {
 	worktreeCreateCmd.Flags().BoolVar(&worktreeCreateForce, "force", false,
 		"reuse or attach even when the branch has unlanded commits")
 	worktreeLandCmd.Flags().StringVar(&worktreeLandStrategy, "strategy", "",
-		"landing strategy: direct-to-main or pr (default: from .cg.json, else direct-to-main)")
+		"landing strategy: direct-to-main, pr or local (default: from .cg.json, else local when there is no origin remote, else direct-to-main)")
 	worktreeRemoveCmd.Flags().BoolVar(&worktreeRemoveForce, "force", false,
 		"remove despite unlanded commits or a dirty working tree (discards both)")
 	worktreeCmd.AddCommand(worktreeCreateCmd)
@@ -34,7 +34,9 @@ func init() {
 }
 
 // worktreeRootConfig resolves the caller's cwd, the main workspace root, and the
-// effective worktree settings from the workspace's .cg.json.
+// effective worktree settings from the workspace's .cg.json. LandingStrategy is
+// resolved with worktree.EffectiveStrategy, so it is "local" when unset and the
+// repository has no origin remote.
 func worktreeRootConfig(ctx context.Context) (cwd, root string, w workspace.WorktreeConfig, err error) {
 	cwd, err = os.Getwd()
 	if err != nil {
@@ -48,7 +50,9 @@ func worktreeRootConfig(ctx context.Context) (cwd, root string, w workspace.Work
 	if err != nil {
 		return "", "", workspace.WorktreeConfig{}, fmt.Errorf("error reading %s: %w", workspace.ConfigFile, err)
 	}
-	return cwd, root, cfg.WorktreeSettings(), nil
+	w = cfg.WorktreeSettings()
+	w.LandingStrategy = worktree.EffectiveStrategy(ctx, root, cfg.ConfiguredLandingStrategy())
+	return cwd, root, w, nil
 }
 
 var worktreeCmd = &cobra.Command{
@@ -94,6 +98,7 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 		Prefix:        w.Root,
 		BranchPrefix:  w.BranchPrefix,
 		LandingBranch: w.LandingBranch,
+		Strategy:      w.LandingStrategy,
 		Force:         worktreeCreateForce,
 	}, cmd.ErrOrStderr())
 	if err != nil {
@@ -117,12 +122,19 @@ leaves the rebase in progress and exits 3. Prints the landed SHA on success.
 pr: pushes the session branch and opens a pull request via 'gh'; prints the PR
 URL.
 
+local (no remote): rebases onto the local landing branch if needed and
+fast-forwards it to HEAD, together with the worktree that has it checked out
+(usually the main one). If that checkout cannot fast-forward — a file in the
+way, or a rebase in progress — the land fails with exit 6. This is the default
+when .cg.json sets no strategy and the repository has no origin remote.
+
 Normally run with NO arguments. The optional argument is a commit SHA — NOT a
 slug (unlike 'worktree create <slug>' / 'remove <slug>'). When given, it asserts
 that commit is reachable from HEAD before landing. As a convenience, passing
 this worktree's own slug (or 'session/<slug>') is tolerated and lands HEAD.
 
-Exit codes: 1 usage, 3 rebase conflict, 4 push failed, 5 assertion failed.`,
+Exit codes: 1 usage, 3 rebase conflict, 4 push (or local move) failed after
+retries, 5 assertion failed, 6 landing checkout blocked (local).`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runWorktreeLand,
 }
@@ -208,6 +220,7 @@ func runWorktreeRemove(cmd *cobra.Command, args []string) error {
 		Prefix:        w.Root,
 		BranchPrefix:  w.BranchPrefix,
 		LandingBranch: w.LandingBranch,
+		Strategy:      w.LandingStrategy,
 		Force:         worktreeRemoveForce,
 	}, cmd.ErrOrStderr())
 }
@@ -236,6 +249,7 @@ func runWorktreeList(cmd *cobra.Command, args []string) error {
 		Prefix:        w.Root,
 		BranchPrefix:  w.BranchPrefix,
 		LandingBranch: w.LandingBranch,
+		Strategy:      w.LandingStrategy,
 	})
 	if err != nil {
 		return err

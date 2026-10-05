@@ -297,3 +297,18 @@ func TestSessionEndReleasesCleanClaimsSilently(t *testing.T) {
 		}
 	}
 }
+
+// With no origin remote and no strategy set, the workspace lands locally, so
+// the session-start pull has nothing to do and must stay silent rather than
+// report a failed fetch on every session.
+func TestSessionPullLatestSilentWithoutRemote(t *testing.T) {
+	clearSessionEnv(t)
+	repo := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere"}`)
+	out, err := runSession(t, repo, "{}", "pull-latest")
+	if err != nil {
+		t.Fatalf("pull-latest: %v\n%s", err, out)
+	}
+	if out != "" {
+		t.Errorf("pull-latest without a remote printed %q, want nothing", out)
+	}
+}

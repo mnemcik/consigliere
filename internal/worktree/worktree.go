@@ -13,6 +13,7 @@ import (
 
 	"github.com/mnemcik/consigliere/internal/cgerr"
 	"github.com/mnemcik/consigliere/internal/gitx"
+	"github.com/mnemcik/consigliere/internal/workspace"
 )
 
 // slugRe mirrors the bash validation: a slug starts with an alphanumeric and
@@ -32,8 +33,13 @@ type Options struct {
 	// BranchPrefix prepends the slug to form the branch name (e.g. "session/").
 	BranchPrefix string
 	// LandingBranch is the branch sessions land onto (e.g. "main"). The remote
-	// tracking ref "origin/<LandingBranch>" is the "is it landed?" reference.
+	// tracking ref "origin/<LandingBranch>" is the "is it landed?" reference,
+	// or the local branch itself under the local strategy.
 	LandingBranch string
+	// Strategy is the effective landing strategy (see EffectiveStrategy). Only
+	// StrategyLocal changes behaviour here: no fetch, and the local landing
+	// branch is the reference.
+	Strategy string
 	// Force proceeds even when the branch/worktree has unlanded commits.
 	Force bool
 }
@@ -53,7 +59,54 @@ func (o Options) worktreePath(slug string) string {
 
 func (o Options) branch(slug string) string { return o.BranchPrefix + slug }
 
-func (o Options) landingRef() string { return "origin/" + o.LandingBranch }
+func (o Options) local() bool { return o.Strategy == workspace.StrategyLocal }
+
+func (o Options) landingRef() string {
+	if o.local() {
+		return "refs/heads/" + o.LandingBranch
+	}
+	return "origin/" + o.LandingBranch
+}
+
+// fetchLanding refreshes origin/<landing> before a landed-check. Under the
+// local strategy there is nothing to fetch. Without an origin it fails with a
+// usage error that names the fix, instead of git's "does not appear to be a
+// git repository".
+func (o Options) fetchLanding(ctx context.Context) error {
+	if o.local() {
+		return nil
+	}
+	if err := requireOrigin(ctx, o.Root, o.Strategy); err != nil {
+		return err
+	}
+	return gitx.Fetch(ctx, o.Root, "origin", o.LandingBranch)
+}
+
+// EffectiveStrategy resolves the landing strategy for the repository at root.
+// An explicit value (the --strategy flag, else worktree.landingStrategy in
+// .cg.json) always wins. When none is set, a repository without an origin
+// remote lands locally, and one with an origin uses the default.
+func EffectiveStrategy(ctx context.Context, root, configured string) string {
+	if configured != "" {
+		return configured
+	}
+	if !gitx.HasRemote(ctx, root, "origin") {
+		return workspace.StrategyLocal
+	}
+	return workspace.DefaultLandingStrategy
+}
+
+// requireOrigin fails with a usage error when a remote strategy is set
+// explicitly on a repository that has no origin remote.
+func requireOrigin(ctx context.Context, dir, strategy string) error {
+	if gitx.HasRemote(ctx, dir, "origin") {
+		return nil
+	}
+	return cgerr.New(cgerr.ExitUsage,
+		"landing strategy %q needs an origin remote, and this repository has none — "+
+			"set worktree.landingStrategy to %q in %s (or remove the setting) to land locally",
+		strategy, workspace.StrategyLocal, workspace.ConfigFile)
+}
 
 // Create creates or reuses a session worktree for slug, returning its path.
 // Status and warnings are written to logw; the caller prints the returned path
@@ -76,7 +129,7 @@ func Create(ctx context.Context, slug string, opt Options, logw io.Writer) (stri
 	branch := opt.branch(slug)
 	landing := opt.landingRef()
 
-	if err := gitx.Fetch(ctx, opt.Root, "origin", opt.LandingBranch); err != nil {
+	if err := opt.fetchLanding(ctx); err != nil {
 		return "", err
 	}
 
@@ -114,7 +167,7 @@ func Create(ctx context.Context, slug string, opt Options, logw io.Writer) (stri
 				logf("delete the branch (git branch -D %s) or re-run with --force to attach anyway\n", branch)
 				return "", cgerr.New(cgerr.ExitDirty, "unlanded commits on orphan branch %s", branch)
 			}
-			logf("attaching worktree to ahead-of-origin branch %s (--force)\n", branch)
+			logf("attaching worktree to branch %s, which is ahead of %s (--force)\n", branch, landing)
 		} else {
 			logf("attaching worktree to existing branch %s (at/behind %s)\n", branch, landing)
 		}
