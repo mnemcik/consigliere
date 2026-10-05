@@ -36,10 +36,10 @@ type Options struct {
 	// tracking ref "origin/<LandingBranch>" is the "is it landed?" reference,
 	// or the local branch itself under the local strategy.
 	LandingBranch string
-	// Strategy is the effective landing strategy (see EffectiveStrategy). Only
-	// StrategyLocal changes behaviour here: no fetch, and the local landing
-	// branch is the reference.
-	Strategy string
+	// Local is set when the effective landing strategy (see EffectiveStrategy)
+	// is StrategyLocal: no fetch, and the local landing branch is the
+	// reference.
+	Local bool
 	// Force proceeds even when the branch/worktree has unlanded commits.
 	Force bool
 }
@@ -59,10 +59,8 @@ func (o Options) worktreePath(slug string) string {
 
 func (o Options) branch(slug string) string { return o.BranchPrefix + slug }
 
-func (o Options) local() bool { return o.Strategy == workspace.StrategyLocal }
-
 func (o Options) landingRef() string {
-	if o.local() {
+	if o.Local {
 		return "refs/heads/" + o.LandingBranch
 	}
 	return "origin/" + o.LandingBranch
@@ -73,10 +71,10 @@ func (o Options) landingRef() string {
 // usage error that names the fix, instead of git's "does not appear to be a
 // git repository".
 func (o Options) fetchLanding(ctx context.Context) error {
-	if o.local() {
+	if o.Local {
 		return nil
 	}
-	if err := requireOrigin(ctx, o.Root, o.Strategy); err != nil {
+	if err := requireOrigin(ctx, o.Root, "a remote strategy"); err != nil {
 		return err
 	}
 	return gitx.Fetch(ctx, o.Root, "origin", o.LandingBranch)
@@ -97,15 +95,16 @@ func EffectiveStrategy(ctx context.Context, root, configured string) string {
 }
 
 // requireOrigin fails with a usage error when a remote strategy is set
-// explicitly on a repository that has no origin remote.
-func requireOrigin(ctx context.Context, dir, strategy string) error {
+// explicitly on a repository that has no origin remote. what names the
+// strategy in the message.
+func requireOrigin(ctx context.Context, dir, what string) error {
 	if gitx.HasRemote(ctx, dir, "origin") {
 		return nil
 	}
 	return cgerr.New(cgerr.ExitUsage,
-		"landing strategy %q needs an origin remote, and this repository has none — "+
+		"landing strategy %s needs an origin remote, and this repository has none — "+
 			"set worktree.landingStrategy to %q in %s (or remove the setting) to land locally",
-		strategy, workspace.StrategyLocal, workspace.ConfigFile)
+		what, workspace.StrategyLocal, workspace.ConfigFile)
 }
 
 // Create creates or reuses a session worktree for slug, returning its path.

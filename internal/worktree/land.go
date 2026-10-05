@@ -16,6 +16,10 @@ import (
 	"github.com/mnemcik/consigliere/internal/workspace"
 )
 
+// englishGit is the environment for git commands whose messages gitError
+// parses: LC_ALL=C keeps them in English.
+var englishGit = []string{"LC_ALL=C"}
+
 // defaultMaxRetries is the number of non-fast-forward rebase+retry cycles the
 // direct-to-main strategy attempts before giving up (matches the bash helper).
 const defaultMaxRetries = 2
@@ -114,7 +118,7 @@ func Land(ctx context.Context, opt *LandOptions, logw io.Writer) (LandResult, er
 
 	switch strategy {
 	case workspace.StrategyDirectToMain, workspace.StrategyPR:
-		if err := requireOrigin(ctx, dir, strategy); err != nil {
+		if err := requireOrigin(ctx, dir, fmt.Sprintf("%q", strategy)); err != nil {
 			return LandResult{}, err
 		}
 		if strategy == workspace.StrategyPR {
@@ -273,7 +277,7 @@ func syncLandingCheckout(ctx context.Context, dir, landingBranch string, logf fu
 			return
 		}
 		// LC_ALL=C keeps git's messages in English, which gitError parses.
-		if _, err := gitx.RunEnv(ctx, w.Path, []string{"LC_ALL=C"}, "merge", "--ff-only", "--quiet", landingRef); err != nil {
+		if _, err := gitx.RunEnv(ctx, w.Path, englishGit, "merge", "--ff-only", "--quiet", landingRef); err != nil {
 			skip(w.Path, gitError(err), pull)
 			return
 		}
@@ -287,7 +291,7 @@ func syncLandingCheckout(ctx context.Context, dir, landingBranch string, logf fu
 	if !gitx.RefExists(ctx, dir, branchRef) || !gitx.IsAncestor(ctx, dir, branchRef, landingRef) {
 		return
 	}
-	if _, err := gitx.RunEnv(ctx, dir, []string{"LC_ALL=C"}, "branch", "-f", landingBranch, landingRef); err != nil {
+	if _, err := gitx.RunEnv(ctx, dir, englishGit, "branch", "-f", landingBranch, landingRef); err != nil {
 		logf("note: local %s was not moved to %s: %s\n", landingBranch, landingRef, gitError(err))
 		return
 	}
@@ -425,7 +429,7 @@ func advanceLanding(ctx context.Context, dir, landingBranch, sha string, logf fu
 				return errLandRaced
 			}
 			// LC_ALL=C keeps git's messages in English, which gitError parses.
-			if _, err := gitx.RunEnv(ctx, w.Path, []string{"LC_ALL=C"}, "merge", "--ff-only", "--quiet", sha); err != nil {
+			if _, err := gitx.RunEnv(ctx, w.Path, englishGit, "merge", "--ff-only", "--quiet", sha); err != nil {
 				msg := gitError(err)
 				if strings.Contains(msg, "index.lock") || strings.Contains(msg, "cannot lock ref") || strings.Contains(err.Error(), "Not possible to fast-forward") {
 					return errLandRaced

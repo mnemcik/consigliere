@@ -98,7 +98,7 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 		Prefix:        w.Root,
 		BranchPrefix:  w.BranchPrefix,
 		LandingBranch: w.LandingBranch,
-		Strategy:      w.LandingStrategy,
+		Local:         w.LandingStrategy == workspace.StrategyLocal,
 		Force:         worktreeCreateForce,
 	}, cmd.ErrOrStderr())
 	if err != nil {
@@ -220,7 +220,7 @@ func runWorktreeRemove(cmd *cobra.Command, args []string) error {
 		Prefix:        w.Root,
 		BranchPrefix:  w.BranchPrefix,
 		LandingBranch: w.LandingBranch,
-		Strategy:      w.LandingStrategy,
+		Local:         w.LandingStrategy == workspace.StrategyLocal,
 		Force:         worktreeRemoveForce,
 	}, cmd.ErrOrStderr())
 }
@@ -249,7 +249,7 @@ func runWorktreeList(cmd *cobra.Command, args []string) error {
 		Prefix:        w.Root,
 		BranchPrefix:  w.BranchPrefix,
 		LandingBranch: w.LandingBranch,
-		Strategy:      w.LandingStrategy,
+		Local:         w.LandingStrategy == workspace.StrategyLocal,
 	})
 	if err != nil {
 		return err

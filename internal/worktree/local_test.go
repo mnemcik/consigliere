@@ -43,7 +43,7 @@ func setupLocalWorkspace(t *testing.T) (ctx context.Context, root string) {
 
 func localOpts(root string) Options {
 	o := defaultOpts(root)
-	o.Strategy = workspace.StrategyLocal
+	o.Local = true
 	return o
 }
 
@@ -298,9 +298,7 @@ func TestLocalLandTwoSessions(t *testing.T) {
 func TestRemoteStrategyWithoutOriginIsUsageError(t *testing.T) {
 	ctx, root := setupLocalWorkspace(t)
 	var log bytes.Buffer
-	opt := defaultOpts(root)
-	opt.Strategy = workspace.StrategyDirectToMain
-	_, err := Create(ctx, "loc10", opt, &log)
+	_, err := Create(ctx, "loc10", defaultOpts(root), &log)
 	wantExit(t, err, cgerr.ExitUsage, &log)
 	if !bytes.Contains([]byte(err.Error()), []byte(`"local"`)) {
 		t.Errorf("error does not name the local strategy: %v", err)
