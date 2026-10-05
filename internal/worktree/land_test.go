@@ -292,6 +292,9 @@ func TestLandAdvancesLandingRefWhenNotCheckedOut(t *testing.T) {
 	if got != want {
 		t.Errorf("local main = %s, want %s", got, want)
 	}
+	if !bytes.Contains(log.Bytes(), []byte("moved local main to origin/main")) {
+		t.Errorf("ref move not logged:\n%s", log.String())
+	}
 }
 
 // An uncommitted edit that does not overlap the landed files would let git
@@ -343,6 +346,9 @@ func TestLandReportsDivergedMainCheckout(t *testing.T) {
 	if !bytes.Contains(log.Bytes(), []byte("commits that are not on origin/main")) {
 		t.Errorf("log does not report the divergence:\n%s", log.String())
 	}
+	if bytes.Contains(log.Bytes(), []byte("pull --ff-only' there")) {
+		t.Errorf("log suggests a pull that would fail on a diverged branch:\n%s", log.String())
+	}
 }
 
 // A worktree mid-rebase of main lists as detached. The branch must not be
@@ -374,4 +380,52 @@ func TestLandDoesNotMoveMainDuringARebase(t *testing.T) {
 		t.Errorf("main moved during a rebase: %s, want %s\nlog: %s", got, before, log.String())
 	}
 	mustGit(t, ctx, root, "rebase", "--abort")
+}
+
+// The landing branch checked out in a worktree whose directory was deleted:
+// say the directory is missing, not that the tree is dirty.
+func TestLandReportsMissingWorktreeDirectory(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	mustGit(t, ctx, root, "checkout", "--quiet", "--detach")
+	gone := filepath.Join(filepath.Dir(root), "main-elsewhere")
+	mustGit(t, ctx, root, "worktree", "add", "--quiet", gone, "main")
+	if err := os.RemoveAll(gone); err != nil {
+		t.Fatal(err)
+	}
+	var log bytes.Buffer
+	wt, err := Create(ctx, "ff7", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	mustGit(t, ctx, wt, "commit", "--allow-empty", "-m", "feature work")
+	if _, err := Land(ctx, landOpts(wt), &log); err != nil {
+		t.Fatalf("Land: %v\nlog: %s", err, log.String())
+	}
+	if !bytes.Contains(log.Bytes(), []byte("directory is missing")) || bytes.Contains(log.Bytes(), []byte("uncommitted")) {
+		t.Errorf("wrong reason for a missing worktree:\n%s", log.String())
+	}
+}
+
+// An untracked file the fast-forward would overwrite: git refuses, and the
+// note names the file instead of stopping at the header line.
+func TestLandNamesUntrackedFileThatBlocksFastForward(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	var log bytes.Buffer
+	wt, err := Create(ctx, "ff8", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	commitFile(t, ctx, wt, "clash.md", "landed\n", "feature work")
+	if err := os.WriteFile(filepath.Join(root, "clash.md"), []byte("untracked wip\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Land(ctx, landOpts(wt), &log); err != nil {
+		t.Fatalf("Land: %v\nlog: %s", err, log.String())
+	}
+	if got, _ := os.ReadFile(filepath.Join(root, "clash.md")); string(got) != "untracked wip\n" {
+		t.Errorf("untracked file overwritten: %q", got)
+	}
+	if !bytes.Contains(log.Bytes(), []byte("clash.md")) {
+		t.Errorf("note does not name the blocking file:\n%s", log.String())
+	}
 }

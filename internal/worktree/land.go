@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -220,7 +221,9 @@ func landDirect(ctx context.Context, dir, branch, landingBranch string, maxRetri
 // left alone even when git would allow the fast-forward, because moving HEAD
 // and files under a session mid-edit is the same staleness in the other
 // direction. When it cannot update, the land has still succeeded, so it says
-// why and how to catch up rather than failing.
+// why and how to catch up rather than failing. The fast-forward briefly holds
+// that checkout's index.lock, so a git command another session runs at the
+// same instant can fail once with "index.lock exists".
 func syncLandingCheckout(ctx context.Context, dir, landingBranch string, logf func(string, ...any)) {
 	landingRef := "origin/" + landingBranch
 	branchRef := "refs/heads/" + landingBranch
@@ -229,13 +232,18 @@ func syncLandingCheckout(ctx context.Context, dir, landingBranch string, logf fu
 		logf("note: could not list worktrees to update %s: %v\n", landingBranch, err)
 		return
 	}
-	skip := func(path, why string) {
-		logf("note: %s (%s) was not updated to %s: %s\n  run 'git pull --ff-only' there before reading its files\n",
-			path, landingBranch, landingRef, why)
+	pull := "run 'git pull --ff-only' there before reading its files"
+	skip := func(path, why, advice string) {
+		logf("note: %s (%s) was not updated to %s: %s\n  %s\n", path, landingBranch, landingRef, why, advice)
 	}
 	for _, w := range trees {
 		if w.Branch != landingBranch {
 			continue
+		}
+		if _, serr := os.Stat(w.Path); serr != nil {
+			// A worktree whose directory was deleted still lists, as prunable.
+			skip(w.Path, "its directory is missing", "run 'git worktree prune' to drop the stale entry")
+			return
 		}
 		local, remote := w.Head, ""
 		if r, rerr := gitx.RevParse(ctx, dir, landingRef); rerr == nil {
@@ -245,14 +253,16 @@ func syncLandingCheckout(ctx context.Context, dir, landingBranch string, logf fu
 		case local == "" || remote == "" || local == remote:
 			return // nothing to do, or nothing safe to compare
 		case !gitx.IsAncestor(ctx, dir, local, remote):
-			skip(w.Path, "it has commits that are not on "+landingRef)
+			skip(w.Path, "it has commits that are not on "+landingRef,
+				"push or rebase those commits; a pull --ff-only would fail too")
 			return
 		case !gitx.IsClean(ctx, w.Path):
-			skip(w.Path, "it has uncommitted changes")
+			skip(w.Path, "it has uncommitted changes", pull+" once they are committed or stashed")
 			return
 		}
-		if err := gitx.MergeFFOnly(ctx, w.Path, landingRef); err != nil {
-			skip(w.Path, firstLine(err))
+		// LC_ALL=C keeps git's messages in English, which gitError parses.
+		if _, err := gitx.RunEnv(ctx, w.Path, []string{"LC_ALL=C"}, "merge", "--ff-only", "--quiet", landingRef); err != nil {
+			skip(w.Path, gitError(err), pull)
 			return
 		}
 		logf("updated %s to %s\n", w.Path, landingRef)
@@ -265,21 +275,32 @@ func syncLandingCheckout(ctx context.Context, dir, landingBranch string, logf fu
 	if !gitx.RefExists(ctx, dir, branchRef) || !gitx.IsAncestor(ctx, dir, branchRef, landingRef) {
 		return
 	}
-	if _, err := gitx.Run(ctx, dir, "branch", "-f", landingBranch, landingRef); err != nil {
-		logf("note: local %s was not moved to %s: %s\n", landingBranch, landingRef, firstLine(err))
+	if _, err := gitx.RunEnv(ctx, dir, []string{"LC_ALL=C"}, "branch", "-f", landingBranch, landingRef); err != nil {
+		logf("note: local %s was not moved to %s: %s\n", landingBranch, landingRef, gitError(err))
+		return
 	}
+	logf("moved local %s to %s\n", landingBranch, landingRef)
 }
 
-// firstLine reduces a git error to its most useful line: the "fatal:" or
-// "error:" one when present, rather than a leading hint.
-func firstLine(err error) string {
+// gitError reduces a git error to what a reader needs: from the first
+// "fatal:" or "error:" line on, so a leading hint is skipped but the detail
+// after it (the files an untracked overwrite would clobber) is kept, joined
+// onto one line.
+func gitError(err error) string {
 	lines := strings.Split(strings.TrimSpace(err.Error()), "\n")
-	for _, l := range lines {
-		if i := strings.Index(l, "fatal: "); i >= 0 {
-			return strings.TrimSpace(l[i:])
-		}
-		if i := strings.Index(l, "error: "); i >= 0 {
-			return strings.TrimSpace(l[i:])
+	for i, l := range lines {
+		for _, p := range []string{"fatal: ", "error: "} {
+			if j := strings.Index(l, p); j >= 0 {
+				rest := []string{strings.TrimSpace(l[j:])}
+				for _, more := range lines[i+1:] {
+					more = strings.TrimSpace(more)
+					if more == "" || strings.HasPrefix(more, "hint:") || strings.HasPrefix(more, "Please ") || strings.HasPrefix(more, "Aborting") {
+						continue
+					}
+					rest = append(rest, more)
+				}
+				return strings.Join(rest, " ")
+			}
 		}
 	}
 	return strings.TrimSpace(lines[0])
