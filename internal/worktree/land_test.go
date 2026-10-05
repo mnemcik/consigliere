@@ -213,3 +213,219 @@ func TestLandTargetSHANotReachable(t *testing.T) {
 		t.Fatalf("expected ExitAssertFail for unreachable target SHA, got %v", err)
 	}
 }
+
+// consigliere#146: after a land, the checkout holding the landing branch (the
+// main worktree here) is at the landed commit, not left behind origin.
+func TestLandFastForwardsMainCheckout(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	var log bytes.Buffer
+	wt, err := Create(ctx, "ff1", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	commitFile(t, ctx, wt, "landed.md", "new\n", "feature work")
+	want := headSHA(t, ctx, wt)
+
+	if _, err := Land(ctx, landOpts(wt), &log); err != nil {
+		t.Fatalf("Land: %v\nlog: %s", err, log.String())
+	}
+	if got := headSHA(t, ctx, root); got != want {
+		t.Errorf("main checkout HEAD = %s, want the landed %s\nlog: %s", got, want, log.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "landed.md")); err != nil {
+		t.Errorf("landed file not in the main checkout: %v", err)
+	}
+}
+
+// Another session's uncommitted edit to a file the land touches blocks the
+// fast-forward. The edit must survive, the land must still succeed, and the
+// log must say the checkout was not updated.
+func TestLandLeavesDirtyMainCheckoutAndWarns(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	commitFile(t, ctx, root, "shared.md", "base\n", "shared")
+	mustGit(t, ctx, root, "push", "--quiet", "origin", "main")
+	var log bytes.Buffer
+	wt, err := Create(ctx, "ff2", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	commitFile(t, ctx, wt, "shared.md", "from the session\n", "session edit")
+	before := headSHA(t, ctx, root)
+	if err := os.WriteFile(filepath.Join(root, "shared.md"), []byte("uncommitted in main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Land(ctx, landOpts(wt), &log); err != nil {
+		t.Fatalf("Land must still succeed: %v\nlog: %s", err, log.String())
+	}
+	if got, _ := os.ReadFile(filepath.Join(root, "shared.md")); string(got) != "uncommitted in main\n" {
+		t.Errorf("uncommitted edit in main was overwritten: %q", got)
+	}
+	if got := headSHA(t, ctx, root); got != before {
+		t.Errorf("main checkout moved despite the conflicting edit")
+	}
+	if !bytes.Contains(log.Bytes(), []byte("was not updated")) {
+		t.Errorf("no warning in the log:\n%s", log.String())
+	}
+}
+
+// With the landing branch checked out nowhere, the local branch ref still
+// advances, so the next checkout of it starts current.
+func TestLandAdvancesLandingRefWhenNotCheckedOut(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	mustGit(t, ctx, root, "checkout", "--quiet", "--detach")
+	var log bytes.Buffer
+	wt, err := Create(ctx, "ff3", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	mustGit(t, ctx, wt, "commit", "--allow-empty", "-m", "feature work")
+	want := headSHA(t, ctx, wt)
+
+	if _, err := Land(ctx, landOpts(wt), &log); err != nil {
+		t.Fatalf("Land: %v\nlog: %s", err, log.String())
+	}
+	got, err := gitx.RevParse(ctx, root, "refs/heads/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Errorf("local main = %s, want %s", got, want)
+	}
+	if !bytes.Contains(log.Bytes(), []byte("moved local main to origin/main")) {
+		t.Errorf("ref move not logged:\n%s", log.String())
+	}
+}
+
+// An uncommitted edit that does not overlap the landed files would let git
+// fast-forward, but the checkout belongs to a session mid-edit: leave it.
+func TestLandLeavesUnrelatedDirtyMainCheckout(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	var log bytes.Buffer
+	wt, err := Create(ctx, "ff4", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	commitFile(t, ctx, wt, "landed.md", "new\n", "feature work")
+	before := headSHA(t, ctx, root)
+	if err := os.WriteFile(filepath.Join(root, "unrelated.md"), []byte("wip\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, ctx, root, "add", "unrelated.md")
+
+	if _, err := Land(ctx, landOpts(wt), &log); err != nil {
+		t.Fatalf("Land: %v\nlog: %s", err, log.String())
+	}
+	if got := headSHA(t, ctx, root); got != before {
+		t.Errorf("HEAD moved under a dirty checkout")
+	}
+	if !bytes.Contains(log.Bytes(), []byte("uncommitted changes")) {
+		t.Errorf("log does not say why:\n%s", log.String())
+	}
+}
+
+// Local commits on main that are not on origin: say it diverged, rather than
+// suggesting a pull --ff-only that would fail too.
+func TestLandReportsDivergedMainCheckout(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	var log bytes.Buffer
+	wt, err := Create(ctx, "ff5", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	mustGit(t, ctx, wt, "commit", "--allow-empty", "-m", "feature work")
+	mustGit(t, ctx, root, "commit", "--allow-empty", "-m", "local only")
+	before := headSHA(t, ctx, root)
+
+	if _, err := Land(ctx, landOpts(wt), &log); err != nil {
+		t.Fatalf("Land: %v\nlog: %s", err, log.String())
+	}
+	if got := headSHA(t, ctx, root); got != before {
+		t.Errorf("diverged main was moved")
+	}
+	if !bytes.Contains(log.Bytes(), []byte("commits that are not on origin/main")) {
+		t.Errorf("log does not report the divergence:\n%s", log.String())
+	}
+	if bytes.Contains(log.Bytes(), []byte("pull --ff-only' there")) {
+		t.Errorf("log suggests a pull that would fail on a diverged branch:\n%s", log.String())
+	}
+}
+
+// A worktree mid-rebase of main lists as detached. The branch must not be
+// moved underneath the rebase.
+func TestLandDoesNotMoveMainDuringARebase(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	mustGit(t, ctx, root, "commit", "--allow-empty", "-m", "second")
+	mustGit(t, ctx, root, "push", "--quiet", "origin", "main")
+	before := headSHA(t, ctx, root)
+	// Stop a rebase of main on an --exec step that fails.
+	if _, err := gitx.RunEnv(ctx, root, []string{"GIT_SEQUENCE_EDITOR=true"}, "rebase", "-i", "--exec", "false", "HEAD~1"); err == nil {
+		t.Fatal("expected the rebase to stop")
+	}
+	var log bytes.Buffer
+	wt, err := Create(ctx, "ff6", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	mustGit(t, ctx, wt, "commit", "--allow-empty", "-m", "feature work")
+
+	if _, err := Land(ctx, landOpts(wt), &log); err != nil {
+		t.Fatalf("Land: %v\nlog: %s", err, log.String())
+	}
+	got, err := gitx.RevParse(ctx, root, "refs/heads/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != before {
+		t.Errorf("main moved during a rebase: %s, want %s\nlog: %s", got, before, log.String())
+	}
+	mustGit(t, ctx, root, "rebase", "--abort")
+}
+
+// The landing branch checked out in a worktree whose directory was deleted:
+// say the directory is missing, not that the tree is dirty.
+func TestLandReportsMissingWorktreeDirectory(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	mustGit(t, ctx, root, "checkout", "--quiet", "--detach")
+	gone := filepath.Join(filepath.Dir(root), "main-elsewhere")
+	mustGit(t, ctx, root, "worktree", "add", "--quiet", gone, "main")
+	if err := os.RemoveAll(gone); err != nil {
+		t.Fatal(err)
+	}
+	var log bytes.Buffer
+	wt, err := Create(ctx, "ff7", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	mustGit(t, ctx, wt, "commit", "--allow-empty", "-m", "feature work")
+	if _, err := Land(ctx, landOpts(wt), &log); err != nil {
+		t.Fatalf("Land: %v\nlog: %s", err, log.String())
+	}
+	if !bytes.Contains(log.Bytes(), []byte("directory is missing")) || bytes.Contains(log.Bytes(), []byte("uncommitted")) {
+		t.Errorf("wrong reason for a missing worktree:\n%s", log.String())
+	}
+}
+
+// An untracked file the fast-forward would overwrite: git refuses, and the
+// note names the file instead of stopping at the header line.
+func TestLandNamesUntrackedFileThatBlocksFastForward(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	var log bytes.Buffer
+	wt, err := Create(ctx, "ff8", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	commitFile(t, ctx, wt, "clash.md", "landed\n", "feature work")
+	if err := os.WriteFile(filepath.Join(root, "clash.md"), []byte("untracked wip\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Land(ctx, landOpts(wt), &log); err != nil {
+		t.Fatalf("Land: %v\nlog: %s", err, log.String())
+	}
+	if got, _ := os.ReadFile(filepath.Join(root, "clash.md")); string(got) != "untracked wip\n" {
+		t.Errorf("untracked file overwritten: %q", got)
+	}
+	if !bytes.Contains(log.Bytes(), []byte("clash.md")) {
+		t.Errorf("note does not name the blocking file:\n%s", log.String())
+	}
+}

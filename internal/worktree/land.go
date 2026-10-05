@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -205,7 +206,104 @@ func landDirect(ctx context.Context, dir, branch, landingBranch string, maxRetri
 		return LandResult{}, err
 	}
 	logf("assertion passed: %s is on %s\n", landed, landingRef)
+	syncLandingCheckout(ctx, dir, landingBranch, logf)
 	return LandResult{Strategy: workspace.StrategyDirectToMain, SHA: landed}, nil
+}
+
+// syncLandingCheckout brings the local landing branch up to the commit just
+// pushed. The push moves only origin/<landing>; without this the checkout that
+// holds the branch, usually the main worktree, silently falls a commit further
+// behind with every land, and anything reading files there reads stale ones
+// (consigliere#146).
+//
+// That checkout may belong to another session, so this is as conservative as
+// PullLatest: it only fast-forwards, and only a clean tree. A dirty tree is
+// left alone even when git would allow the fast-forward, because moving HEAD
+// and files under a session mid-edit is the same staleness in the other
+// direction. When it cannot update, the land has still succeeded, so it says
+// why and how to catch up rather than failing. The fast-forward briefly holds
+// that checkout's index.lock, so a git command another session runs at the
+// same instant can fail once with "index.lock exists".
+func syncLandingCheckout(ctx context.Context, dir, landingBranch string, logf func(string, ...any)) {
+	landingRef := "origin/" + landingBranch
+	branchRef := "refs/heads/" + landingBranch
+	trees, err := gitx.WorktreeList(ctx, dir)
+	if err != nil {
+		logf("note: could not list worktrees to update %s: %v\n", landingBranch, err)
+		return
+	}
+	pull := "run 'git pull --ff-only' there before reading its files"
+	skip := func(path, why, advice string) {
+		logf("note: %s (%s) was not updated to %s: %s\n  %s\n", path, landingBranch, landingRef, why, advice)
+	}
+	for _, w := range trees {
+		if w.Branch != landingBranch {
+			continue
+		}
+		if _, serr := os.Stat(w.Path); serr != nil {
+			// A worktree whose directory was deleted still lists, as prunable.
+			skip(w.Path, "its directory is missing", "run 'git worktree prune' to drop the stale entry")
+			return
+		}
+		local, remote := w.Head, ""
+		if r, rerr := gitx.RevParse(ctx, dir, landingRef); rerr == nil {
+			remote = r
+		}
+		switch {
+		case local == "" || remote == "" || local == remote:
+			return // nothing to do, or nothing safe to compare
+		case !gitx.IsAncestor(ctx, dir, local, remote):
+			skip(w.Path, "it has commits that are not on "+landingRef,
+				"push or rebase those commits; a pull --ff-only would fail too")
+			return
+		case !gitx.IsClean(ctx, w.Path):
+			skip(w.Path, "it has uncommitted changes", pull+" once they are committed or stashed")
+			return
+		}
+		// LC_ALL=C keeps git's messages in English, which gitError parses.
+		if _, err := gitx.RunEnv(ctx, w.Path, []string{"LC_ALL=C"}, "merge", "--ff-only", "--quiet", landingRef); err != nil {
+			skip(w.Path, gitError(err), pull)
+			return
+		}
+		logf("updated %s to %s\n", w.Path, landingRef)
+		return
+	}
+	// Checked out nowhere, or only mid-rebase (a rebasing worktree lists as
+	// detached). Move the branch with `git branch -f`, which refuses while any
+	// worktree has it checked out or is rebasing it, and only when the move is
+	// a fast-forward.
+	if !gitx.RefExists(ctx, dir, branchRef) || !gitx.IsAncestor(ctx, dir, branchRef, landingRef) {
+		return
+	}
+	if _, err := gitx.RunEnv(ctx, dir, []string{"LC_ALL=C"}, "branch", "-f", landingBranch, landingRef); err != nil {
+		logf("note: local %s was not moved to %s: %s\n", landingBranch, landingRef, gitError(err))
+		return
+	}
+	logf("moved local %s to %s\n", landingBranch, landingRef)
+}
+
+// gitError reduces a git error to what a reader needs: from the first
+// "fatal:" or "error:" line on, so a leading hint is skipped but the detail
+// after it (the files an untracked overwrite would clobber) is kept, joined
+// onto one line.
+func gitError(err error) string {
+	lines := strings.Split(strings.TrimSpace(err.Error()), "\n")
+	for i, l := range lines {
+		for _, p := range []string{"fatal: ", "error: "} {
+			if j := strings.Index(l, p); j >= 0 {
+				rest := []string{strings.TrimSpace(l[j:])}
+				for _, more := range lines[i+1:] {
+					more = strings.TrimSpace(more)
+					if more == "" || strings.HasPrefix(more, "hint:") || strings.HasPrefix(more, "Please ") || strings.HasPrefix(more, "Aborting") {
+						continue
+					}
+					rest = append(rest, more)
+				}
+				return strings.Join(rest, " ")
+			}
+		}
+	}
+	return strings.TrimSpace(lines[0])
 }
 
 func landPR(ctx context.Context, dir, branch, landingBranch string, logf func(string, ...any)) (LandResult, error) {
