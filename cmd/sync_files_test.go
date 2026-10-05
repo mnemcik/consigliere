@@ -3,10 +3,13 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/mnemcik/consigliere/internal/manifest"
 	syncpkg "github.com/mnemcik/consigliere/internal/sync"
+	"github.com/mnemcik/consigliere/internal/workspace"
 )
 
 // The .claude/ files follow the same reconcile contract as notes: an untouched
@@ -417,4 +420,91 @@ func statusOf(r syncpkg.Report, id string) syncpkg.Status {
 		}
 	}
 	return ""
+}
+
+// consigliere#122: after cg sync --apply, .cg.json carries the framework
+// version the manifest records, so cg sync and cg status report it, and the
+// rest of .cg.json survives byte for byte, including keys this binary does not
+// model.
+func TestSyncApplyRecordsVersionInCgJSON(t *testing.T) {
+	dir := initForVersionTest(t)
+	origVersion := Version
+	Version = "1.25.0"
+	defer func() { Version = origVersion }()
+	cfgPath := filepath.Join(dir, workspace.ConfigFile)
+	before := readFile(t, cfgPath)
+
+	runSyncApply(t)
+
+	if got, want := readFile(t, cfgPath), strings.Replace(before, `"version": "1.0.0"`, `"version": "1.25.0"`, 1); got != want {
+		t.Errorf(".cg.json after sync\n%s\nwant only the version changed:\n%s", got, want)
+	}
+	if mf, err := manifest.Load(dir); err != nil || mf == nil || mf.FrameworkVersion != "1.25.0" {
+		t.Errorf("manifest version: %+v, %v", mf, err)
+	}
+}
+
+// A dev build has no release version, so it leaves .cg.json alone.
+func TestSyncApplyDevBuildLeavesCgJSONVersion(t *testing.T) {
+	dir := initForVersionTest(t)
+	origVersion := Version
+	Version = "dev"
+	defer func() { Version = origVersion }()
+
+	runSyncApply(t)
+
+	if cfg, err := workspace.Detect(dir); err != nil || cfg == nil || cfg.Version != "1.0.0" {
+		t.Errorf("dev build rewrote .cg.json version: %+v, %v", cfg, err)
+	}
+}
+
+// initForVersionTest initialises a workspace in a temp dir (and chdirs there),
+// sets its .cg.json version to 1.0.0 and adds a key Config does not model.
+func initForVersionTest(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	t.Cleanup(func() { chdir(t, origDir) })
+	chdir(t, dir)
+	forceInit = false
+	if err := runInit(nil, nil); err != nil {
+		t.Fatalf("init failed: %v", err)
+	}
+	cfgPath := filepath.Join(dir, workspace.ConfigFile)
+	cfg := readFile(t, cfgPath)
+	cfg = regexp.MustCompile(`"version": "[^"]*"`).ReplaceAllString(cfg, `"version": "1.0.0"`)
+	cfg = strings.Replace(cfg, `"type": "consigliere",`, `"type": "consigliere",`+"\n"+`  "futureBlock": {"keep": true},`, 1)
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func runSyncApply(t *testing.T) {
+	t.Helper()
+	syncApply = true
+	defer func() { syncApply = false }()
+	if err := runSync(nil, nil); err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+}
+
+// A .cg.json whose version the patch cannot handle warns once and lets the
+// already-written sync stand, instead of failing every run from then on.
+func TestSyncApplyWarnsWhenVersionIsNotAString(t *testing.T) {
+	dir := initForVersionTest(t)
+	origVersion := Version
+	Version = "1.25.0"
+	defer func() { Version = origVersion }()
+	cfgPath := filepath.Join(dir, workspace.ConfigFile)
+	cfg := strings.Replace(readFile(t, cfgPath), `"version": "1.0.0"`, `"version": null`, 1)
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runSyncApply(t) // fails the test if runSync returns an error
+
+	if mf, err := manifest.Load(dir); err != nil || mf == nil || mf.FrameworkVersion != "1.25.0" {
+		t.Errorf("sync did not complete: %+v, %v", mf, err)
+	}
 }
