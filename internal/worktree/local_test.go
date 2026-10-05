@@ -361,15 +361,6 @@ func TestLocalLandConcurrent(t *testing.T) {
 	}
 }
 
-func landLockPath(t *testing.T, ctx context.Context, root string) string {
-	t.Helper()
-	common, err := gitx.Run(ctx, root, "rev-parse", "--path-format=absolute", "--git-common-dir")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return filepath.Join(common, landLockName)
-}
-
 // A land lock held by another process: the land waits, gives up with exit 4
 // naming the lock file, and succeeds once that process is killed — the OS
 // drops the lock with the process, so a crashed land never leaves one behind.
@@ -379,7 +370,7 @@ func TestLandLockHeldByKilledProcess(t *testing.T) {
 	landLockWait = 300 * time.Millisecond
 	t.Cleanup(func() { landLockWait = saved })
 
-	holder := exec.Command(os.Args[0], "-test.run=^TestHelperHoldLandLock$") //nolint:gosec // the test binary itself
+	holder := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestHelperHoldLandLock$") //nolint:gosec // the test binary itself
 	holder.Env = append(os.Environ(), "CG_TEST_HOLD_LAND_LOCK="+root)
 	out, err := holder.StdoutPipe()
 	if err != nil {
