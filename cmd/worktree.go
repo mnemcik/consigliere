@@ -26,7 +26,7 @@ func init() {
 	worktreeCreateCmd.Flags().BoolVar(&worktreeCreateForce, "force", false,
 		"reuse or attach even when the branch has unlanded commits")
 	worktreeLandCmd.Flags().StringVar(&worktreeLandStrategy, "strategy", "",
-		"landing strategy: direct-to-main, pr or local (default: from .cg.json, else local when there is no origin remote, else direct-to-main)")
+		"landing strategy: direct-to-main, pr or local (default: from .cg.json, else local when there is no origin remote, else direct-to-main); cannot switch into or out of local")
 	worktreeRemoveCmd.Flags().BoolVar(&worktreeRemoveForce, "force", false,
 		"remove despite unlanded commits or a dirty working tree (discards both)")
 	worktreeCmd.AddCommand(worktreeCreateCmd)
@@ -125,6 +125,24 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// landStrategy picks the strategy for `cg worktree land`: the --strategy flag
+// when given, else the workspace's resolved strategy. The flag may not switch
+// into or out of local: create, remove and list resolve the strategy from the
+// workspace alone, so a land with a different mode would leave them judging
+// landed work against the wrong reference (a local land on a workspace with an
+// origin moves main without pushing it, and reads as unlanded afterwards).
+func landStrategy(flag, resolved string) (string, error) {
+	if flag == "" {
+		return resolved, nil
+	}
+	if (flag == workspace.StrategyLocal) != (resolved == workspace.StrategyLocal) {
+		return "", cgerr.New(cgerr.ExitUsage,
+			"--strategy %s does not match this workspace, which lands with %q; set worktree.landingStrategy in %s to change how it lands",
+			flag, resolved, workspace.ConfigFile)
+	}
+	return flag, nil
+}
+
 var worktreeLandCmd = &cobra.Command{
 	Use:   "land [<sha>]",
 	Short: "Land the session worktree's commits onto the landing branch",
@@ -167,9 +185,9 @@ func runWorktreeLand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	strategy := w.LandingStrategy
-	if worktreeLandStrategy != "" {
-		strategy = worktreeLandStrategy
+	strategy, err := landStrategy(worktreeLandStrategy, w.LandingStrategy)
+	if err != nil {
+		return err
 	}
 	var targetSHA string
 	if len(args) == 1 {
