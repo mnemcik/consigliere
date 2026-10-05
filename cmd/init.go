@@ -374,6 +374,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return rerr
 	}
 	created = append(created, reinstalled...)
+	ensureGitHooks(os.Stderr, dir)
 
 	// Summary
 	fmt.Println()

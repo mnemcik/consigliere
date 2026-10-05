@@ -33,6 +33,9 @@ func makeClone(t *testing.T, m *Manifest) string {
 	for _, h := range m.Contributes.Hooks {
 		write(h.Wrapper, "#!/usr/bin/env bash\nexit 0\n")
 	}
+	for _, g := range m.Contributes.GitHooks {
+		write(g.Script, "#!/bin/sh\nexit 0\n")
+	}
 	return dir
 }
 
@@ -256,5 +259,43 @@ func assertFile(t *testing.T, path, want string) {
 	}
 	if string(got) != want {
 		t.Errorf("%s = %q, want %q", path, got, want)
+	}
+}
+
+// A git-hook script lands in .cg/git-hooks/<hook>.d/ under an
+// extension-prefixed name, executable, is recorded in the ledger, and is
+// removed by Reverse; dropping it in an update makes it an orphan.
+func TestApplyAndReverseGitHook(t *testing.T) {
+	root := t.TempDir()
+	m := &Manifest{
+		Manifest: 1, Name: "demo", Version: "1.0.0", Description: "d",
+		Contributes: Contributions{GitHooks: []GitHookContribution{{Hook: "post-commit", Script: "hooks/backup.sh"}}},
+	}
+	clone := makeClone(t, m)
+	ledger, err := Apply(root, clone, m)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	want := ".cg/git-hooks/post-commit.d/demo-backup.sh"
+	if len(ledger.GitHooks) != 1 || ledger.GitHooks[0] != want {
+		t.Fatalf("ledger git hooks = %v, want [%s]", ledger.GitHooks, want)
+	}
+	info, err := os.Stat(filepath.Join(root, filepath.FromSlash(want)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0o100 == 0 {
+		t.Errorf("script not executable: %v", info.Mode())
+	}
+
+	if orphan := OrphanLedger(ledger, &Ledger{Name: "demo"}); orphan == nil || len(orphan.GitHooks) != 1 {
+		t.Errorf("dropped git hook not reported as orphan: %+v", orphan)
+	}
+
+	if err := Reverse(root, ledger); err != nil {
+		t.Fatalf("Reverse: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(want))); !os.IsNotExist(err) {
+		t.Errorf("script not removed: %v", err)
 	}
 }

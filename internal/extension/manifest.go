@@ -16,6 +16,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
+
+	"github.com/mnemcik/consigliere/internal/githooks"
 )
 
 const (
@@ -42,7 +45,7 @@ type Manifest struct {
 	Contributes Contributions `json:"contributes"`
 }
 
-// Contributions are the five contribution points an extension can declare. Each
+// Contributions are the six contribution points an extension can declare. Each
 // is optional; an absent or empty array means the extension contributes nothing
 // of that type.
 type Contributions struct {
@@ -51,6 +54,7 @@ type Contributions struct {
 	Hooks            []HookContribution       `json:"hooks,omitempty"`
 	Subcommands      []SubcommandContribution `json:"subcommands,omitempty"`
 	Templates        []CopyContribution       `json:"templates,omitempty"`
+	GitHooks         []GitHookContribution    `json:"git-hooks,omitempty"`
 }
 
 // SectionContribution inserts the body of Path into the workspace CLAUDE.md as
@@ -73,6 +77,14 @@ type HookContribution struct {
 	Event   string `json:"event"`
 	Wrapper string `json:"wrapper"`
 	Command string `json:"command"`
+}
+
+// GitHookContribution installs the executable Script (extension-relative) as
+// one of the scripts the cg dispatcher runs for the git Hook (e.g.
+// "post-commit"). See package githooks.
+type GitHookContribution struct {
+	Hook   string `json:"hook"`
+	Script string `json:"script"`
 }
 
 // SubcommandContribution exposes the extension's bin/<Binary> as cg <Namespace>.
@@ -144,6 +156,14 @@ func (m *Manifest) Validate() error {
 	for i, c := range m.Contributes.Templates {
 		if c.Src == "" || c.Dest == "" {
 			return fmt.Errorf("templates[%d]: src and dest are required", i)
+		}
+	}
+	for i, g := range m.Contributes.GitHooks {
+		if !githooks.Valid(g.Hook) {
+			return fmt.Errorf("git-hooks[%d]: unsupported hook %q (want one of %s)", i, g.Hook, strings.Join(githooks.Hooks, ", "))
+		}
+		if g.Script == "" {
+			return fmt.Errorf("git-hooks[%d]: script is required", i)
 		}
 	}
 	return nil

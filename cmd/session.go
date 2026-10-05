@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mnemcik/consigliere/internal/githooks"
 	"github.com/mnemcik/consigliere/internal/gitx"
 	"github.com/mnemcik/consigliere/internal/session"
 	"github.com/mnemcik/consigliere/internal/workspace"
@@ -144,6 +145,12 @@ func runSessionPullLatest(cmd *cobra.Command, _ []string) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil
+	}
+	// A fresh clone has the contributed git-hook scripts (versioned) but not
+	// the dispatcher in .git/hooks (unversioned); install it silently here,
+	// since this runs at every session start.
+	if root, cerr := gitx.CommonRoot(cmd.Context(), cwd); cerr == nil {
+		_ = githooks.Ensure(cmd.Context(), root)
 	}
 	landingBranch := workspace.DefaultLandingBranch
 	if root, cerr := gitx.CommonRoot(cmd.Context(), cwd); cerr == nil {

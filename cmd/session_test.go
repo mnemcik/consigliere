@@ -297,3 +297,18 @@ func TestSessionEndReleasesCleanClaimsSilently(t *testing.T) {
 		}
 	}
 }
+
+// A fresh clone carries the contributed git-hook scripts but not the
+// dispatcher in .git/hooks; the session-start command installs it.
+func TestSessionPullLatestInstallsGitHookDispatcher(t *testing.T) {
+	clearSessionEnv(t)
+	repo := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere"}`)
+	writeFile(t, repo, ".cg/git-hooks/post-commit.d/demo-x.sh", "#!/bin/sh\nexit 0\n")
+	if out, err := runSession(t, repo, "{}", "pull-latest"); err != nil {
+		t.Fatalf("pull-latest: %v\n%s", err, out)
+	}
+	b, err := os.ReadFile(filepath.Join(repo, ".git", "hooks", "post-commit"))
+	if err != nil || !strings.Contains(string(b), "cg-git-hook-dispatcher") {
+		t.Errorf("dispatcher not installed: %v %q", err, b)
+	}
+}

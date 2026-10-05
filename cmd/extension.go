@@ -3,7 +3,9 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/mnemcik/consigliere/internal/cgerr"
 	"github.com/mnemcik/consigliere/internal/extension"
+	"github.com/mnemcik/consigliere/internal/githooks"
 	"github.com/mnemcik/consigliere/internal/gitx"
 	"github.com/mnemcik/consigliere/internal/workspace"
 )
@@ -123,7 +126,7 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := reapply(root, filepath.Join(dest, path), m); err != nil {
+	if err := reapply(cmd.ErrOrStderr(), root, filepath.Join(dest, path), m); err != nil {
 		return err
 	}
 	cfg.UpsertExtension(&workspace.ExtensionRef{
@@ -148,7 +151,7 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 // that the new manifest drops. It applies the NEW manifest first: Apply
 // self-rolls-back on failure, so a failed reinstall/update leaves the prior
 // install intact rather than half-removed.
-func reapply(root, manifestDir string, m *extension.Manifest) error {
+func reapply(warn io.Writer, root, manifestDir string, m *extension.Manifest) error {
 	old, err := extension.LoadLedger(root, m.Name)
 	if err != nil {
 		return fmt.Errorf("reading ledger for %q: %w", m.Name, err)
@@ -165,7 +168,23 @@ func reapply(root, manifestDir string, m *extension.Manifest) error {
 	if err := ledger.Save(root); err != nil {
 		return fmt.Errorf("writing ledger for %q: %w", m.Name, err)
 	}
+	ensureGitHooks(warn, root)
 	return nil
+}
+
+// ensureGitHooks installs or removes the git-hook dispatchers to match the
+// scripts extensions contributed (see package githooks). A failure is a
+// warning: the contributions themselves are applied, and the next cg run that
+// ensures hooks will try again.
+func ensureGitHooks(warn io.Writer, root string) {
+	err := githooks.Ensure(context.Background(), root)
+	switch {
+	case err == nil:
+	case errors.Is(err, githooks.ErrHooksPath):
+		_, _ = fmt.Fprintf(warn, "warning: core.hooksPath is set, so cg did not install a dispatcher for the git-hook scripts in %s; unset core.hooksPath, or run those scripts from your own hooks\n", githooks.DirRel)
+	default:
+		_, _ = fmt.Fprintf(warn, "warning: git hooks: %v\n", err)
+	}
 }
 
 // reinstallMissingExtensions re-clones and re-applies any extension recorded in
@@ -189,7 +208,7 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		if err != nil {
 			return done, err
 		}
-		if err := reapply(root, filepath.Join(dest, path), m); err != nil {
+		if err := reapply(cmd.ErrOrStderr(), root, filepath.Join(dest, path), m); err != nil {
 			return done, err
 		}
 		done = append(done, fmt.Sprintf("extension %q v%s (re-installed)", m.Name, m.Version))
@@ -431,6 +450,7 @@ func runExtRemove(cmd *cobra.Command, args []string) error {
 		if rmErr := os.Remove(extension.LedgerPath(root, name)); rmErr != nil && !os.IsNotExist(rmErr) {
 			return fmt.Errorf("removing ledger for %q: %w", name, rmErr)
 		}
+		ensureGitHooks(cmd.ErrOrStderr(), root)
 	}
 
 	cfg.RemoveExtension(name)
@@ -480,7 +500,7 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 	out := cmd.OutOrStdout()
 	for i := range targets {
 		old := targets[i].Version
-		newVer, err := updateOne(cmd.Context(), root, targets[i].Name, targets[i].Path)
+		newVer, err := updateOne(cmd.Context(), cmd.ErrOrStderr(), root, targets[i].Name, targets[i].Path)
 		if err != nil {
 			return err
 		}
@@ -512,7 +532,7 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 // with siblings, so whole-repo tags don't map to a single extension's version —
 // track the default branch and let the manifest's version field be the source of
 // truth.
-func updateOne(ctx context.Context, root, name, path string) (string, error) {
+func updateOne(ctx context.Context, warn io.Writer, root, name, path string) (string, error) {
 	clone := extension.CloneDir(name)
 	if _, err := os.Stat(clone); err != nil {
 		return "", cgerr.New(cgerr.ExitUsage,
@@ -544,7 +564,7 @@ func updateOne(ctx context.Context, root, name, path string) (string, error) {
 	}
 
 	// Re-apply: new manifest first, then reverse any contributions it dropped.
-	if err := reapply(root, manifestDir, m); err != nil {
+	if err := reapply(warn, root, manifestDir, m); err != nil {
 		return "", err
 	}
 	return m.Version, nil

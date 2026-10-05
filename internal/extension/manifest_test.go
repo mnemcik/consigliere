@@ -124,3 +124,19 @@ func TestLoadManifest(t *testing.T) {
 		t.Error("expected error loading manifest from dir without one")
 	}
 }
+
+func TestValidateGitHooks(t *testing.T) {
+	base := func(g GitHookContribution) *Manifest {
+		return &Manifest{Manifest: 1, Name: "demo", Version: "1.0.0", Description: "d",
+			Contributes: Contributions{GitHooks: []GitHookContribution{g}}}
+	}
+	if err := base(GitHookContribution{Hook: "post-commit", Script: "s.sh"}).Validate(); err != nil {
+		t.Errorf("valid git hook rejected: %v", err)
+	}
+	if err := base(GitHookContribution{Hook: "post-receive", Script: "s.sh"}).Validate(); err == nil {
+		t.Error("server-side hook accepted")
+	}
+	if err := base(GitHookContribution{Hook: "post-commit"}).Validate(); err == nil {
+		t.Error("missing script accepted")
+	}
+}
