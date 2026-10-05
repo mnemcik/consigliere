@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -128,7 +129,7 @@ type shareEnv struct {
 }
 
 func loadShareEnv(cmd *cobra.Command) (*shareEnv, error) {
-	root, err := workspaceRoot(cmd)
+	root, err := landedWorkspaceRoot(cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -307,6 +308,56 @@ func indexedSlugs(indexPath string) (map[string]bool, error) {
 		slugs[p.Folder] = true
 	}
 	return slugs, nil
+}
+
+// landedWorkspaceRoot resolves the main checkout, even from a session
+// worktree. Unlike the other commands, sharing must not act on the worktree it
+// runs in: a publish stamps the commit it read, and a session branch's commit
+// may never reach the landing branch (land rebases), which would leave
+// recipients pointing at a commit the owner cannot diff against later. So
+// share reads landed content only, as it did before consigliere#140 moved the
+// other commands to the current worktree.
+func landedWorkspaceRoot(cmd *cobra.Command) (string, error) {
+	// Resolve the workspace in the worktree we run in, then find the same
+	// workspace in the main checkout: same path relative to the repo root, so
+	// a workspace in a subdirectory of its repo maps correctly too.
+	current, err := workspaceRoot(cmd)
+	if err != nil {
+		return "", err
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	ctx := cmd.Context()
+	top := gitx.ShowToplevel(ctx, cwd)
+	main, cerr := gitx.CommonRoot(ctx, cwd)
+	if top == "" || cerr != nil {
+		return current, nil // not in git: there is only one checkout
+	}
+	rel, rerr := filepath.Rel(resolved(top), resolved(current))
+	if rerr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return current, nil // the workspace is outside this repo
+	}
+	candidate := filepath.Join(main, rel)
+	cfg, derr := workspace.Detect(candidate)
+	if derr != nil {
+		return "", fmt.Errorf("%s: %w", filepath.Join(candidate, workspace.ConfigFile), derr)
+	}
+	if cfg == nil {
+		return current, nil // the main checkout does not have this workspace
+	}
+	return candidate, nil
+}
+
+// resolved returns p with symlinks resolved, or p unchanged if that fails, so
+// paths from git (resolved) and from cwd (maybe not, e.g. /tmp on macOS)
+// compare.
+func resolved(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return p
 }
 
 // rejectOwnRepo refuses a share block whose audience points at the
