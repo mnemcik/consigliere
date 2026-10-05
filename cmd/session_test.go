@@ -304,6 +304,8 @@ func TestSessionEndReleasesCleanClaimsSilently(t *testing.T) {
 func TestSessionPullLatestSilentWithoutRemote(t *testing.T) {
 	clearSessionEnv(t)
 	repo := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere"}`)
+	// On the landing branch, so a silent result is not the "not on main" exit.
+	mustGit(t, context.Background(), repo, "branch", "-M", "main")
 	out, err := runSession(t, repo, "{}", "pull-latest")
 	if err != nil {
 		t.Fatalf("pull-latest: %v\n%s", err, out)

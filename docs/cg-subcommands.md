@@ -73,8 +73,9 @@ Under `local`:
   An uncommitted change the fast-forward does not touch is kept, as with
   `git pull`. When that checkout cannot fast-forward, the land fails with
   exit 6 instead of reporting success over a stale checkout. Lands are
-  serialised by a `cg-land.lock` file in the shared git dir; a lock older than
-  10 minutes is treated as abandoned.
+  serialised by an OS file lock on `cg-land.lock` in the shared git dir, which
+  the OS releases when the holding process exits, however it exits; a land
+  gives up after waiting 60 seconds.
 - `cg session pull-latest` does nothing: the land already moved the main
   worktree.
 - `pr` is unavailable (it needs a remote).

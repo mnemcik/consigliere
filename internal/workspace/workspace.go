@@ -175,6 +175,15 @@ func (c *Config) WorktreeSettings() WorktreeConfig {
 	return w
 }
 
+// ValidLandingStrategy reports whether s is a landing strategy cg knows.
+func ValidLandingStrategy(s string) bool {
+	switch s {
+	case StrategyDirectToMain, StrategyPR, StrategyLocal:
+		return true
+	}
+	return false
+}
+
 // ConfiguredLandingStrategy returns worktree.landingStrategy exactly as written
 // in .cg.json, or "" when unset. WorktreeSettings fills the default in, which
 // hides whether the value was chosen; strategy resolution needs to know.

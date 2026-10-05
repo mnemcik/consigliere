@@ -379,8 +379,12 @@ func landLocal(ctx context.Context, dir, branch, landingBranch string, maxRetrie
 			return LandResult{}, err
 		}
 		if attempt > maxRetries {
+			hint := ""
+			if strings.Contains(err.Error(), ".lock") {
+				hint = " — if no git process is running, delete the .lock file it names and re-run"
+			}
 			return LandResult{}, cgerr.New(cgerr.ExitPushFail,
-				"local land failed after %d retries: %v", maxRetries, err)
+				"local land failed after %d retries: %v%s", maxRetries, err, hint)
 		}
 		logf("%v; retrying\n", err)
 		time.Sleep(time.Duration(attempt) * landRetryDelay)
@@ -425,14 +429,17 @@ func advanceLanding(ctx context.Context, dir, landingBranch, sha string, logf fu
 			if _, serr := os.Stat(w.Path); serr != nil {
 				return blocked(w.Path, "its directory is missing", "run 'git worktree prune' to drop the stale entry")
 			}
+			if gitx.RebasingBranch(ctx, w.Path) == branchRef {
+				return blocked(w.Path, "a rebase of it is in progress", "finish or abort the rebase there")
+			}
 			if !gitx.IsAncestor(ctx, dir, w.Head, sha) {
-				return errLandRaced
+				return fmt.Errorf("%w: %s moved", errLandRaced, landingBranch)
 			}
 			// LC_ALL=C keeps git's messages in English, which gitError parses.
 			if _, err := gitx.RunEnv(ctx, w.Path, englishGit, "merge", "--ff-only", "--quiet", sha); err != nil {
 				msg := gitError(err)
 				if strings.Contains(msg, "index.lock") || strings.Contains(msg, "cannot lock ref") || strings.Contains(err.Error(), "Not possible to fast-forward") {
-					return errLandRaced
+					return fmt.Errorf("%w: %s", errLandRaced, msg)
 				}
 				return blocked(w.Path, msg, "commit, stash or move the files in the way")
 			}
@@ -448,10 +455,10 @@ func advanceLanding(ctx context.Context, dir, landingBranch, sha string, logf fu
 		return err
 	}
 	if !gitx.IsAncestor(ctx, dir, old, sha) {
-		return errLandRaced
+		return fmt.Errorf("%w: %s moved", errLandRaced, landingBranch)
 	}
 	if _, err := gitx.Run(ctx, dir, "update-ref", "-m", "cg worktree land", branchRef, sha, old); err != nil {
-		return errLandRaced
+		return fmt.Errorf("%w: %s", errLandRaced, gitError(err))
 	}
 	logf("moved local %s to %s\n", landingBranch, short(sha))
 	return nil

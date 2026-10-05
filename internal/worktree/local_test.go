@@ -1,13 +1,16 @@
 package worktree
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -185,6 +188,9 @@ func TestLocalLandBlockedByDirtyCheckout(t *testing.T) {
 
 	_, err = Land(ctx, localLandOpts(wt), &log)
 	wantExit(t, err, cgerr.ExitLandingBlocked, &log)
+	if !strings.Contains(err.Error(), "shared.md") {
+		t.Errorf("error does not name the file in the way: %v", err)
+	}
 	if got, _ := os.ReadFile(filepath.Join(root, "shared.md")); string(got) != "uncommitted in main\n" {
 		t.Errorf("uncommitted edit overwritten: %q", got)
 	}
@@ -305,9 +311,9 @@ func TestRemoteStrategyWithoutOriginIsUsageError(t *testing.T) {
 	}
 }
 
-// Sessions landing at the same moment: each loser sees a rejected
-// fast-forward or a busy index, rebases and retries, and every landing ends
-// up on main.
+// Sessions landing at the same moment: the land lock runs them one at a time,
+// each rebasing onto the landings before it, so every landing ends up on main
+// and the main checkout is left clean.
 func TestLocalLandConcurrent(t *testing.T) {
 	ctx, root := setupLocalWorkspace(t)
 	saved := landRetryDelay
@@ -364,18 +370,29 @@ func landLockPath(t *testing.T, ctx context.Context, root string) string {
 	return filepath.Join(common, landLockName)
 }
 
-// A lock held by a land that never finishes: give up with exit 4 and say
-// which file to delete. A lock older than the stale age is taken over.
-func TestLandLockTimeoutAndStale(t *testing.T) {
+// A land lock held by another process: the land waits, gives up with exit 4
+// naming the lock file, and succeeds once that process is killed — the OS
+// drops the lock with the process, so a crashed land never leaves one behind.
+func TestLandLockHeldByKilledProcess(t *testing.T) {
 	ctx, root := setupLocalWorkspace(t)
-	savedWait, savedStale := landLockWait, landLockStale
-	landLockWait, landLockStale = 200*time.Millisecond, time.Hour
-	t.Cleanup(func() { landLockWait, landLockStale = savedWait, savedStale })
+	saved := landLockWait
+	landLockWait = 300 * time.Millisecond
+	t.Cleanup(func() { landLockWait = saved })
 
-	lock := landLockPath(t, ctx, root)
-	if err := os.WriteFile(lock, []byte("held\n"), 0o644); err != nil {
+	holder := exec.Command(os.Args[0], "-test.run=^TestHelperHoldLandLock$") //nolint:gosec // the test binary itself
+	holder.Env = append(os.Environ(), "CG_TEST_HOLD_LAND_LOCK="+root)
+	out, err := holder.StdoutPipe()
+	if err != nil {
 		t.Fatal(err)
 	}
+	if err := holder.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = holder.Process.Kill(); _ = holder.Wait() })
+	if line, err := bufio.NewReader(out).ReadString('\n'); err != nil || !strings.Contains(line, "held") {
+		t.Fatalf("helper did not take the lock: %q, %v", line, err)
+	}
+
 	var log bytes.Buffer
 	wt, err := Create(ctx, "lock1", localOpts(root), &log)
 	if err != nil {
@@ -384,18 +401,55 @@ func TestLandLockTimeoutAndStale(t *testing.T) {
 	mustGit(t, ctx, wt, "commit", "--allow-empty", "-m", "work")
 	_, err = Land(ctx, localLandOpts(wt), &log)
 	wantExit(t, err, cgerr.ExitPushFail, &log)
-	if !bytes.Contains([]byte(err.Error()), []byte(landLockName)) {
+	if !strings.Contains(err.Error(), landLockName) {
 		t.Errorf("error does not name the lock file: %v", err)
 	}
 
-	old := time.Now().Add(-2 * time.Hour)
-	if err := os.Chtimes(lock, old, old); err != nil {
+	_ = holder.Process.Kill()
+	_ = holder.Wait()
+	if _, err := Land(ctx, localLandOpts(wt), &log); err != nil {
+		t.Fatalf("lock not released by the killed process: %v\nlog: %s", err, log.String())
+	}
+}
+
+// TestHelperHoldLandLock is not a test: TestLandLockHeldByKilledProcess runs
+// it in a child process, where it takes the land lock and holds it until
+// killed.
+func TestHelperHoldLandLock(t *testing.T) {
+	root := os.Getenv("CG_TEST_HOLD_LAND_LOCK")
+	if root == "" {
+		t.Skip("helper process only")
+	}
+	if _, err := acquireLandLock(context.Background(), root, func(string, ...any) {}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Land(ctx, localLandOpts(wt), &log); err != nil {
-		t.Fatalf("stale lock not taken over: %v\nlog: %s", err, log.String())
+	fmt.Println("held")
+	time.Sleep(time.Minute)
+}
+
+// A git index.lock left in the main checkout by a crashed git process: the
+// land retries, then fails with exit 4 naming the file, and main stays put.
+func TestLocalLandStaleIndexLockNamed(t *testing.T) {
+	ctx, root := setupLocalWorkspace(t)
+	saved := landRetryDelay
+	landRetryDelay = time.Millisecond
+	t.Cleanup(func() { landRetryDelay = saved })
+	var log bytes.Buffer
+	wt, err := Create(ctx, "lock2", localOpts(root), &log)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := os.Stat(lock); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("lock not released after the land: %v", err)
+	commitFile(t, ctx, wt, "landed.md", "new\n", "feature work")
+	before := headSHA(t, ctx, root)
+	if err := os.WriteFile(filepath.Join(root, ".git", "index.lock"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Land(ctx, localLandOpts(wt), &log)
+	wantExit(t, err, cgerr.ExitPushFail, &log)
+	if !strings.Contains(err.Error(), "index.lock") {
+		t.Errorf("error does not name index.lock: %v", err)
+	}
+	if got := headSHA(t, ctx, root); got != before {
+		t.Errorf("main moved despite the failed land")
 	}
 }
