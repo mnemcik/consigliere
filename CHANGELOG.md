@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.24.1](https://github.com/mnemcik/consigliere/compare/v1.24.0...v1.24.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* commands act on the worktree they run in, not the main checkout ([#148](https://github.com/mnemcik/consigliere/issues/148)) ([d296afe](https://github.com/mnemcik/consigliere/commit/d296afe1636bbe3e945683f7d8f4637d96062e99))
+* **sync:** cg sync --apply records the framework version in .cg.json too ([#149](https://github.com/mnemcik/consigliere/issues/149)) ([4ec7590](https://github.com/mnemcik/consigliere/commit/4ec75900871c88671c7cab88b3c79da5d8716ed5))
+* **worktree:** land fast-forwards the checkout that holds the landing branch ([#150](https://github.com/mnemcik/consigliere/issues/150)) ([d533236](https://github.com/mnemcik/consigliere/commit/d533236ede75dcad100a46b0dde62de5fbabaef6))
+
 ## [1.24.0](https://github.com/mnemcik/consigliere/compare/v1.23.0...v1.24.0) (2026-10-04)
 
 
