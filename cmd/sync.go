@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mnemcik/consigliere/internal/autoupdate"
 	"github.com/mnemcik/consigliere/internal/extension"
 	"github.com/mnemcik/consigliere/internal/manifest"
 	syncpkg "github.com/mnemcik/consigliere/internal/sync"
@@ -81,7 +82,13 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	if !syncApply {
-		printSyncReport(report, cfg.Version, Version)
+		// The manifest is what sync itself records, so it is the accurate
+		// framework version even for a workspace .cg.json still disagrees with.
+		workspaceVer := mf.FrameworkVersion
+		if workspaceVer == "" {
+			workspaceVer = cfg.Version
+		}
+		printSyncReport(report, workspaceVer, Version)
 		pending, herr := extension.NormalizeHookCommands(dir, false)
 		if herr != nil {
 			return fmt.Errorf("checking hook command paths: %w", herr)
@@ -101,10 +108,11 @@ func runSync(cmd *cobra.Command, args []string) error {
 	printApplySummary(report, applied)
 
 	// The manifest now records this framework version; .cg.json must agree, or
-	// cg sync and cg status keep showing the old one (consigliere#122).
-	if cfg.Version != Version {
-		cfg.Version = Version
-		if serr := cfg.Save(dir); serr != nil {
+	// cg sync and cg status keep showing the old one (consigliere#122). Only the
+	// one value is patched: re-saving the whole config would drop any key this
+	// binary does not know. A dev build has no version worth recording.
+	if cfg.Version != Version && autoupdate.IsReleaseVersion(Version) {
+		if serr := workspace.SetVersion(dir, Version); serr != nil {
 			return fmt.Errorf("recording version in %s: %w", workspace.ConfigFile, serr)
 		}
 	}

@@ -3,6 +3,8 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/mnemcik/consigliere/internal/manifest"
@@ -421,40 +423,68 @@ func statusOf(r syncpkg.Report, id string) syncpkg.Status {
 }
 
 // consigliere#122: after cg sync --apply, .cg.json carries the framework
-// version the manifest records, so cg sync and cg status report it.
+// version the manifest records, so cg sync and cg status report it, and the
+// rest of .cg.json survives byte for byte, including keys this binary does not
+// model.
 func TestSyncApplyRecordsVersionInCgJSON(t *testing.T) {
+	dir := initForVersionTest(t)
+	origVersion := Version
+	Version = "1.25.0"
+	defer func() { Version = origVersion }()
+	cfgPath := filepath.Join(dir, workspace.ConfigFile)
+	before := readFile(t, cfgPath)
+
+	runSyncApply(t)
+
+	if got, want := readFile(t, cfgPath), strings.Replace(before, `"version": "1.0.0"`, `"version": "1.25.0"`, 1); got != want {
+		t.Errorf(".cg.json after sync\n%s\nwant only the version changed:\n%s", got, want)
+	}
+	if mf, err := manifest.Load(dir); err != nil || mf == nil || mf.FrameworkVersion != "1.25.0" {
+		t.Errorf("manifest version: %+v, %v", mf, err)
+	}
+}
+
+// A dev build has no release version, so it leaves .cg.json alone.
+func TestSyncApplyDevBuildLeavesCgJSONVersion(t *testing.T) {
+	dir := initForVersionTest(t)
+	origVersion := Version
+	Version = "dev"
+	defer func() { Version = origVersion }()
+
+	runSyncApply(t)
+
+	if cfg, err := workspace.Detect(dir); err != nil || cfg == nil || cfg.Version != "1.0.0" {
+		t.Errorf("dev build rewrote .cg.json version: %+v, %v", cfg, err)
+	}
+}
+
+// initForVersionTest initialises a workspace in a temp dir (and chdirs there),
+// sets its .cg.json version to 1.0.0 and adds a key Config does not model.
+func initForVersionTest(t *testing.T) string {
+	t.Helper()
 	dir := t.TempDir()
 	origDir, _ := os.Getwd()
-	defer chdir(t, origDir)
+	t.Cleanup(func() { chdir(t, origDir) })
 	chdir(t, dir)
 	forceInit = false
 	if err := runInit(nil, nil); err != nil {
 		t.Fatalf("init failed: %v", err)
 	}
-	cfg, err := workspace.Detect(dir)
-	if err != nil || cfg == nil {
-		t.Fatalf("Detect: %v", err)
-	}
-	cfg.Version = "1.0.0"
-	if err := cfg.Save(dir); err != nil {
+	cfgPath := filepath.Join(dir, workspace.ConfigFile)
+	cfg := readFile(t, cfgPath)
+	cfg = regexp.MustCompile(`"version": "[^"]*"`).ReplaceAllString(cfg, `"version": "1.0.0"`)
+	cfg = strings.Replace(cfg, `"type": "consigliere",`, `"type": "consigliere",`+"\n"+`  "futureBlock": {"keep": true},`, 1)
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	return dir
+}
 
+func runSyncApply(t *testing.T) {
+	t.Helper()
 	syncApply = true
 	defer func() { syncApply = false }()
 	if err := runSync(nil, nil); err != nil {
 		t.Fatalf("sync failed: %v", err)
-	}
-
-	after, err := workspace.Detect(dir)
-	if err != nil || after == nil {
-		t.Fatalf("Detect after sync: %v", err)
-	}
-	mf, err := manifest.Load(dir)
-	if err != nil || mf == nil {
-		t.Fatalf("manifest: %v", err)
-	}
-	if after.Version != Version || mf.FrameworkVersion != Version {
-		t.Errorf(".cg.json version %q, manifest %q, want both %q", after.Version, mf.FrameworkVersion, Version)
 	}
 }
