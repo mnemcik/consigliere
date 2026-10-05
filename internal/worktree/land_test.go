@@ -293,3 +293,85 @@ func TestLandAdvancesLandingRefWhenNotCheckedOut(t *testing.T) {
 		t.Errorf("local main = %s, want %s", got, want)
 	}
 }
+
+// An uncommitted edit that does not overlap the landed files would let git
+// fast-forward, but the checkout belongs to a session mid-edit: leave it.
+func TestLandLeavesUnrelatedDirtyMainCheckout(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	var log bytes.Buffer
+	wt, err := Create(ctx, "ff4", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	commitFile(t, ctx, wt, "landed.md", "new\n", "feature work")
+	before := headSHA(t, ctx, root)
+	if err := os.WriteFile(filepath.Join(root, "unrelated.md"), []byte("wip\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, ctx, root, "add", "unrelated.md")
+
+	if _, err := Land(ctx, landOpts(wt), &log); err != nil {
+		t.Fatalf("Land: %v\nlog: %s", err, log.String())
+	}
+	if got := headSHA(t, ctx, root); got != before {
+		t.Errorf("HEAD moved under a dirty checkout")
+	}
+	if !bytes.Contains(log.Bytes(), []byte("uncommitted changes")) {
+		t.Errorf("log does not say why:\n%s", log.String())
+	}
+}
+
+// Local commits on main that are not on origin: say it diverged, rather than
+// suggesting a pull --ff-only that would fail too.
+func TestLandReportsDivergedMainCheckout(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	var log bytes.Buffer
+	wt, err := Create(ctx, "ff5", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	mustGit(t, ctx, wt, "commit", "--allow-empty", "-m", "feature work")
+	mustGit(t, ctx, root, "commit", "--allow-empty", "-m", "local only")
+	before := headSHA(t, ctx, root)
+
+	if _, err := Land(ctx, landOpts(wt), &log); err != nil {
+		t.Fatalf("Land: %v\nlog: %s", err, log.String())
+	}
+	if got := headSHA(t, ctx, root); got != before {
+		t.Errorf("diverged main was moved")
+	}
+	if !bytes.Contains(log.Bytes(), []byte("commits that are not on origin/main")) {
+		t.Errorf("log does not report the divergence:\n%s", log.String())
+	}
+}
+
+// A worktree mid-rebase of main lists as detached. The branch must not be
+// moved underneath the rebase.
+func TestLandDoesNotMoveMainDuringARebase(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	mustGit(t, ctx, root, "commit", "--allow-empty", "-m", "second")
+	mustGit(t, ctx, root, "push", "--quiet", "origin", "main")
+	before := headSHA(t, ctx, root)
+	// Stop a rebase of main on an --exec step that fails.
+	if _, err := gitx.RunEnv(ctx, root, []string{"GIT_SEQUENCE_EDITOR=true"}, "rebase", "-i", "--exec", "false", "HEAD~1"); err == nil {
+		t.Fatal("expected the rebase to stop")
+	}
+	var log bytes.Buffer
+	wt, err := Create(ctx, "ff6", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	mustGit(t, ctx, wt, "commit", "--allow-empty", "-m", "feature work")
+
+	if _, err := Land(ctx, landOpts(wt), &log); err != nil {
+		t.Fatalf("Land: %v\nlog: %s", err, log.String())
+	}
+	got, err := gitx.RevParse(ctx, root, "refs/heads/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != before {
+		t.Errorf("main moved during a rebase: %s, want %s\nlog: %s", got, before, log.String())
+	}
+	mustGit(t, ctx, root, "rebase", "--abort")
+}
