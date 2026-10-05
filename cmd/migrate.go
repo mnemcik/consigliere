@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -48,18 +47,9 @@ It acts on the worktree you run it in, not the main checkout.`,
 
 func runMigrate(cmd *cobra.Command, _ []string) error {
 	cmd.SilenceUsage = true
-	cwd, err := os.Getwd()
+	root, err := workspaceRoot(cmd)
 	if err != nil {
 		return err
-	}
-	// The current worktree, deliberately not the git common root: a
-	// workspace-wide rewrite run from a session worktree must land there.
-	root := gitx.ShowToplevel(cmd.Context(), cwd)
-	if root == "" {
-		root, _, _ = workspace.FindRoot(cwd)
-	}
-	if root == "" {
-		return fmt.Errorf("not inside a Consigliere workspace")
 	}
 	if cfg, _ := workspace.Detect(root); cfg == nil {
 		return fmt.Errorf("%s is not a Consigliere workspace (no .cg.json)", root)

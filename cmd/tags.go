@@ -48,15 +48,24 @@ func runTags(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-// workspaceRoot resolves the workspace root from cwd (git common root, falling
-// back to the structural walk-up).
+// workspaceRoot resolves the workspace the command runs in: the current git
+// worktree's root when that is a workspace, else the nearest directory walking
+// up from cwd (a workspace in a subdirectory of its repo, or no git at all).
+//
+// It deliberately does not use the git common root. From a session worktree
+// that is the main worktree, so a command run there would read and write the
+// main checkout instead of the session's own files (consigliere#140). Session
+// state that genuinely belongs to the main worktree, the badge and the active
+// registry, resolves it separately in internal/session.
 func workspaceRoot(cmd *cobra.Command) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-	if root, cerr := gitx.CommonRoot(cmd.Context(), cwd); cerr == nil {
-		return root, nil
+	if top := gitx.ShowToplevel(cmd.Context(), cwd); top != "" {
+		if cfg, derr := workspace.Detect(top); derr == nil && cfg != nil {
+			return top, nil
+		}
 	}
 	root, _, _ := workspace.FindRoot(cwd)
 	if root == "" {
