@@ -227,7 +227,7 @@ For the full contract, why single-hypothesis debugging is the trap, and the exce
 <!-- cg:section:start=remote-sync -->
 ## Remote-Sync Check
 
-**Run `git fetch origin` before reading repo state to review, assess, or summarize, and `git pull --ff-only` if the current branch is behind.** Other concurrent sessions may land commits since your worktree was created; stale local state produces incorrect reviews. Fresh worktrees from `cg worktree create` start synced and `cg worktree land` handles push-time drift automatically — this rule is specifically about **read-time** freshness when you're about to inspect, review, or assess files.
+**Before reading repo state to review, assess, or summarize, make sure you are reading the latest landed work.** With an `origin` remote, run `git fetch origin` and `git pull --ff-only` if the current branch is behind. In a remote-free workspace (no `origin`; `cg worktree land` uses the `local` strategy), sessions land straight onto the local `main`, so read `main` rather than your worktree's branch base. Other concurrent sessions may land commits since your worktree was created; stale local state produces incorrect reviews. Fresh worktrees from `cg worktree create` start synced and `cg worktree land` handles land-time drift automatically — this rule is specifically about **read-time** freshness when you're about to inspect, review, or assess files.
 <!-- cg:section:end=remote-sync -->
 
 <!-- cg:section:start=shared-state-auth -->

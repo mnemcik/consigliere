@@ -21,6 +21,7 @@ var claudeFileHistory = map[string][]string{
 		"703ea036944ca37040ce9eb224ff3a1de2eb88aadd72cbd929156d9ea880e7b4",
 		"adc15ba33c42ddef752669b55f5c107d68c056090b3d54feb4cb6305641c6b25",
 		"df2f17f33d8404d2fe799f85372f4fb09abad8321638d1645ad74e2fdf3cc57b",
+		"ffdb15b897174134a24ea7e79fce8f96c62bc5872f3f7904b8953c85d70c2b69",
 	},
 	"workspace/.claude/hooks/external-repo-push-policy.sh": {
 		"967c5e7ce87b5f3d380b2121f0ca18c995edf1c6dcbac3faef074da7185493c3",
