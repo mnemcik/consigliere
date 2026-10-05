@@ -7,6 +7,7 @@ import (
 
 	"github.com/mnemcik/consigliere/internal/manifest"
 	syncpkg "github.com/mnemcik/consigliere/internal/sync"
+	"github.com/mnemcik/consigliere/internal/workspace"
 )
 
 // The .claude/ files follow the same reconcile contract as notes: an untouched
@@ -417,4 +418,43 @@ func statusOf(r syncpkg.Report, id string) syncpkg.Status {
 		}
 	}
 	return ""
+}
+
+// consigliere#122: after cg sync --apply, .cg.json carries the framework
+// version the manifest records, so cg sync and cg status report it.
+func TestSyncApplyRecordsVersionInCgJSON(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer chdir(t, origDir)
+	chdir(t, dir)
+	forceInit = false
+	if err := runInit(nil, nil); err != nil {
+		t.Fatalf("init failed: %v", err)
+	}
+	cfg, err := workspace.Detect(dir)
+	if err != nil || cfg == nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	cfg.Version = "1.0.0"
+	if err := cfg.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	syncApply = true
+	defer func() { syncApply = false }()
+	if err := runSync(nil, nil); err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+
+	after, err := workspace.Detect(dir)
+	if err != nil || after == nil {
+		t.Fatalf("Detect after sync: %v", err)
+	}
+	mf, err := manifest.Load(dir)
+	if err != nil || mf == nil {
+		t.Fatalf("manifest: %v", err)
+	}
+	if after.Version != Version || mf.FrameworkVersion != Version {
+		t.Errorf(".cg.json version %q, manifest %q, want both %q", after.Version, mf.FrameworkVersion, Version)
+	}
 }

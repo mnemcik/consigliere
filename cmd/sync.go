@@ -100,6 +100,15 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 	printApplySummary(report, applied)
 
+	// The manifest now records this framework version; .cg.json must agree, or
+	// cg sync and cg status keep showing the old one (consigliere#122).
+	if cfg.Version != Version {
+		cfg.Version = Version
+		if serr := cfg.Save(dir); serr != nil {
+			return fmt.Errorf("recording version in %s: %w", workspace.ConfigFile, serr)
+		}
+	}
+
 	normalized, herr := extension.NormalizeHookCommands(dir, true)
 	if herr != nil {
 		return fmt.Errorf("normalizing hook command paths: %w", herr)
