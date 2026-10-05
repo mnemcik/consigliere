@@ -62,3 +62,44 @@ func TestSetVersionRefusesWhenItCannotPatchSafely(t *testing.T) {
 		})
 	}
 }
+
+// A symlinked .cg.json is refused, and its target is not written.
+func TestSetVersionRefusesSymlinkedConfig(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(t.TempDir(), "elsewhere.json")
+	in := `{"type": "consigliere", "version": "1.0.0"}`
+	if err := os.WriteFile(target, []byte(in), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(dir, ConfigFile)); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := SetVersion(dir, "1.25.0"); err == nil {
+		t.Error("want a refusal for a symlinked .cg.json")
+	}
+	if got, _ := os.ReadFile(target); string(got) != in {
+		t.Errorf("symlink target was written: %s", got)
+	}
+}
+
+// The patched file keeps the original's permissions and leaves no temp file.
+func TestSetVersionKeepsModeAndLeavesNoTempFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ConfigFile)
+	if err := os.WriteFile(path, []byte(`{"version": "1.0.0"}`), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o640); err != nil { //nolint:gosec // not 0600 on purpose: CreateTemp defaults to 0600, so only another mode proves it is preserved
+		t.Fatal(err)
+	}
+	if err := SetVersion(dir, "1.25.0"); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o640 {
+		t.Errorf("mode = %v, %v; want 0640", info.Mode().Perm(), err)
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 {
+		t.Errorf("leftover files: %v", entries)
+	}
+}

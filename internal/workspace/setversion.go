@@ -21,6 +21,14 @@ import (
 // the file's key order, formatting and escaping, so the diff is one line.
 func SetVersion(dir, version string) error {
 	path := filepath.Join(dir, ConfigFile)
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	// A symlinked .cg.json would have the write land outside the workspace.
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%s is a symlink; not writing through it", ConfigFile)
+	}
 	data, err := os.ReadFile(path) //nolint:gosec // ConfigFile is a fixed name under dir
 	if err != nil {
 		return err
@@ -29,11 +37,41 @@ func SetVersion(dir, version string) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", ConfigFile, err)
 	}
-	info, err := os.Stat(path)
+	return replaceFile(path, out, info.Mode().Perm())
+}
+
+// replaceFile writes data next to path and renames it into place, so a failed
+// write leaves the original intact instead of truncated. The rename replaces
+// the directory entry itself and never follows a link.
+func replaceFile(path string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, out, info.Mode().Perm()) //nolint:gosec // ConfigFile is a fixed name under dir
+	name := tmp.Name()
+	cleanup := func(e error) error {
+		_ = tmp.Close()
+		_ = os.Remove(name)
+		return e
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return cleanup(err)
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		return cleanup(err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return cleanup(err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(name)
+		return err
+	}
+	if err := os.Rename(name, path); err != nil {
+		_ = os.Remove(name)
+		return err
+	}
+	return nil
 }
 
 // setTopLevelString replaces the value of key in the top-level JSON object
