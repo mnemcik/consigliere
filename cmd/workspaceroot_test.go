@@ -49,6 +49,9 @@ func runTagsIn(t *testing.T, dir string) string {
 }
 
 func TestTagsReadsTheCurrentWorktree(t *testing.T) {
+	if !gitx.Available() {
+		t.Skip("git not available")
+	}
 	repo := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere"}`)
 	wt := addWorktree(t, repo)
 	writeFile(t, wt, "areas/only-here.md", "---\ntags: [session-only]\n---\n\n# Only Here\n")
@@ -64,6 +67,9 @@ func TestTagsReadsTheCurrentWorktree(t *testing.T) {
 // A workspace in a subdirectory of its repo is found by walking up from cwd,
 // since the git toplevel carries no .cg.json.
 func TestWorkspaceRootInRepoSubdirectory(t *testing.T) {
+	if !gitx.Available() {
+		t.Skip("git not available")
+	}
 	repo := newGitRepo(t, filepath.Join(t.TempDir(), "repo"), "kb", `{"type":"consigliere"}`)
 	ws := filepath.Join(repo, "kb")
 	writeFile(t, ws, "areas/a.md", "---\ntags: [nested]\n---\n\n# A\n")
@@ -72,5 +78,40 @@ func TestWorkspaceRootInRepoSubdirectory(t *testing.T) {
 	}
 	if out := runTagsIn(t, filepath.Join(ws, "notes")); !strings.Contains(out, "nested") {
 		t.Errorf("workspace in a subdirectory not found:\n%s", out)
+	}
+}
+
+// A .cg.json that does not parse is reported as such, not as "not inside a
+// Consigliere workspace", which would send the user looking in the wrong place.
+func TestWorkspaceRootReportsMalformedConfig(t *testing.T) {
+	if !gitx.Available() {
+		t.Skip("git not available")
+	}
+	repo := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere",`)
+	t.Chdir(repo)
+	_, err := workspaceRoot(rootCmd)
+	if err == nil || strings.Contains(err.Error(), "not inside") {
+		t.Errorf("want the parse error, got %v", err)
+	}
+}
+
+// cg share deliberately reads the main checkout, even from a session worktree:
+// a publish stamps the commit it read, and a session commit may never land.
+func TestShareRootIsTheMainCheckoutFromAWorktree(t *testing.T) {
+	if !gitx.Available() {
+		t.Skip("git not available")
+	}
+	repo := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere"}`)
+	wt := addWorktree(t, repo)
+	t.Chdir(wt)
+	got, err := landedWorkspaceRoot(rootCmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != repo {
+		t.Errorf("share root = %s, want the main checkout %s", got, repo)
+	}
+	if cur, _ := workspaceRoot(rootCmd); cur != wt {
+		t.Errorf("workspaceRoot = %s, want the worktree %s", cur, wt)
 	}
 }

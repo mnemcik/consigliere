@@ -56,18 +56,26 @@ func runTags(cmd *cobra.Command, _ []string) error {
 // that is the main worktree, so a command run there would read and write the
 // main checkout instead of the session's own files (consigliere#140). Session
 // state that genuinely belongs to the main worktree, the badge and the active
-// registry, resolves it separately in internal/session.
+// registry, resolves it separately in internal/session; cg share uses
+// landedWorkspaceRoot.
 func workspaceRoot(cmd *cobra.Command) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
 	if top := gitx.ShowToplevel(cmd.Context(), cwd); top != "" {
-		if cfg, derr := workspace.Detect(top); derr == nil && cfg != nil {
+		cfg, derr := workspace.Detect(top)
+		if derr != nil {
+			return "", derr // a .cg.json that does not parse: say so, not "not a workspace"
+		}
+		if cfg != nil {
 			return top, nil
 		}
 	}
-	root, _, _ := workspace.FindRoot(cwd)
+	root, _, ferr := workspace.FindRoot(cwd)
+	if ferr != nil {
+		return "", ferr
+	}
 	if root == "" {
 		return "", fmt.Errorf("not inside a Consigliere workspace")
 	}

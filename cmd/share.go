@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -128,7 +129,7 @@ type shareEnv struct {
 }
 
 func loadShareEnv(cmd *cobra.Command) (*shareEnv, error) {
-	root, err := workspaceRoot(cmd)
+	root, err := landedWorkspaceRoot(cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -307,6 +308,28 @@ func indexedSlugs(indexPath string) (map[string]bool, error) {
 		slugs[p.Folder] = true
 	}
 	return slugs, nil
+}
+
+// landedWorkspaceRoot resolves the main checkout, even from a session
+// worktree. Unlike the other commands, sharing must not act on the worktree it
+// runs in: a publish stamps the commit it read, and a session branch's commit
+// may never reach the landing branch (land rebases), which would leave
+// recipients pointing at a commit the owner cannot diff against later. So
+// share reads landed content only, as it did before consigliere#140 moved the
+// other commands to the current worktree.
+func landedWorkspaceRoot(cmd *cobra.Command) (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	if root, cerr := gitx.CommonRoot(cmd.Context(), cwd); cerr == nil {
+		if cfg, derr := workspace.Detect(root); derr != nil {
+			return "", derr
+		} else if cfg != nil {
+			return root, nil
+		}
+	}
+	return workspaceRoot(cmd)
 }
 
 // rejectOwnRepo refuses a share block whose audience points at the
