@@ -318,18 +318,46 @@ func indexedSlugs(indexPath string) (map[string]bool, error) {
 // share reads landed content only, as it did before consigliere#140 moved the
 // other commands to the current worktree.
 func landedWorkspaceRoot(cmd *cobra.Command) (string, error) {
+	// Resolve the workspace in the worktree we run in, then find the same
+	// workspace in the main checkout: same path relative to the repo root, so
+	// a workspace in a subdirectory of its repo maps correctly too.
+	current, err := workspaceRoot(cmd)
+	if err != nil {
+		return "", err
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-	if root, cerr := gitx.CommonRoot(cmd.Context(), cwd); cerr == nil {
-		if cfg, derr := workspace.Detect(root); derr != nil {
-			return "", derr
-		} else if cfg != nil {
-			return root, nil
-		}
+	ctx := cmd.Context()
+	top := gitx.ShowToplevel(ctx, cwd)
+	main, cerr := gitx.CommonRoot(ctx, cwd)
+	if top == "" || cerr != nil {
+		return current, nil // not in git: there is only one checkout
 	}
-	return workspaceRoot(cmd)
+	rel, rerr := filepath.Rel(resolved(top), resolved(current))
+	if rerr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return current, nil // the workspace is outside this repo
+	}
+	candidate := filepath.Join(main, rel)
+	cfg, derr := workspace.Detect(candidate)
+	if derr != nil {
+		return "", fmt.Errorf("%s: %w", filepath.Join(candidate, workspace.ConfigFile), derr)
+	}
+	if cfg == nil {
+		return current, nil // the main checkout does not have this workspace
+	}
+	return candidate, nil
+}
+
+// resolved returns p with symlinks resolved, or p unchanged if that fails, so
+// paths from git (resolved) and from cwd (maybe not, e.g. /tmp on macOS)
+// compare.
+func resolved(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return p
 }
 
 // rejectOwnRepo refuses a share block whose audience points at the

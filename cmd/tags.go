@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -66,7 +67,8 @@ func workspaceRoot(cmd *cobra.Command) (string, error) {
 	if top := gitx.ShowToplevel(cmd.Context(), cwd); top != "" {
 		cfg, derr := workspace.Detect(top)
 		if derr != nil {
-			return "", derr // a .cg.json that does not parse: say so, not "not a workspace"
+			// A .cg.json that does not parse: say which, not "not a workspace".
+			return "", fmt.Errorf("%s: %w", filepath.Join(top, workspace.ConfigFile), derr)
 		}
 		if cfg != nil {
 			return top, nil

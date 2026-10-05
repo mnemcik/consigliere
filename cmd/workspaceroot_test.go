@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/mnemcik/consigliere/internal/gitx"
 	"github.com/mnemcik/consigliere/internal/workspace"
 )
@@ -81,17 +83,25 @@ func TestWorkspaceRootInRepoSubdirectory(t *testing.T) {
 	}
 }
 
-// A .cg.json that does not parse is reported as such, not as "not inside a
-// Consigliere workspace", which would send the user looking in the wrong place.
+// cmdIn is a bare command carrying the test's context, so a resolver can be
+// called directly without depending on an earlier test having run rootCmd.
+func cmdIn(t *testing.T) *cobra.Command {
+	c := &cobra.Command{}
+	c.SetContext(t.Context())
+	return c
+}
+
+// A .cg.json that does not parse is reported as such, naming the file, not as
+// "not inside a Consigliere workspace".
 func TestWorkspaceRootReportsMalformedConfig(t *testing.T) {
 	if !gitx.Available() {
 		t.Skip("git not available")
 	}
 	repo := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere",`)
 	t.Chdir(repo)
-	_, err := workspaceRoot(rootCmd)
-	if err == nil || strings.Contains(err.Error(), "not inside") {
-		t.Errorf("want the parse error, got %v", err)
+	_, err := workspaceRoot(cmdIn(t))
+	if err == nil || strings.Contains(err.Error(), "not inside") || !strings.Contains(err.Error(), ".cg.json") {
+		t.Errorf("want the parse error naming .cg.json, got %v", err)
 	}
 }
 
@@ -104,14 +114,50 @@ func TestShareRootIsTheMainCheckoutFromAWorktree(t *testing.T) {
 	repo := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere"}`)
 	wt := addWorktree(t, repo)
 	t.Chdir(wt)
-	got, err := landedWorkspaceRoot(rootCmd)
+	got, err := landedWorkspaceRoot(cmdIn(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != repo {
 		t.Errorf("share root = %s, want the main checkout %s", got, repo)
 	}
-	if cur, _ := workspaceRoot(rootCmd); cur != wt {
+	if cur, _ := workspaceRoot(cmdIn(t)); cur != wt {
 		t.Errorf("workspaceRoot = %s, want the worktree %s", cur, wt)
+	}
+}
+
+// The same holds for a workspace in a subdirectory of its repo: the main
+// checkout's copy of that subdirectory, not the worktree's.
+func TestShareRootMapsASubdirectoryWorkspace(t *testing.T) {
+	if !gitx.Available() {
+		t.Skip("git not available")
+	}
+	repo := newGitRepo(t, filepath.Join(t.TempDir(), "repo"), "kb", `{"type":"consigliere"}`)
+	wt := addWorktree(t, repo)
+	t.Chdir(filepath.Join(wt, "kb"))
+	got, err := landedWorkspaceRoot(cmdIn(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(repo, "kb"); got != want {
+		t.Errorf("share root = %s, want %s", got, want)
+	}
+}
+
+// cg share is wired to the main checkout: loadShareEnv, which every share
+// subcommand goes through, resolves it from a worktree.
+func TestLoadShareEnvUsesTheMainCheckout(t *testing.T) {
+	if !gitx.Available() {
+		t.Skip("git not available")
+	}
+	repo := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere"}`)
+	wt := addWorktree(t, repo)
+	t.Chdir(wt)
+	env, err := loadShareEnv(cmdIn(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.root != repo {
+		t.Errorf("share env root = %s, want the main checkout %s", env.root, repo)
 	}
 }
