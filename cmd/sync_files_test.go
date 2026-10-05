@@ -488,3 +488,23 @@ func runSyncApply(t *testing.T) {
 		t.Fatalf("sync failed: %v", err)
 	}
 }
+
+// A .cg.json whose version the patch cannot handle warns once and lets the
+// already-written sync stand, instead of failing every run from then on.
+func TestSyncApplyWarnsWhenVersionIsNotAString(t *testing.T) {
+	dir := initForVersionTest(t)
+	origVersion := Version
+	Version = "1.25.0"
+	defer func() { Version = origVersion }()
+	cfgPath := filepath.Join(dir, workspace.ConfigFile)
+	cfg := strings.Replace(readFile(t, cfgPath), `"version": "1.0.0"`, `"version": null`, 1)
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runSyncApply(t) // fails the test if runSync returns an error
+
+	if mf, err := manifest.Load(dir); err != nil || mf == nil || mf.FrameworkVersion != "1.25.0" {
+		t.Errorf("sync did not complete: %+v, %v", mf, err)
+	}
+}

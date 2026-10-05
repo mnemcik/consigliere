@@ -45,13 +45,15 @@ func setTopLevelString(data []byte, key, val string) ([]byte, error) {
 	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
 		return nil, errors.New("not a JSON object")
 	}
+	found := false
+	var start, end int64
 	for dec.More() {
 		tok, err := dec.Token()
 		if err != nil {
 			return nil, err
 		}
 		name, _ := tok.(string)
-		start := dec.InputOffset() // just after the key
+		keyEnd := dec.InputOffset() // just after the key
 		var raw json.RawMessage
 		if err := dec.Decode(&raw); err != nil {
 			return nil, err
@@ -59,26 +61,32 @@ func setTopLevelString(data []byte, key, val string) ([]byte, error) {
 		if name != key {
 			continue
 		}
-		end := dec.InputOffset() // just after the value
+		// encoding/json keeps the last of duplicate keys, so patching one of
+		// several would leave the value Detect reads unchanged.
+		if found {
+			return nil, fmt.Errorf("duplicate top-level %q keys", key)
+		}
 		if len(raw) == 0 || raw[0] != '"' {
 			return nil, fmt.Errorf("%q is not a string", key)
 		}
-		// The span holds `: "old"` plus whatever whitespace precedes the value;
-		// keep everything up to the opening quote.
-		span := data[start:end]
-		q := bytes.IndexByte(span, '"')
-		enc, err := json.Marshal(val)
-		if err != nil {
-			return nil, err
-		}
-		out := make([]byte, 0, len(data)+len(enc))
-		out = append(out, data[:start+int64(q)]...)
-		out = append(out, enc...)
-		out = append(out, data[end:]...)
-		return out, nil
+		found, start, end = true, keyEnd, dec.InputOffset()
 	}
 	if _, err := dec.Token(); err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
-	return nil, fmt.Errorf("no top-level %q key", key)
+	if !found {
+		return nil, fmt.Errorf("no top-level %q key", key)
+	}
+	// The span holds `: "old"` plus whatever whitespace precedes the value;
+	// keep everything up to the opening quote.
+	q := bytes.IndexByte(data[start:end], '"')
+	enc, err := json.Marshal(val)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]byte, 0, len(data)+len(enc))
+	out = append(out, data[:start+int64(q)]...)
+	out = append(out, enc...)
+	out = append(out, data[end:]...)
+	return out, nil
 }

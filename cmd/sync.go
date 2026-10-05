@@ -111,9 +111,13 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// cg sync and cg status keep showing the old one (consigliere#122). Only the
 	// one value is patched: re-saving the whole config would drop any key this
 	// binary does not know. A dev build has no version worth recording.
+	// The sync itself is already written by now, so a .cg.json the patch cannot
+	// handle (a version that is null or missing) is a warning, not a failure
+	// that would repeat on every run.
 	if cfg.Version != Version && autoupdate.IsReleaseVersion(Version) {
 		if serr := workspace.SetVersion(dir, Version); serr != nil {
-			return fmt.Errorf("recording version in %s: %w", workspace.ConfigFile, serr)
+			fmt.Fprintf(os.Stderr, "warning: could not record version %s in %s (%v); set \"version\" there by hand\n",
+				Version, workspace.ConfigFile, serr)
 		}
 	}
 

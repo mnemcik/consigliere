@@ -45,6 +45,8 @@ func TestSetVersionRefusesWhenItCannotPatchSafely(t *testing.T) {
 		"not string": `{"type": "consigliere", "version": 3}`,
 		"not object": `["version"]`,
 		"broken":     `{"type": "consigliere", "version": "1`,
+		"null":       `{"type": "consigliere", "version": null}`,
+		"duplicate":  `{"version": "1.0.0", "type": "consigliere", "version": "1.1.0"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
