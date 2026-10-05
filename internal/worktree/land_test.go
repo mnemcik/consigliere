@@ -213,3 +213,83 @@ func TestLandTargetSHANotReachable(t *testing.T) {
 		t.Fatalf("expected ExitAssertFail for unreachable target SHA, got %v", err)
 	}
 }
+
+// consigliere#146: after a land, the checkout holding the landing branch (the
+// main worktree here) is at the landed commit, not left behind origin.
+func TestLandFastForwardsMainCheckout(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	var log bytes.Buffer
+	wt, err := Create(ctx, "ff1", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	commitFile(t, ctx, wt, "landed.md", "new\n", "feature work")
+	want := headSHA(t, ctx, wt)
+
+	if _, err := Land(ctx, landOpts(wt), &log); err != nil {
+		t.Fatalf("Land: %v\nlog: %s", err, log.String())
+	}
+	if got := headSHA(t, ctx, root); got != want {
+		t.Errorf("main checkout HEAD = %s, want the landed %s\nlog: %s", got, want, log.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "landed.md")); err != nil {
+		t.Errorf("landed file not in the main checkout: %v", err)
+	}
+}
+
+// Another session's uncommitted edit to a file the land touches blocks the
+// fast-forward. The edit must survive, the land must still succeed, and the
+// log must say the checkout was not updated.
+func TestLandLeavesDirtyMainCheckoutAndWarns(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	commitFile(t, ctx, root, "shared.md", "base\n", "shared")
+	mustGit(t, ctx, root, "push", "--quiet", "origin", "main")
+	var log bytes.Buffer
+	wt, err := Create(ctx, "ff2", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	commitFile(t, ctx, wt, "shared.md", "from the session\n", "session edit")
+	before := headSHA(t, ctx, root)
+	if err := os.WriteFile(filepath.Join(root, "shared.md"), []byte("uncommitted in main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Land(ctx, landOpts(wt), &log); err != nil {
+		t.Fatalf("Land must still succeed: %v\nlog: %s", err, log.String())
+	}
+	if got, _ := os.ReadFile(filepath.Join(root, "shared.md")); string(got) != "uncommitted in main\n" {
+		t.Errorf("uncommitted edit in main was overwritten: %q", got)
+	}
+	if got := headSHA(t, ctx, root); got != before {
+		t.Errorf("main checkout moved despite the conflicting edit")
+	}
+	if !bytes.Contains(log.Bytes(), []byte("was not updated")) {
+		t.Errorf("no warning in the log:\n%s", log.String())
+	}
+}
+
+// With the landing branch checked out nowhere, the local branch ref still
+// advances, so the next checkout of it starts current.
+func TestLandAdvancesLandingRefWhenNotCheckedOut(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	mustGit(t, ctx, root, "checkout", "--quiet", "--detach")
+	var log bytes.Buffer
+	wt, err := Create(ctx, "ff3", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	mustGit(t, ctx, wt, "commit", "--allow-empty", "-m", "feature work")
+	want := headSHA(t, ctx, wt)
+
+	if _, err := Land(ctx, landOpts(wt), &log); err != nil {
+		t.Fatalf("Land: %v\nlog: %s", err, log.String())
+	}
+	got, err := gitx.RevParse(ctx, root, "refs/heads/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Errorf("local main = %s, want %s", got, want)
+	}
+}

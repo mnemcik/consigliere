@@ -205,7 +205,55 @@ func landDirect(ctx context.Context, dir, branch, landingBranch string, maxRetri
 		return LandResult{}, err
 	}
 	logf("assertion passed: %s is on %s\n", landed, landingRef)
+	syncLandingCheckout(ctx, dir, landingBranch, logf)
 	return LandResult{Strategy: workspace.StrategyDirectToMain, SHA: landed}, nil
+}
+
+// syncLandingCheckout brings the local landing branch up to the commit just
+// pushed. The push moves only origin/<landing>; without this the checkout that
+// holds the branch, usually the main worktree, silently falls a commit further
+// behind with every land, and anything reading files there reads stale ones
+// (consigliere#146).
+//
+// It only ever fast-forwards. `git merge --ff-only` refuses to overwrite
+// uncommitted changes, so another session's work in that checkout is safe; in
+// that case, or any other failure, the land has still succeeded, so this warns
+// rather than failing it.
+func syncLandingCheckout(ctx context.Context, dir, landingBranch string, logf func(string, ...any)) {
+	landingRef := "origin/" + landingBranch
+	trees, err := gitx.WorktreeList(ctx, dir)
+	if err != nil {
+		logf("note: could not list worktrees to update %s: %v\n", landingBranch, err)
+		return
+	}
+	for _, w := range trees {
+		if w.Branch != landingBranch {
+			continue
+		}
+		if err := gitx.MergeFFOnly(ctx, w.Path, landingRef); err != nil {
+			logf("note: %s (%s) is behind %s and was not updated: %v\n  run 'git pull --ff-only' there before reading its files\n",
+				w.Path, landingBranch, landingRef, firstLine(err))
+			return
+		}
+		logf("updated %s to %s\n", w.Path, landingRef)
+		return
+	}
+	// Checked out nowhere: move the branch ref itself, if that is a fast-forward.
+	ref := "refs/heads/" + landingBranch
+	if !gitx.RefExists(ctx, dir, ref) || !gitx.IsAncestor(ctx, dir, ref, landingRef) {
+		return
+	}
+	if _, err := gitx.Run(ctx, dir, "update-ref", ref, landingRef); err != nil {
+		logf("note: could not update %s to %s: %v\n", landingBranch, landingRef, firstLine(err))
+	}
+}
+
+func firstLine(err error) string {
+	msg := strings.TrimSpace(err.Error())
+	if i := strings.IndexByte(msg, '\n'); i >= 0 {
+		return msg[:i]
+	}
+	return msg
 }
 
 func landPR(ctx context.Context, dir, branch, landingBranch string, logf func(string, ...any)) (LandResult, error) {
