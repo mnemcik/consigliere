@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/mnemcik/consigliere/internal/extension"
 	"github.com/mnemcik/consigliere/internal/session"
 )
 
@@ -299,16 +300,32 @@ func TestSessionEndReleasesCleanClaimsSilently(t *testing.T) {
 }
 
 // A fresh clone carries the contributed git-hook scripts but not the
-// dispatcher in .git/hooks; the session-start command installs it.
-func TestSessionPullLatestInstallsGitHookDispatcher(t *testing.T) {
+// dispatcher in .git/hooks. Session start installs it for a script that
+// matches an installed extension's machine-local clone, and for one that does
+// not, installs nothing and says so.
+func TestSessionPullLatestGitHookTrust(t *testing.T) {
 	clearSessionEnv(t)
-	repo := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere"}`)
-	writeFile(t, repo, ".cg/git-hooks/post-commit.d/demo-x.sh", "#!/bin/sh\nexit 0\n")
-	if out, err := runSession(t, repo, "{}", "pull-latest"); err != nil {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	script := "#!/bin/sh\nexit 0\n"
+	clone := extension.CloneDir("demo")
+	writeFile(t, clone, "cg-extension.json", `{"manifest":1,"name":"demo","version":"1.0.0","description":"d","contributes":{"git-hooks":[{"hook":"post-commit","script":"x.sh"}]}}`)
+	writeFile(t, clone, "x.sh", script)
+
+	repo := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere","extensions":[{"name":"demo","version":"1.0.0","source":"direct","repo":"r"}]}`)
+	writeFile(t, repo, ".cg/git-hooks/post-commit.d/demo-x.sh", script)
+	writeFile(t, repo, ".cg/git-hooks/post-merge.d/stranger.sh", script)
+	out, err := runSession(t, repo, "{}", "pull-latest")
+	if err != nil {
 		t.Fatalf("pull-latest: %v\n%s", err, out)
 	}
 	b, err := os.ReadFile(filepath.Join(repo, ".git", "hooks", "post-commit"))
 	if err != nil || !strings.Contains(string(b), "cg-git-hook-dispatcher") {
-		t.Errorf("dispatcher not installed: %v %q", err, b)
+		t.Errorf("dispatcher not installed for the approved script: %v %q", err, b)
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".git", "hooks", "post-merge")); !os.IsNotExist(err) {
+		t.Errorf("dispatcher installed for an unapproved script: %v", err)
+	}
+	if !strings.Contains(out, "stranger.sh") {
+		t.Errorf("unapproved script not reported: %q", out)
 	}
 }

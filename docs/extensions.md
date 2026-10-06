@@ -167,17 +167,33 @@ forbids cross-extension dependencies (declare none).
    `pre-commit`, `prepare-commit-msg`, `commit-msg`, `post-commit`,
    `post-checkout`, `post-merge`, `post-rewrite`, `pre-push` or `pre-rebase`.
    What runs the scripts is a cg dispatcher at `.git/hooks/<hook>`, which
-   gives each script the hook's arguments and stdin and exits non-zero if any
-   script did. `.git/hooks` is not versioned, so cg installs or removes
-   dispatchers to match the scripts on `cg extension install|update|remove`,
-   `cg init`, `cg sync --apply` and every session start (`cg session
-   pull-latest`) — a fresh clone gets its dispatchers the first time one of
-   those runs. The dispatcher lives in the shared git dir, so commits in every
-   worktree run it, and it reads the scripts from the main worktree.
+   gives each script the hook's arguments and stdin (a script without the
+   execute bit runs through `sh`) and exits non-zero if any script did,
+   which only matters for `pre-*` hooks. The dispatcher lives in the shared
+   git dir, so commits in every worktree run it, and it reads the scripts from
+   the main worktree: a script added in a session worktree takes effect once
+   it has landed.
+   - **Trust.** Git never versions hooks, so that a pull or a checkout cannot
+     make code run. Versioned scripts would undo that, so a script runs only
+     when it is *approved*: its content must match the same script in the
+     machine-local clone of an extension recorded in `.cg.json` — code the user
+     installed on this machine. cg writes the approved scripts (path and git
+     blob id) to `cg-hooks.allow` in the git dir, which is not versioned. The
+     dispatcher runs only listed scripts whose content still matches, and
+     warns about any other; cg reports unapproved scripts too. A script that
+     arrives by pull or checkout therefore does not run until `cg extension
+     install` or `update` approves it, and on a new machine scripts start
+     running once `cg init` or `cg extension install` has fetched the clones.
+   - **Reconciling.** `.git/hooks` is not versioned, so cg installs or removes
+     dispatchers to match the approved scripts on `cg extension
+     install|update|remove`, `cg init`, `cg sync --apply` and every session
+     start (`cg session pull-latest`, which reports problems as a session
+     message).
    - A hook file that existed before cg is moved to `<hook>.pre-cg`, runs
-     first, and is restored when the last script for that hook goes.
+     first, and is restored when the last approved script for that hook goes.
    - When `core.hooksPath` is set, cg installs nothing and warns, rather than
      write into a directory that may be versioned or shared.
+   - Requires git 2.31 or later (`rev-parse --path-format`).
 
 ## `cg extension` subcommand suite
 

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -374,7 +375,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return rerr
 	}
 	created = append(created, reinstalled...)
-	ensureGitHooks(os.Stderr, dir)
+	printGitHookWarnings(os.Stderr, ensureGitHooks(context.Background(), dir))
 
 	// Summary
 	fmt.Println()

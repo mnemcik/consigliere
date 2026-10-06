@@ -126,7 +126,7 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := reapply(cmd.ErrOrStderr(), root, filepath.Join(dest, path), m); err != nil {
+	if err := reapply(root, filepath.Join(dest, path), m); err != nil {
 		return err
 	}
 	cfg.UpsertExtension(&workspace.ExtensionRef{
@@ -143,6 +143,7 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	printInstallSummary(cmd, m, dest, source, regAlias, repo, path)
+	printGitHookWarnings(cmd.ErrOrStderr(), ensureGitHooks(cmd.Context(), root))
 	return nil
 }
 
@@ -151,7 +152,7 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 // that the new manifest drops. It applies the NEW manifest first: Apply
 // self-rolls-back on failure, so a failed reinstall/update leaves the prior
 // install intact rather than half-removed.
-func reapply(warn io.Writer, root, manifestDir string, m *extension.Manifest) error {
+func reapply(root, manifestDir string, m *extension.Manifest) error {
 	old, err := extension.LoadLedger(root, m.Name)
 	if err != nil {
 		return fmt.Errorf("reading ledger for %q: %w", m.Name, err)
@@ -168,22 +169,42 @@ func reapply(warn io.Writer, root, manifestDir string, m *extension.Manifest) er
 	if err := ledger.Save(root); err != nil {
 		return fmt.Errorf("writing ledger for %q: %w", m.Name, err)
 	}
-	ensureGitHooks(warn, root)
 	return nil
 }
 
-// ensureGitHooks installs or removes the git-hook dispatchers to match the
-// scripts extensions contributed (see package githooks). A failure is a
-// warning: the contributions themselves are applied, and the next cg run that
-// ensures hooks will try again.
-func ensureGitHooks(warn io.Writer, root string) {
-	err := githooks.Ensure(context.Background(), root)
+// ensureGitHooks reconciles the git-hook dispatchers of the repository
+// containing dir with the scripts extensions contributed, approving only those
+// that match an installed extension's machine-local clone (see package
+// githooks), and returns what the user should be told. Callers run it after
+// .cg.json records the extensions, since that is what approval reads.
+func ensureGitHooks(ctx context.Context, dir string) []string {
+	root, err := githooks.MainWorktree(ctx, dir)
+	if err != nil {
+		return nil
+	}
+	var refs []workspace.ExtensionRef
+	if cfg, derr := workspace.Detect(root); derr == nil && cfg != nil {
+		refs = cfg.Extensions
+	}
+	res, err := githooks.Ensure(ctx, root, extension.TrustedGitHookScripts(ctx, root, refs))
+	var msgs []string
 	switch {
 	case err == nil:
 	case errors.Is(err, githooks.ErrHooksPath):
-		_, _ = fmt.Fprintf(warn, "warning: core.hooksPath is set, so cg did not install a dispatcher for the git-hook scripts in %s; unset core.hooksPath, or run those scripts from your own hooks\n", githooks.DirRel)
+		msgs = append(msgs, fmt.Sprintf("core.hooksPath is set, so cg did not install a dispatcher for the git-hook scripts in %s; unset core.hooksPath, or run those scripts from your own hooks", githooks.DirRel))
 	default:
-		_, _ = fmt.Fprintf(warn, "warning: git hooks: %v\n", err)
+		msgs = append(msgs, fmt.Sprintf("git hooks: %v", err))
+	}
+	if len(res.Unapproved) > 0 {
+		msgs = append(msgs, fmt.Sprintf("git-hook scripts that will not run, because they do not match an extension installed on this machine: %s; cg extension install or update for the extension that ships them approves them", strings.Join(res.Unapproved, ", ")))
+	}
+	return msgs
+}
+
+// printGitHookWarnings writes ensureGitHooks messages as warnings.
+func printGitHookWarnings(w io.Writer, msgs []string) {
+	for _, m := range msgs {
+		_, _ = fmt.Fprintf(w, "warning: %s\n", m)
 	}
 }
 
@@ -208,7 +229,7 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		if err != nil {
 			return done, err
 		}
-		if err := reapply(cmd.ErrOrStderr(), root, filepath.Join(dest, path), m); err != nil {
+		if err := reapply(root, filepath.Join(dest, path), m); err != nil {
 			return done, err
 		}
 		done = append(done, fmt.Sprintf("extension %q v%s (re-installed)", m.Name, m.Version))
@@ -416,6 +437,7 @@ func printInstallSummary(cmd *cobra.Command, m *extension.Manifest, dest, source
 	add(len(c.ClaudeMDSections), "CLAUDE.md section(s)")
 	add(len(c.Notes), "note(s)")
 	add(len(c.Hooks), "hook(s)")
+	add(len(c.GitHooks), "git hook script(s)")
 	add(len(c.Subcommands), "subcommand(s)")
 	add(len(c.Templates), "template(s)")
 	if len(declared) == 0 {
@@ -450,13 +472,13 @@ func runExtRemove(cmd *cobra.Command, args []string) error {
 		if rmErr := os.Remove(extension.LedgerPath(root, name)); rmErr != nil && !os.IsNotExist(rmErr) {
 			return fmt.Errorf("removing ledger for %q: %w", name, rmErr)
 		}
-		ensureGitHooks(cmd.ErrOrStderr(), root)
 	}
 
 	cfg.RemoveExtension(name)
 	if err := cfg.Save(root); err != nil {
 		return fmt.Errorf("updating %s: %w", workspace.ConfigFile, err)
 	}
+	printGitHookWarnings(cmd.ErrOrStderr(), ensureGitHooks(cmd.Context(), root))
 
 	out := cmd.OutOrStdout()
 	_, _ = fmt.Fprintf(out, "Removed %s from this workspace\n", name)
@@ -500,7 +522,7 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 	out := cmd.OutOrStdout()
 	for i := range targets {
 		old := targets[i].Version
-		newVer, err := updateOne(cmd.Context(), cmd.ErrOrStderr(), root, targets[i].Name, targets[i].Path)
+		newVer, err := updateOne(cmd.Context(), root, targets[i].Name, targets[i].Path)
 		if err != nil {
 			return err
 		}
@@ -518,6 +540,7 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 			_, _ = fmt.Fprintf(out, "%s: v%s → v%s\n", ref.Name, old, newVer)
 		}
 	}
+	printGitHookWarnings(cmd.ErrOrStderr(), ensureGitHooks(cmd.Context(), root))
 	return nil
 }
 
@@ -532,7 +555,7 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 // with siblings, so whole-repo tags don't map to a single extension's version —
 // track the default branch and let the manifest's version field be the source of
 // truth.
-func updateOne(ctx context.Context, warn io.Writer, root, name, path string) (string, error) {
+func updateOne(ctx context.Context, root, name, path string) (string, error) {
 	clone := extension.CloneDir(name)
 	if _, err := os.Stat(clone); err != nil {
 		return "", cgerr.New(cgerr.ExitUsage,
@@ -564,7 +587,7 @@ func updateOne(ctx context.Context, warn io.Writer, root, name, path string) (st
 	}
 
 	// Re-apply: new manifest first, then reverse any contributions it dropped.
-	if err := reapply(warn, root, manifestDir, m); err != nil {
+	if err := reapply(root, manifestDir, m); err != nil {
 		return "", err
 	}
 	return m.Version, nil

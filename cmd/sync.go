@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -111,7 +112,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if cmd != nil {
 		warn = cmd.ErrOrStderr()
 	}
-	ensureGitHooks(warn, dir)
+	printGitHookWarnings(warn, ensureGitHooks(context.Background(), dir))
 
 	// The manifest now records this framework version; .cg.json must agree, or
 	// cg sync and cg status keep showing the old one (consigliere#122). Only the
