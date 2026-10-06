@@ -155,3 +155,33 @@ func TestValidateGitHooks(t *testing.T) {
 		t.Errorf("one script for two hooks rejected: %v", err)
 	}
 }
+
+func TestValidateRejectsEscapingPaths(t *testing.T) {
+	base := func(c Contributions) *Manifest {
+		return &Manifest{Manifest: 1, Name: "demo", Version: "1.0.0", Description: "d", Contributes: c}
+	}
+	ok := Contributions{
+		ClaudeMDSections: []SectionContribution{{ID: "rules", Path: "fragments/rules.md"}},
+		Notes:            []CopyContribution{{Src: "notes/a.md", Dest: "notes/a.md"}},
+		Templates:        []CopyContribution{{Src: "t/a.md", Dest: "templates/a.md"}},
+		Hooks:            []HookContribution{{Event: "SessionStart", Wrapper: "hooks/gate.sh", Command: "demo gate"}},
+	}
+	if err := base(ok).Validate(); err != nil {
+		t.Fatalf("valid manifest rejected: %v", err)
+	}
+	for _, escape := range []string{"../outside.md", "/etc/passwd", "a/../../b.md"} {
+		cases := map[string]Contributions{
+			"section path":  {ClaudeMDSections: []SectionContribution{{ID: "rules", Path: escape}}},
+			"note src":      {Notes: []CopyContribution{{Src: escape, Dest: "notes/a.md"}}},
+			"note dest":     {Notes: []CopyContribution{{Src: "notes/a.md", Dest: escape}}},
+			"template src":  {Templates: []CopyContribution{{Src: escape, Dest: "templates/a.md"}}},
+			"template dest": {Templates: []CopyContribution{{Src: "t/a.md", Dest: escape}}},
+			"hook wrapper":  {Hooks: []HookContribution{{Event: "SessionStart", Wrapper: escape, Command: "demo gate"}}},
+		}
+		for name, c := range cases {
+			if err := base(c).Validate(); err == nil {
+				t.Errorf("%s %q accepted", name, escape)
+			}
+		}
+	}
+}
