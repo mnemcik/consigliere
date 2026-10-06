@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.25.0](https://github.com/mnemcik/consigliere/compare/v1.24.1...v1.25.0) (2026-10-06)
+
+
+### Features
+
+* **extension:** git-hooks contribution point ([#154](https://github.com/mnemcik/consigliere/issues/154)) ([17dbc4a](https://github.com/mnemcik/consigliere/commit/17dbc4aa0563e5b2671162f98ca30f86fd95ddc2))
+* **worktree:** local landing strategy for remote-free workspaces ([#152](https://github.com/mnemcik/consigliere/issues/152)) ([c6ec0dc](https://github.com/mnemcik/consigliere/commit/c6ec0dcba04edb73e0f91aebf493b94cf4dffa41))
+
 ## [1.24.1](https://github.com/mnemcik/consigliere/compare/v1.24.0...v1.24.1) (2026-10-05)
 
 
