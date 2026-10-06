@@ -91,6 +91,14 @@ common=$(git rev-parse --path-format=absolute --git-common-dir) || exit $status
 allow="$common/` + AllowFile + `"
 [ -f "$allow" ] || exit $status
 root=$(sed -n 's/^root //p' "$allow")
+if [ ! -d "$root" ]; then
+	# The main worktree moved since cg last wrote the allow file.
+	root=$(git worktree list --porcelain | sed -n '1s/^worktree //p')
+fi
+if [ ! -d "$root/.cg/git-hooks/$hook.d" ] && grep -q " .cg/git-hooks/$hook.d/" "$allow"; then
+	echo "cg: approved $hook scripts not found under $root; run a cg command there (e.g. cg sync --apply) to refresh" >&2
+	case "$hook" in pre-*) exit 1 ;; esac
+fi
 for script in "$root/.cg/git-hooks/$hook.d"/*; do
 	[ -f "$script" ] || continue
 	rel=".cg/git-hooks/$hook.d/$(basename "$script")"

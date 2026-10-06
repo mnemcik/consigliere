@@ -370,3 +370,20 @@ func TestSeparateGitDir(t *testing.T) {
 		t.Errorf("script did not run with a separate git dir")
 	}
 }
+
+// The main worktree moved since Ensure wrote the allow file: the dispatcher
+// finds the scripts at the new location instead of skipping them.
+func TestDispatcherFollowsMovedWorktree(t *testing.T) {
+	ctx, root := repo(t)
+	log := filepath.Join(t.TempDir(), "log")
+	script(t, root, "post-commit", "a", log)
+	ensure(t, ctx, root)
+	moved := root + "-moved"
+	if err := os.Rename(root, moved); err != nil {
+		t.Fatal(err)
+	}
+	git(t, ctx, moved, "commit", "--quiet", "--allow-empty", "-m", "after move")
+	if !strings.Contains(read(t, log), "a ") {
+		t.Errorf("script did not run after the worktree moved")
+	}
+}

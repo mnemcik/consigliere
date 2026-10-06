@@ -115,6 +115,9 @@ forbids cross-extension dependencies (declare none).
     ],
     "templates": [
       { "src": "templates/credential-request.md", "dest": "templates/credential-request.md" }
+    ],
+    "git-hooks": [
+      { "hook": "post-commit", "script": "git-hooks/check.sh" }
     ]
   }
 }
@@ -128,7 +131,7 @@ forbids cross-extension dependencies (declare none).
 | `name` | string | yes | Short, lowercase, `[a-z0-9-]+`. The install name, the `.cg.json` key, the clone directory, the `ext:<name>:section` namespace, and the `cg-<name>` binary stem. Must be unique in the registry. |
 | `version` | string | yes | Extension semver. Recorded in `.cg.json`; compared on `cg extension update`. |
 | `description` | string | yes | One line, shown in `cg extension list` and the registry. |
-| `contributes` | object | yes | The contribution points (all five keys below). Each is an array; an empty/absent array means "contributes nothing of this type". |
+| `contributes` | object | yes | The contribution points (all six keys below). Each is an array; an empty/absent array means "contributes nothing of this type". |
 
 ### Contribution points
 

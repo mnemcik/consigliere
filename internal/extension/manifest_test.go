@@ -139,4 +139,19 @@ func TestValidateGitHooks(t *testing.T) {
 	if err := base(GitHookContribution{Hook: "post-commit"}).Validate(); err == nil {
 		t.Error("missing script accepted")
 	}
+	for _, escape := range []string{"../outside.sh", "/etc/passwd", "a/../../b.sh"} {
+		if err := base(GitHookContribution{Hook: "post-commit", Script: escape}).Validate(); err == nil {
+			t.Errorf("script %q outside the extension accepted", escape)
+		}
+	}
+	dup := base(GitHookContribution{Hook: "post-commit", Script: "a/check.sh"})
+	dup.Contributes.GitHooks = append(dup.Contributes.GitHooks, GitHookContribution{Hook: "post-commit", Script: "b/check.sh"})
+	if err := dup.Validate(); err == nil {
+		t.Error("two scripts with the same install path accepted")
+	}
+	same := base(GitHookContribution{Hook: "post-commit", Script: "check.sh"})
+	same.Contributes.GitHooks = append(same.Contributes.GitHooks, GitHookContribution{Hook: "post-merge", Script: "check.sh"})
+	if err := same.Validate(); err != nil {
+		t.Errorf("one script for two hooks rejected: %v", err)
+	}
 }

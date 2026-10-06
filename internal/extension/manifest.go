@@ -158,13 +158,22 @@ func (m *Manifest) Validate() error {
 			return fmt.Errorf("templates[%d]: src and dest are required", i)
 		}
 	}
+	gitHookDests := map[string]int{}
 	for i, g := range m.Contributes.GitHooks {
 		if !githooks.Valid(g.Hook) {
 			return fmt.Errorf("git-hooks[%d]: unsupported hook %q (want one of %s)", i, g.Hook, strings.Join(githooks.Hooks, ", "))
 		}
-		if g.Script == "" {
-			return fmt.Errorf("git-hooks[%d]: script is required", i)
+		// The script is copied into the workspace and approved to run, so it
+		// must come from inside the extension.
+		clean, err := CleanSubdir(g.Script)
+		if err != nil || clean == "" {
+			return fmt.Errorf("git-hooks[%d]: script %q must be a relative path inside the extension", i, g.Script)
 		}
+		dest := gitHookDestRel(m.Name, g)
+		if j, dup := gitHookDests[dest]; dup {
+			return fmt.Errorf("git-hooks[%d]: script %q installs to %s, as git-hooks[%d] does; give it a different file name", i, g.Script, dest, j)
+		}
+		gitHookDests[dest] = i
 	}
 	return nil
 }
