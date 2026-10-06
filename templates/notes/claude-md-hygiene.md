@@ -14,7 +14,7 @@ CLAUDE.md is loaded into context for **every** session in this workspace. Conten
 
 Run this before writing any change to CLAUDE.md:
 
-1. **Remote-sync** — `git fetch origin` and pull if behind (in a remote-free workspace, read the local `main`). Another session may already have edited CLAUDE.md or landed related content.
+1. **Remote-sync** — `git fetch origin` and pull if behind (in a workspace that lands locally, `worktree.landingStrategy: "local"`, read the local `main`). Another session may already have edited CLAUDE.md or landed related content.
 2. **Every-session question** — Does the new rule apply to every session, or only when a specific trigger appears? If only-on-trigger → extract to a note, keep a ≤3-sentence pointer here (trigger + headline + load path).
 3. **DRY check** — Is the content already documented elsewhere (an area file, an existing note, an index)? If yes, link instead of copying.
 4. **Pointer-pattern shape** — If you are keeping content inline, does it follow trigger + one-line headline + note path? Multi-paragraph inline procedures belong in a note.

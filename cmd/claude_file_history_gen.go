@@ -17,12 +17,12 @@ var claudeFileHistory = map[string][]string{
 	},
 	"skills/wrap/SKILL.md": {
 		"168d1dca521f1c34cabd54fa2ef974778de5682d3f7da979bf3815f95b6f069a",
+		"1a1284a9ca6a7641dd25b4465d5ba3da5d19c37db123828ae875156e1c725f7a",
 		"3db3643ca0ff9c8ef90d857c7171a575e96f437d6be7174fe6f146a43f08c0cc",
 		"703ea036944ca37040ce9eb224ff3a1de2eb88aadd72cbd929156d9ea880e7b4",
 		"adc15ba33c42ddef752669b55f5c107d68c056090b3d54feb4cb6305641c6b25",
 		"deff61317fc7e7abc02df45560bf8b6372d71c37dcc149ba25cd295600c1bf72",
 		"df2f17f33d8404d2fe799f85372f4fb09abad8321638d1645ad74e2fdf3cc57b",
-		"f267549c662842d4117e9bd1ecc918da5e06daa27caa96ba8e10fe2653366ef4",
 	},
 	"workspace/.claude/hooks/external-repo-push-policy.sh": {
 		"967c5e7ce87b5f3d380b2121f0ca18c995edf1c6dcbac3faef074da7185493c3",
