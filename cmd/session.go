@@ -148,10 +148,13 @@ func runSessionPullLatest(cmd *cobra.Command, _ []string) error {
 	}
 	// A fresh clone has the contributed git-hook scripts (versioned) but not
 	// the dispatcher in .git/hooks (unversioned); this runs at every session
-	// start, so reconcile here and say so only when something is wrong.
-	if msgs := ensureGitHooks(cmd.Context(), cwd); len(msgs) > 0 {
-		emitSystemMessage(cmd.OutOrStdout(), "cg: "+strings.Join(msgs, "; "))
-	}
+	// start, so reconcile here and say so only when something is wrong. It runs
+	// after the pull, deferred, so it approves the scripts the pull brought in.
+	defer func() {
+		if msgs := ensureGitHooks(cmd.Context(), cwd); len(msgs) > 0 {
+			emitSystemMessage(cmd.OutOrStdout(), "cg: "+strings.Join(msgs, "; "))
+		}
+	}()
 	landingBranch := workspace.DefaultLandingBranch
 	if root, cerr := gitx.CommonRoot(cmd.Context(), cwd); cerr == nil {
 		var configured string

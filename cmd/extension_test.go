@@ -136,6 +136,9 @@ func writeReferencedStubs(t *testing.T, dir, manifest string) {
 	for _, h := range m.Contributes.Hooks {
 		write(h.Wrapper, "#!/usr/bin/env bash\nexec "+h.Command+" \"$@\"\n")
 	}
+	for _, g := range m.Contributes.GitHooks {
+		write(g.Script, "#!/bin/sh\nexit 0\n")
+	}
 }
 
 const testManifest = `{

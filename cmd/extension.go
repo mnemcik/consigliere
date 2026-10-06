@@ -196,9 +196,53 @@ func ensureGitHooks(ctx context.Context, dir string) []string {
 		msgs = append(msgs, fmt.Sprintf("git hooks: %v", err))
 	}
 	if len(res.Unapproved) > 0 {
-		msgs = append(msgs, fmt.Sprintf("git-hook scripts that will not run, because they do not match an extension installed on this machine: %s; cg extension install or update for the extension that ships them approves them", strings.Join(res.Unapproved, ", ")))
+		if inLinkedWorktree(ctx, dir, root) {
+			// install and update copy the new scripts into this worktree, but
+			// the dispatcher runs the main worktree's copies, which still differ.
+			msgs = append(msgs, fmt.Sprintf("git-hook scripts in the main worktree (%s) that will not run, because they do not match an extension installed on this machine: %s; you ran this in a linked worktree, so the scripts it installed or updated are approved once its changes land in the main worktree and a cg command runs there (every session start does)", root, strings.Join(res.Unapproved, ", ")))
+		} else {
+			msgs = append(msgs, fmt.Sprintf("git-hook scripts that will not run, because they do not match an extension installed on this machine: %s; cg extension install or update for the extension that ships them approves them", strings.Join(res.Unapproved, ", ")))
+		}
 	}
 	return msgs
+}
+
+// inLinkedWorktree reports whether dir lies in a worktree other than the main
+// one at root.
+func inLinkedWorktree(ctx context.Context, dir, root string) bool {
+	top, err := gitx.Run(ctx, dir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return false
+	}
+	return canonicalPath(top) != canonicalPath(root)
+}
+
+// canonicalPath resolves symlinks (macOS /var vs /private/var) so two spellings
+// of one directory compare equal; it falls back to the cleaned path.
+func canonicalPath(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return filepath.Clean(p)
+}
+
+// commandContext returns cmd's context, or context.Background() when cmd is
+// nil or was not run through Execute (tests call some RunE functions directly).
+func commandContext(cmd *cobra.Command) context.Context {
+	if cmd != nil {
+		if ctx := cmd.Context(); ctx != nil {
+			return ctx
+		}
+	}
+	return context.Background()
+}
+
+// commandErr returns cmd's error writer, or os.Stderr when cmd is nil.
+func commandErr(cmd *cobra.Command) io.Writer {
+	if cmd != nil {
+		return cmd.ErrOrStderr()
+	}
+	return os.Stderr
 }
 
 // printGitHookWarnings writes ensureGitHooks messages as warnings.
