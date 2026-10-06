@@ -355,6 +355,12 @@ func landLocal(ctx context.Context, dir, branch, landingBranch string, maxRetrie
 
 	for attempt := 1; ; attempt++ {
 		if !gitx.IsAncestor(ctx, dir, branchRef, "HEAD") {
+			// git refuses to rebase over uncommitted changes, and that refusal
+			// is not a conflict: say what blocks the land instead.
+			if !gitx.IsClean(ctx, dir) {
+				return LandResult{}, cgerr.New(cgerr.ExitDirty,
+					"%s has moved and this worktree has uncommitted changes, so it cannot be rebased — commit or stash them, then re-run", landingBranch)
+			}
 			logf("rebasing %s onto %s\n", branch, landingBranch)
 			if err := gitx.Rebase(ctx, dir, branchRef); err != nil {
 				conflicts, _ := gitx.ConflictedFiles(ctx, dir)

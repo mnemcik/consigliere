@@ -444,3 +444,24 @@ func TestLocalLandStaleIndexLockNamed(t *testing.T) {
 		t.Errorf("main moved despite the failed land")
 	}
 }
+
+// Uncommitted changes in the session worktree when main has moved: the land
+// says so (exit 2) rather than reporting a rebase conflict that is not there.
+func TestLocalLandDirtyWorktreeIsNotAConflict(t *testing.T) {
+	ctx, root := setupLocalWorkspace(t)
+	var log bytes.Buffer
+	wt, err := Create(ctx, "dirty1", localOpts(root), &log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, ctx, wt, "a.txt", "a\n", "work")
+	commitFile(t, ctx, root, "b.txt", "b\n", "main moved")
+	if err := os.WriteFile(filepath.Join(wt, "a.txt"), []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Land(ctx, localLandOpts(wt), &log)
+	wantExit(t, err, cgerr.ExitDirty, &log)
+	if gitx.RebasingBranch(ctx, wt) != "" {
+		t.Error("a rebase was left in progress")
+	}
+}
