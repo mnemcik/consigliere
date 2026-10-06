@@ -239,6 +239,28 @@ func RemoteURL(ctx context.Context, dir, remote string) (string, error) {
 	return Run(ctx, dir, "remote", "get-url", remote)
 }
 
+// HasRemote reports whether dir's repository has a remote with the given name.
+func HasRemote(ctx context.Context, dir, remote string) bool {
+	return ok(ctx, dir, "remote", "get-url", remote)
+}
+
+// RebasingBranch returns the branch a rebase in progress in the worktree at dir
+// is rewriting (e.g. "refs/heads/main"), or "" when no rebase is in progress. A
+// worktree mid-rebase lists as detached, so this is how to tell that its
+// branch is still in use.
+func RebasingBranch(ctx context.Context, dir string) string {
+	for _, state := range []string{"rebase-merge", "rebase-apply"} {
+		p, err := Run(ctx, dir, "rev-parse", "--path-format=absolute", "--git-path", state+"/head-name")
+		if err != nil || p == "" {
+			continue
+		}
+		if b, rerr := os.ReadFile(p); rerr == nil { //nolint:gosec // path comes from git itself
+			return strings.TrimSpace(string(b))
+		}
+	}
+	return ""
+}
+
 // DefaultBranch returns the remote's default branch (origin/HEAD with the
 // "origin/" prefix stripped), falling back to "main" when it can't be resolved.
 func DefaultBranch(ctx context.Context, dir string) string {

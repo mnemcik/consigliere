@@ -31,6 +31,9 @@ const (
 const (
 	StrategyDirectToMain = "direct-to-main"
 	StrategyPR           = "pr"
+	// StrategyLocal lands onto the local landing branch with no remote: the
+	// workspace has no origin, and the local branch is the integration point.
+	StrategyLocal = "local"
 )
 
 type Config struct {
@@ -170,6 +173,25 @@ func (c *Config) WorktreeSettings() WorktreeConfig {
 		w.LandingStrategy = DefaultLandingStrategy
 	}
 	return w
+}
+
+// ValidLandingStrategy reports whether s is a landing strategy cg knows.
+func ValidLandingStrategy(s string) bool {
+	switch s {
+	case StrategyDirectToMain, StrategyPR, StrategyLocal:
+		return true
+	}
+	return false
+}
+
+// ConfiguredLandingStrategy returns worktree.landingStrategy exactly as written
+// in .cg.json, or "" when unset. WorktreeSettings fills the default in, which
+// hides whether the value was chosen; strategy resolution needs to know.
+func (c *Config) ConfiguredLandingStrategy() string {
+	if c == nil || c.Worktree == nil {
+		return ""
+	}
+	return c.Worktree.LandingStrategy
 }
 
 // SessionSettings returns the effective session settings with defaults applied.

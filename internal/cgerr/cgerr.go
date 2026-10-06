@@ -13,8 +13,11 @@ const (
 	ExitUsage      = 1 // argument / usage error
 	ExitDirty      = 2 // unlanded or uncommitted work blocks the operation
 	ExitConflict   = 3 // rebase conflict; a rebase is left in progress
-	ExitPushFail   = 4 // push to the remote failed after retries
+	ExitPushFail   = 4 // push to the remote (or the local landing move) failed after retries
 	ExitAssertFail = 5 // a post-operation assertion failed
+	// ExitLandingBlocked: a local land could not move the landing branch
+	// because the checkout that holds it cannot fast-forward.
+	ExitLandingBlocked = 6
 )
 
 // CodedError wraps an error with a process exit code.
