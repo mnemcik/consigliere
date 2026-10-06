@@ -28,6 +28,8 @@ type Ledger struct {
 	Templates        []string                 `json:"templates,omitempty"`
 	Subcommands      []SubcommandContribution `json:"subcommands,omitempty"`
 	IndexRows        []LedgerIndexRow         `json:"indexRows,omitempty"`
+	// GitHooks are the workspace-relative paths of installed git-hook scripts.
+	GitHooks []string `json:"gitHooks,omitempty"`
 }
 
 // LedgerHook records an installed hook wrapper so remove can delete it and

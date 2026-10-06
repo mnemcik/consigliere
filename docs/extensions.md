@@ -115,6 +115,9 @@ forbids cross-extension dependencies (declare none).
     ],
     "templates": [
       { "src": "templates/credential-request.md", "dest": "templates/credential-request.md" }
+    ],
+    "git-hooks": [
+      { "hook": "post-commit", "script": "git-hooks/check.sh" }
     ]
   }
 }
@@ -128,9 +131,9 @@ forbids cross-extension dependencies (declare none).
 | `name` | string | yes | Short, lowercase, `[a-z0-9-]+`. The install name, the `.cg.json` key, the clone directory, the `ext:<name>:section` namespace, and the `cg-<name>` binary stem. Must be unique in the registry. |
 | `version` | string | yes | Extension semver. Recorded in `.cg.json`; compared on `cg extension update`. |
 | `description` | string | yes | One line, shown in `cg extension list` and the registry. |
-| `contributes` | object | yes | The contribution points (all five keys below). Each is an array; an empty/absent array means "contributes nothing of this type". |
+| `contributes` | object | yes | The contribution points (all six keys below). Each is an array; an empty/absent array means "contributes nothing of this type". |
 
-### Contribution points (all five supported at launch — project decision)
+### Contribution points
 
 1. **`claude-md-sections`** — `[{ id, path }]`. Inserts the body of `path` into
    the workspace `CLAUDE.md` as an extension-owned section, delimited by
@@ -161,6 +164,40 @@ forbids cross-extension dependencies (declare none).
    workspace `templates/` tree (same copy semantics as notes, without the
    INDEX pointer).
 
+6. **`git-hooks`** — `[{ hook, script }]`. Copies the executable `script` to
+   `.cg/git-hooks/<hook>.d/<name>-<base>` in the workspace, where it is
+   versioned like any other file. `hook` is a client-side git hook:
+   `pre-commit`, `prepare-commit-msg`, `commit-msg`, `post-commit`,
+   `post-checkout`, `post-merge`, `post-rewrite`, `pre-push` or `pre-rebase`.
+   What runs the scripts is a cg dispatcher at `.git/hooks/<hook>`, which
+   gives each script the hook's arguments and stdin (a script without the
+   execute bit runs through `sh`) and exits non-zero if any script did,
+   which only matters for `pre-*` hooks. The dispatcher lives in the shared
+   git dir, so commits in every worktree run it, and it reads the scripts from
+   the main worktree: a script added in a session worktree takes effect once
+   it has landed.
+   - **Trust.** Git never versions hooks, so that a pull or a checkout cannot
+     make code run. Versioned scripts would undo that, so a script runs only
+     when it is *approved*: its content must match the same script in the
+     machine-local clone of an extension recorded in `.cg.json` — code the user
+     installed on this machine. cg writes the approved scripts (path and git
+     blob id) to `cg-hooks.allow` in the git dir, which is not versioned. The
+     dispatcher runs only listed scripts whose content still matches, and
+     warns about any other; cg reports unapproved scripts too. A script that
+     arrives by pull or checkout therefore does not run until `cg extension
+     install` or `update` approves it, and on a new machine scripts start
+     running once `cg init` or `cg extension install` has fetched the clones.
+   - **Reconciling.** `.git/hooks` is not versioned, so cg installs or removes
+     dispatchers to match the approved scripts on `cg extension
+     install|update|remove`, `cg init`, `cg sync --apply` and every session
+     start (`cg session pull-latest`, which reports problems as a session
+     message).
+   - A hook file that existed before cg is moved to `<hook>.pre-cg`, runs
+     first, and is restored when the last approved script for that hook goes.
+   - When `core.hooksPath` is set, cg installs nothing and warns, rather than
+     write into a directory that may be versioned or shared.
+   - Requires git 2.31 or later (`rev-parse --path-format`).
+
 ## `cg extension` subcommand suite
 
 | Command | Behaviour |
@@ -170,7 +207,7 @@ forbids cross-extension dependencies (declare none).
 | `cg extension install … --ref <tag\|branch>` | Pin the clone to a ref. Default: latest tag, else the default branch. |
 | `cg extension install <repo-url> --path <subdir>` | Install a co-located extension whose manifest lives in `<subdir>` of a monorepo. Direct installs only; registry entries carry their own `path`. See [Co-located extensions](#co-located-extensions-monorepo). |
 | `cg extension list [--json]` | List installed extensions for the current workspace: name, version, source, installed-at. |
-| `cg extension remove <name> [--purge]` | Reverse every contribution recorded in the workspace ledger (delete the `ext:<name>:section` block, copied notes/templates, hook wrapper + settings entry, INDEX rows), drop the `.cg.json` entry, delete the ledger. `--purge` also deletes the shared clone. |
+| `cg extension remove <name> [--purge]` | Reverse every contribution recorded in the workspace ledger (delete the `ext:<name>:section` block, copied notes/templates, hook wrapper + settings entry, git-hook scripts and any dispatcher left with nothing to run, INDEX rows), drop the `.cg.json` entry, delete the ledger. `--purge` also deletes the shared clone. |
 | `cg extension update [<name>]` | Advance a **single-repo** extension's clone to the latest tag (or its default branch when untagged), then re-apply contributions (replace-in-place). A **co-located** (subdir) extension instead tracks the default branch and versions from its manifest — see [Co-located extensions](#co-located-extensions-monorepo). No `<name>` updates all installed extensions. |
 
 ### Re-install on fresh clone
@@ -230,7 +267,8 @@ diff. Not user-edited.
   "hooks": [{ "event": "SessionStart", "wrapper": ".claude/hooks/credentials-gate.sh" }],
   "templates": ["templates/credential-request.md"],
   "subcommands": [{ "namespace": "secret", "binary": "cg-1password" }],
-  "indexRows": [{ "file": "notes/INDEX.md", "marker": "ext:1password" }]
+  "indexRows": [{ "file": "notes/INDEX.md", "marker": "ext:1password" }],
+  "gitHooks": [".cg/git-hooks/post-commit.d/1password-check.sh"]
 }
 ```
 

@@ -3,7 +3,9 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/mnemcik/consigliere/internal/cgerr"
 	"github.com/mnemcik/consigliere/internal/extension"
+	"github.com/mnemcik/consigliere/internal/githooks"
 	"github.com/mnemcik/consigliere/internal/gitx"
 	"github.com/mnemcik/consigliere/internal/workspace"
 )
@@ -140,6 +143,7 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	printInstallSummary(cmd, m, dest, source, regAlias, repo, path)
+	printGitHookWarnings(cmd.ErrOrStderr(), ensureGitHooks(cmd.Context(), root))
 	return nil
 }
 
@@ -166,6 +170,42 @@ func reapply(root, manifestDir string, m *extension.Manifest) error {
 		return fmt.Errorf("writing ledger for %q: %w", m.Name, err)
 	}
 	return nil
+}
+
+// ensureGitHooks reconciles the git-hook dispatchers of the repository
+// containing dir with the scripts extensions contributed, approving only those
+// that match an installed extension's machine-local clone (see package
+// githooks), and returns what the user should be told. Callers run it after
+// .cg.json records the extensions, since that is what approval reads.
+func ensureGitHooks(ctx context.Context, dir string) []string {
+	root, err := githooks.MainWorktree(ctx, dir)
+	if err != nil {
+		return nil
+	}
+	var refs []workspace.ExtensionRef
+	if cfg, derr := workspace.Detect(root); derr == nil && cfg != nil {
+		refs = cfg.Extensions
+	}
+	res, err := githooks.Ensure(ctx, root, extension.TrustedGitHookScripts(ctx, root, refs))
+	var msgs []string
+	switch {
+	case err == nil:
+	case errors.Is(err, githooks.ErrHooksPath):
+		msgs = append(msgs, fmt.Sprintf("core.hooksPath is set, so cg did not install a dispatcher for the git-hook scripts in %s; unset core.hooksPath, or run those scripts from your own hooks", githooks.DirRel))
+	default:
+		msgs = append(msgs, fmt.Sprintf("git hooks: %v", err))
+	}
+	if len(res.Unapproved) > 0 {
+		msgs = append(msgs, fmt.Sprintf("git-hook scripts that will not run, because they do not match an extension installed on this machine: %s; cg extension install or update for the extension that ships them approves them", strings.Join(res.Unapproved, ", ")))
+	}
+	return msgs
+}
+
+// printGitHookWarnings writes ensureGitHooks messages as warnings.
+func printGitHookWarnings(w io.Writer, msgs []string) {
+	for _, m := range msgs {
+		_, _ = fmt.Fprintf(w, "warning: %s\n", m)
+	}
 }
 
 // reinstallMissingExtensions re-clones and re-applies any extension recorded in
@@ -397,6 +437,7 @@ func printInstallSummary(cmd *cobra.Command, m *extension.Manifest, dest, source
 	add(len(c.ClaudeMDSections), "CLAUDE.md section(s)")
 	add(len(c.Notes), "note(s)")
 	add(len(c.Hooks), "hook(s)")
+	add(len(c.GitHooks), "git hook script(s)")
 	add(len(c.Subcommands), "subcommand(s)")
 	add(len(c.Templates), "template(s)")
 	if len(declared) == 0 {
@@ -437,6 +478,7 @@ func runExtRemove(cmd *cobra.Command, args []string) error {
 	if err := cfg.Save(root); err != nil {
 		return fmt.Errorf("updating %s: %w", workspace.ConfigFile, err)
 	}
+	printGitHookWarnings(cmd.ErrOrStderr(), ensureGitHooks(cmd.Context(), root))
 
 	out := cmd.OutOrStdout()
 	_, _ = fmt.Fprintf(out, "Removed %s from this workspace\n", name)
@@ -498,6 +540,7 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 			_, _ = fmt.Fprintf(out, "%s: v%s → v%s\n", ref.Name, old, newVer)
 		}
 	}
+	printGitHookWarnings(cmd.ErrOrStderr(), ensureGitHooks(cmd.Context(), root))
 	return nil
 }
 

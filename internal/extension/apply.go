@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mnemcik/consigliere/internal/githooks"
 )
 
 // claudeMDName is the workspace CLAUDE.md an extension's sections are inserted into.
@@ -54,6 +56,11 @@ func Apply(root, cloneDir string, m *Manifest) (*Ledger, error) {
 			return nil, err
 		}
 	}
+	for _, g := range m.Contributes.GitHooks {
+		if err := capture(gitHookDestRel(m.Name, g)); err != nil {
+			return nil, err
+		}
+	}
 
 	l := &Ledger{Name: m.Name, Version: m.Version}
 	if err := applyAll(root, cloneDir, m, l); err != nil {
@@ -91,8 +98,22 @@ func applyAll(root, cloneDir string, m *Manifest, l *Ledger) error {
 		}
 		l.Hooks = append(l.Hooks, LedgerHook{Event: h.Event, Wrapper: wrapperRel})
 	}
+	for _, g := range m.Contributes.GitHooks {
+		dest := gitHookDestRel(m.Name, g)
+		if e := copyFile(filepath.Join(cloneDir, filepath.FromSlash(g.Script)), filepath.Join(root, filepath.FromSlash(dest)), 0o755); e != nil {
+			return fmt.Errorf("git hook %q: %w", g.Script, e)
+		}
+		l.GitHooks = append(l.GitHooks, dest)
+	}
 	l.Subcommands = append(l.Subcommands, m.Contributes.Subcommands...)
 	return nil
+}
+
+// gitHookDestRel is the workspace-relative install path of a git-hook script:
+// .cg/git-hooks/<hook>.d/<extension>-<base>. Callers run githooks.Ensure
+// afterwards to install the dispatcher that runs it.
+func gitHookDestRel(name string, g GitHookContribution) string {
+	return filepath.ToSlash(filepath.Join(githooks.DirRel, g.Hook+".d", name+"-"+filepath.Base(g.Script)))
 }
 
 // hookDestRel is the workspace-relative install path of a hook wrapper: the
@@ -143,6 +164,11 @@ func Reverse(root string, l *Ledger) error {
 			return err
 		}
 	}
+	for _, rel := range l.GitHooks {
+		if err := removeIfPresent(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -176,8 +202,13 @@ func OrphanLedger(old, next *Ledger) *Ledger {
 			orphan.Hooks = append(orphan.Hooks, h)
 		}
 	}
+	for _, p := range old.GitHooks {
+		if !containsStr(next.GitHooks, p) {
+			orphan.GitHooks = append(orphan.GitHooks, p)
+		}
+	}
 	if len(orphan.ClaudeMDSections) == 0 && len(orphan.Notes) == 0 &&
-		len(orphan.Templates) == 0 && len(orphan.Hooks) == 0 {
+		len(orphan.Templates) == 0 && len(orphan.Hooks) == 0 && len(orphan.GitHooks) == 0 {
 		return nil
 	}
 	return orphan
