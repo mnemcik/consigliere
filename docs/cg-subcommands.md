@@ -48,11 +48,37 @@ these. Defined in `internal/cgerr`:
 | 1 | `ExitUsage` | argument / usage error |
 | 2 | `ExitDirty` | unlanded or uncommitted work blocks the operation |
 | 3 | `ExitConflict` | rebase conflict; a rebase is left in progress |
-| 4 | `ExitPushFail` | push to the remote failed after retries |
+| 4 | `ExitPushFail` | push to the remote (or, under `local`, the move of the landing branch) failed after retries |
 | 5 | `ExitAssertFail` | a post-operation assertion failed |
+| 6 | `ExitLandingBlocked` | `local` land only: the checkout holding the landing branch cannot fast-forward (a file in the way, or a rebase in progress) |
 
 `cg worktree create` exits **2** when the target branch/worktree has unlanded
 commits (unless `--force`).
+
+## Remote-free workspaces (`local` strategy)
+
+A workspace with no `origin` remote lands sessions onto its local landing
+branch. This is the default when `worktree.landingStrategy` is unset and the
+repository has no `origin`; set `"landingStrategy": "local"` to choose it
+explicitly. An explicit `direct-to-main` or `pr` on a repository without an
+`origin` is a usage error that names the fix.
+
+Under `local`:
+
+- `cg worktree create`, `remove` and `list` use the local landing branch as
+  the "is it landed?" reference and do not fetch.
+- `cg worktree land` rebases onto the local landing branch when needed and
+  fast-forwards it to the session's HEAD, together with the worktree that has
+  it checked out (usually the main one), so git's `post-merge` hook runs there.
+  An uncommitted change the fast-forward does not touch is kept, as with
+  `git pull`. When that checkout cannot fast-forward, the land fails with
+  exit 6 instead of reporting success over a stale checkout. Lands are
+  serialised by an OS file lock on `cg-land.lock` in the shared git dir, which
+  the OS releases when the holding process exits, however it exits; a land
+  gives up after waiting 60 seconds.
+- `cg session pull-latest` does nothing: the land already moved the main
+  worktree.
+- `pr` is unavailable (it needs a remote).
 
 ## `.cg.json` v1.1 schema
 
@@ -73,7 +99,10 @@ unchanged.
                                           //   Worktree dir = "<root>--<slug>".
     "branchPrefix": "session/",          // branch = "<branchPrefix><slug>"
     "landingBranch": "main",             // sessions land onto origin/<this>
-    "landingStrategy": "direct-to-main"  // or "pr"
+                                          //   (the local branch under "local")
+    "landingStrategy": "direct-to-main"  // or "pr", or "local" (no remote);
+                                          //   unset = "local" when the repo has
+                                          //   no origin remote
   },
 
   "session": {
@@ -103,7 +132,7 @@ unchanged.
 | `worktree.root` | main workspace root |
 | `worktree.branchPrefix` | `session/` |
 | `worktree.landingBranch` | `main` |
-| `worktree.landingStrategy` | `direct-to-main` |
+| `worktree.landingStrategy` | `direct-to-main`; `local` when the repository has no `origin` remote |
 | `session.activeWindowMin` | `240` |
 | `session.dirtyWindowMin` | `2880` |
 | `session.pruneDays` | `7` |
