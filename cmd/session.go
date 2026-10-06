@@ -14,6 +14,7 @@ import (
 	"github.com/mnemcik/consigliere/internal/gitx"
 	"github.com/mnemcik/consigliere/internal/session"
 	"github.com/mnemcik/consigliere/internal/workspace"
+	"github.com/mnemcik/consigliere/internal/worktree"
 )
 
 func init() {
@@ -153,8 +154,15 @@ func runSessionPullLatest(cmd *cobra.Command, _ []string) error {
 	}
 	landingBranch := workspace.DefaultLandingBranch
 	if root, cerr := gitx.CommonRoot(cmd.Context(), cwd); cerr == nil {
+		var configured string
 		if cfg, derr := workspace.Detect(root); derr == nil {
 			landingBranch = cfg.WorktreeSettings().LandingBranch
+			configured = cfg.ConfiguredLandingStrategy()
+		}
+		// Local landing moves the main worktree's branch itself, so there is
+		// nothing to pull, and no origin to fetch from.
+		if worktree.EffectiveStrategy(cmd.Context(), root, configured) == workspace.StrategyLocal {
+			return nil
 		}
 	}
 

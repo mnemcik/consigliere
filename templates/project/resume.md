@@ -18,7 +18,7 @@ Assumptions, half-formed hypotheses, and reasoning that will not survive in the 
 
 - **Branch:** `session/<slug>`
 - **WIP commit SHA:** filled in after the pause commit lands (`none — worktree clean before pause` if nothing was committed)
-- **Pushed to origin:** yes | no
+- **Pushed to origin:** yes | no | no remote
 - **Uncommitted files at pause time:** paths, or `none`
 
 ## Next concrete action

@@ -3,11 +3,14 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
+	"github.com/mnemcik/consigliere/internal/cgerr"
 	"github.com/mnemcik/consigliere/internal/gitx"
 	"github.com/mnemcik/consigliere/internal/workspace"
 	"github.com/mnemcik/consigliere/internal/worktree"
@@ -23,7 +26,7 @@ func init() {
 	worktreeCreateCmd.Flags().BoolVar(&worktreeCreateForce, "force", false,
 		"reuse or attach even when the branch has unlanded commits")
 	worktreeLandCmd.Flags().StringVar(&worktreeLandStrategy, "strategy", "",
-		"landing strategy: direct-to-main or pr (default: from .cg.json, else direct-to-main)")
+		"landing strategy: direct-to-main, pr or local (default: from .cg.json, else local when there is no origin remote, else direct-to-main); cannot switch into or out of local")
 	worktreeRemoveCmd.Flags().BoolVar(&worktreeRemoveForce, "force", false,
 		"remove despite unlanded commits or a dirty working tree (discards both)")
 	worktreeCmd.AddCommand(worktreeCreateCmd)
@@ -34,8 +37,11 @@ func init() {
 }
 
 // worktreeRootConfig resolves the caller's cwd, the main workspace root, and the
-// effective worktree settings from the workspace's .cg.json.
-func worktreeRootConfig(ctx context.Context) (cwd, root string, w workspace.WorktreeConfig, err error) {
+// effective worktree settings from the workspace's .cg.json. LandingStrategy is
+// resolved with worktree.EffectiveStrategy, so it is "local" when unset and the
+// repository has no origin remote; that fallback is noted on logw when the
+// repository does have some other remote, which will never be pushed to.
+func worktreeRootConfig(ctx context.Context, logw io.Writer) (cwd, root string, w workspace.WorktreeConfig, err error) {
 	cwd, err = os.Getwd()
 	if err != nil {
 		return "", "", workspace.WorktreeConfig{}, err
@@ -48,7 +54,21 @@ func worktreeRootConfig(ctx context.Context) (cwd, root string, w workspace.Work
 	if err != nil {
 		return "", "", workspace.WorktreeConfig{}, fmt.Errorf("error reading %s: %w", workspace.ConfigFile, err)
 	}
-	return cwd, root, cfg.WorktreeSettings(), nil
+	configured := cfg.ConfiguredLandingStrategy()
+	if configured != "" && !workspace.ValidLandingStrategy(configured) {
+		return "", "", workspace.WorktreeConfig{}, cgerr.New(cgerr.ExitUsage,
+			"unknown worktree.landingStrategy %q in %s (want %q, %q or %q)", configured, workspace.ConfigFile,
+			workspace.StrategyDirectToMain, workspace.StrategyPR, workspace.StrategyLocal)
+	}
+	w = cfg.WorktreeSettings()
+	w.LandingStrategy = worktree.EffectiveStrategy(ctx, root, configured)
+	if configured == "" && w.LandingStrategy == workspace.StrategyLocal {
+		if remotes, rerr := gitx.Run(ctx, root, "remote"); rerr == nil && remotes != "" {
+			_, _ = fmt.Fprintf(logw, "note: no origin remote, so sessions land locally; other remotes (%s) are not pushed to — set worktree.landingStrategy in %s to choose explicitly\n",
+				strings.ReplaceAll(remotes, "\n", ", "), workspace.ConfigFile)
+		}
+	}
+	return cwd, root, w, nil
 }
 
 var worktreeCmd = &cobra.Command{
@@ -84,7 +104,7 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 	cmd.SilenceUsage = true
 
 	ctx := cmd.Context()
-	_, root, w, err := worktreeRootConfig(ctx)
+	_, root, w, err := worktreeRootConfig(ctx, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
@@ -94,6 +114,7 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 		Prefix:        w.Root,
 		BranchPrefix:  w.BranchPrefix,
 		LandingBranch: w.LandingBranch,
+		Local:         w.LandingStrategy == workspace.StrategyLocal,
 		Force:         worktreeCreateForce,
 	}, cmd.ErrOrStderr())
 	if err != nil {
@@ -102,6 +123,24 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 
 	_, _ = fmt.Fprintln(cmd.OutOrStdout(), path)
 	return nil
+}
+
+// landStrategy picks the strategy for `cg worktree land`: the --strategy flag
+// when given, else the workspace's resolved strategy. The flag may not switch
+// into or out of local: create, remove and list resolve the strategy from the
+// workspace alone, so a land with a different mode would leave them judging
+// landed work against the wrong reference (a local land on a workspace with an
+// origin moves main without pushing it, and reads as unlanded afterwards).
+func landStrategy(flag, resolved string) (string, error) {
+	if flag == "" {
+		return resolved, nil
+	}
+	if (flag == workspace.StrategyLocal) != (resolved == workspace.StrategyLocal) {
+		return "", cgerr.New(cgerr.ExitUsage,
+			"--strategy %s does not match this workspace, which lands with %q; set worktree.landingStrategy in %s to change how it lands",
+			flag, resolved, workspace.ConfigFile)
+	}
+	return flag, nil
 }
 
 var worktreeLandCmd = &cobra.Command{
@@ -117,12 +156,19 @@ leaves the rebase in progress and exits 3. Prints the landed SHA on success.
 pr: pushes the session branch and opens a pull request via 'gh'; prints the PR
 URL.
 
+local (no remote): rebases onto the local landing branch if needed and
+fast-forwards it to HEAD, together with the worktree that has it checked out
+(usually the main one). If that checkout cannot fast-forward — a file in the
+way, or a rebase in progress — the land fails with exit 6. This is the default
+when .cg.json sets no strategy and the repository has no origin remote.
+
 Normally run with NO arguments. The optional argument is a commit SHA — NOT a
 slug (unlike 'worktree create <slug>' / 'remove <slug>'). When given, it asserts
 that commit is reachable from HEAD before landing. As a convenience, passing
 this worktree's own slug (or 'session/<slug>') is tolerated and lands HEAD.
 
-Exit codes: 1 usage, 3 rebase conflict, 4 push failed, 5 assertion failed.`,
+Exit codes: 1 usage, 3 rebase conflict, 4 push (or local move) failed after
+retries, 5 assertion failed, 6 landing checkout blocked (local).`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runWorktreeLand,
 }
@@ -134,14 +180,14 @@ func runWorktreeLand(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	// The land runs from inside the session worktree (cwd); config lives in the
 	// main workspace root (the shared common dir's parent).
-	cwd, _, w, err := worktreeRootConfig(ctx)
+	cwd, _, w, err := worktreeRootConfig(ctx, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
 
-	strategy := w.LandingStrategy
-	if worktreeLandStrategy != "" {
-		strategy = worktreeLandStrategy
+	strategy, err := landStrategy(worktreeLandStrategy, w.LandingStrategy)
+	if err != nil {
+		return err
 	}
 	var targetSHA string
 	if len(args) == 1 {
@@ -198,7 +244,7 @@ func runWorktreeRemove(cmd *cobra.Command, args []string) error {
 	cmd.SilenceUsage = true
 
 	ctx := cmd.Context()
-	_, root, w, err := worktreeRootConfig(ctx)
+	_, root, w, err := worktreeRootConfig(ctx, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
@@ -208,6 +254,7 @@ func runWorktreeRemove(cmd *cobra.Command, args []string) error {
 		Prefix:        w.Root,
 		BranchPrefix:  w.BranchPrefix,
 		LandingBranch: w.LandingBranch,
+		Local:         w.LandingStrategy == workspace.StrategyLocal,
 		Force:         worktreeRemoveForce,
 	}, cmd.ErrOrStderr())
 }
@@ -226,7 +273,7 @@ func runWorktreeList(cmd *cobra.Command, args []string) error {
 	cmd.SilenceUsage = true
 
 	ctx := cmd.Context()
-	_, root, w, err := worktreeRootConfig(ctx)
+	_, root, w, err := worktreeRootConfig(ctx, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
@@ -236,6 +283,7 @@ func runWorktreeList(cmd *cobra.Command, args []string) error {
 		Prefix:        w.Root,
 		BranchPrefix:  w.BranchPrefix,
 		LandingBranch: w.LandingBranch,
+		Local:         w.LandingStrategy == workspace.StrategyLocal,
 	})
 	if err != nil {
 		return err

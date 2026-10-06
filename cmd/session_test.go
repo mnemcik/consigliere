@@ -299,6 +299,23 @@ func TestSessionEndReleasesCleanClaimsSilently(t *testing.T) {
 	}
 }
 
+// With no origin remote and no strategy set, the workspace lands locally, so
+// the session-start pull has nothing to do and must stay silent rather than
+// report a failed fetch on every session.
+func TestSessionPullLatestSilentWithoutRemote(t *testing.T) {
+	clearSessionEnv(t)
+	repo := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere"}`)
+	// On the landing branch, so a silent result is not the "not on main" exit.
+	mustGit(t, context.Background(), repo, "branch", "-M", "main")
+	out, err := runSession(t, repo, "{}", "pull-latest")
+	if err != nil {
+		t.Fatalf("pull-latest: %v\n%s", err, out)
+	}
+	if out != "" {
+		t.Errorf("pull-latest without a remote printed %q, want nothing", out)
+	}
+}
+
 // A fresh clone carries the contributed git-hook scripts but not the
 // dispatcher in .git/hooks. Session start installs it for a script that
 // matches an installed extension's machine-local clone, and for one that does

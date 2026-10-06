@@ -42,7 +42,7 @@ func Remove(ctx context.Context, slug string, opt Options, logw io.Writer) error
 			"cwd is inside the worktree to be removed (%s) — cd elsewhere first", worktreePath)
 	}
 
-	if err := gitx.Fetch(ctx, opt.Root, "origin", opt.LandingBranch); err != nil {
+	if err := opt.fetchLanding(ctx); err != nil {
 		return err
 	}
 
