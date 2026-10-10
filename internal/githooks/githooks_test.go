@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/mnemcik/consigliere/internal/gitx"
 )
@@ -385,5 +386,32 @@ func TestDispatcherFollowsMovedWorktree(t *testing.T) {
 	git(t, ctx, moved, "commit", "--quiet", "--allow-empty", "-m", "after move")
 	if !strings.Contains(read(t, log), "a ") {
 		t.Errorf("script did not run after the worktree moved")
+	}
+}
+
+// Ensure runs at every session start, so an unchanged approved list is not
+// rewritten; a changed one is.
+func TestEnsureLeavesUnchangedAllowFile(t *testing.T) {
+	ctx, root := repo(t)
+	log := filepath.Join(t.TempDir(), "log")
+	script(t, root, "post-commit", "a", log)
+	ensure(t, ctx, root)
+	common, err := gitx.Run(ctx, root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		t.Fatal(err)
+	}
+	allow := filepath.Join(common, AllowFile)
+	past := time.Now().Add(-time.Hour).Truncate(time.Second)
+	if err := os.Chtimes(allow, past, past); err != nil {
+		t.Fatal(err)
+	}
+	ensure(t, ctx, root)
+	if info, err := os.Stat(allow); err != nil || !info.ModTime().Equal(past) {
+		t.Errorf("unchanged allow file was rewritten: %v", err)
+	}
+	script(t, root, "post-commit", "b", log)
+	ensure(t, ctx, root)
+	if !strings.Contains(read(t, allow), ".cg/git-hooks/post-commit.d/b") {
+		t.Errorf("allow file not updated for a new script:\n%s", read(t, allow))
 	}
 }

@@ -22,6 +22,7 @@
 package githooks
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -232,7 +233,8 @@ func scripts(root, hook string) ([]string, error) {
 }
 
 // writeAllow writes the approved-scripts list: the workspace root, then one
-// "<blob id> <path>" line per approved script.
+// "<blob id> <path>" line per approved script. A list that already has that
+// content is left alone, since Ensure runs at every session start.
 func writeAllow(path, root string, approved map[string]string) error {
 	lines := make([]string, 0, 1+len(approved))
 	lines = append(lines, "root "+root)
@@ -240,7 +242,11 @@ func writeAllow(path, root string, approved map[string]string) error {
 		lines = append(lines, oid+" "+rel)
 	}
 	sort.Strings(lines[1:])
-	return writeAtomic(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
+	data := []byte(strings.Join(lines, "\n") + "\n")
+	if cur, err := os.ReadFile(path); err == nil && bytes.Equal(cur, data) { //nolint:gosec // path is in the repository's git dir
+		return nil
+	}
+	return writeAtomic(path, data, 0o644)
 }
 
 // writeAtomic writes data to path through a uniquely named temp file in the

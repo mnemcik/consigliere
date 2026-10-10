@@ -134,15 +134,24 @@ func (m *Manifest) Validate() error {
 		if s.Path == "" {
 			return fmt.Errorf("claude-md-sections[%d]: path is required", i)
 		}
+		if err := insideDir("path", s.Path, "extension"); err != nil {
+			return fmt.Errorf("claude-md-sections[%d]: %w", i, err)
+		}
 	}
 	for i, c := range m.Contributes.Notes {
 		if c.Src == "" || c.Dest == "" {
 			return fmt.Errorf("notes[%d]: src and dest are required", i)
 		}
+		if err := copyPathsInside(c); err != nil {
+			return fmt.Errorf("notes[%d]: %w", i, err)
+		}
 	}
 	for i, h := range m.Contributes.Hooks {
 		if h.Event == "" || h.Wrapper == "" || h.Command == "" {
 			return fmt.Errorf("hooks[%d]: event, wrapper, and command are required", i)
+		}
+		if err := insideDir("wrapper", h.Wrapper, "extension"); err != nil {
+			return fmt.Errorf("hooks[%d]: %w", i, err)
 		}
 	}
 	for i, s := range m.Contributes.Subcommands {
@@ -156,6 +165,9 @@ func (m *Manifest) Validate() error {
 	for i, c := range m.Contributes.Templates {
 		if c.Src == "" || c.Dest == "" {
 			return fmt.Errorf("templates[%d]: src and dest are required", i)
+		}
+		if err := copyPathsInside(c); err != nil {
+			return fmt.Errorf("templates[%d]: %w", i, err)
 		}
 	}
 	gitHookDests := map[string]int{}
@@ -174,6 +186,25 @@ func (m *Manifest) Validate() error {
 			return fmt.Errorf("git-hooks[%d]: script %q installs to %s, as git-hooks[%d] does; give it a different file name", i, g.Script, dest, j)
 		}
 		gitHookDests[dest] = i
+	}
+	return nil
+}
+
+// copyPathsInside checks that a copy contribution reads from inside the
+// extension and writes inside the workspace.
+func copyPathsInside(c CopyContribution) error {
+	if err := insideDir("src", c.Src, "extension"); err != nil {
+		return err
+	}
+	return insideDir("dest", c.Dest, "workspace")
+}
+
+// insideDir rejects a manifest path that is absolute or climbs out of its base
+// directory with "..": cg reads and writes these paths directly, so one that
+// escapes would touch files outside the extension clone or the workspace.
+func insideDir(field, p, base string) error {
+	if clean, err := CleanSubdir(p); err != nil || clean == "" {
+		return fmt.Errorf("%s %q must be a relative path inside the %s", field, p, base)
 	}
 	return nil
 }

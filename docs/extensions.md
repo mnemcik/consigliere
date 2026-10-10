@@ -185,8 +185,14 @@ forbids cross-extension dependencies (declare none).
      dispatcher runs only listed scripts whose content still matches, and
      warns about any other; cg reports unapproved scripts too. A script that
      arrives by pull or checkout therefore does not run until `cg extension
-     install` or `update` approves it, and on a new machine scripts start
-     running once `cg init` or `cg extension install` has fetched the clones.
+     install` or `update` approves it, unless that extension is already cloned
+     on this machine (below), and on a new machine scripts start running once
+     `cg init` or `cg extension install` has fetched the clones.
+     Approval follows `.cg.json`, and the clones are shared by every workspace
+     on the machine (one per extension name). So a `.cg.json` entry, including
+     one that arrives by pull, approves the scripts of an extension already
+     cloned on this machine for another workspace, without an install in this
+     one.
    - **Reconciling.** `.git/hooks` is not versioned, so cg installs or removes
      dispatchers to match the approved scripts on `cg extension
      install|update|remove`, `cg init`, `cg sync --apply` and every session
