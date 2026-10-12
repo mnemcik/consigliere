@@ -3,7 +3,6 @@ package session
 import (
 	"context"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -23,9 +22,6 @@ func twoClones(t *testing.T) (ctx context.Context, ws, ws2 string) {
 	t.Helper()
 	if !gitx.Available() {
 		t.Skip("git not available")
-	}
-	if runtime.GOOS == "windows" {
-		t.Skip("skipping git-integration test on windows")
 	}
 	ctx = context.Background()
 	base := t.TempDir()

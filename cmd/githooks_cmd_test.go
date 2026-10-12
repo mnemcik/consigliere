@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -15,8 +14,8 @@ import (
 // Removing the extension that contributed the last script for a hook removes
 // the dispatcher and puts back the hook that was there before cg.
 func TestExtRemoveRestoresForeignGitHook(t *testing.T) {
-	if !gitx.Available() || runtime.GOOS == "windows" {
-		t.Skip("needs git and a POSIX shell")
+	if !gitx.Available() {
+		t.Skip("git not available")
 	}
 	cfgHome := t.TempDir()
 	ws := newGitRepo(t, filepath.Join(t.TempDir(), "ws"), ".", `{"type":"consigliere","version":"1.3.0"}`)
@@ -55,8 +54,8 @@ func TestExtRemoveRestoresForeignGitHook(t *testing.T) {
 // From a linked worktree, an unapproved script in the main worktree is
 // reported with the reason: what this worktree installed applies once landed.
 func TestEnsureGitHooksExplainsLinkedWorktree(t *testing.T) {
-	if !gitx.Available() || runtime.GOOS == "windows" {
-		t.Skip("needs git and a POSIX shell")
+	if !gitx.Available() {
+		t.Skip("git not available")
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	ctx := context.Background()
@@ -77,8 +76,8 @@ func TestEnsureGitHooksExplainsLinkedWorktree(t *testing.T) {
 // Session start reconciles the git hooks after the pull, so a script that
 // arrives with the pull is approved in the same session start, not the next.
 func TestSessionPullLatestApprovesPulledScript(t *testing.T) {
-	if !gitx.Available() || runtime.GOOS == "windows" {
-		t.Skip("needs git and a POSIX shell")
+	if !gitx.Available() {
+		t.Skip("git not available")
 	}
 	clearSessionEnv(t)
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())

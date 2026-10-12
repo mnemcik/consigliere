@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -26,9 +25,6 @@ func repo(t *testing.T) (ctx context.Context, root string) {
 	t.Helper()
 	if !gitx.Available() {
 		t.Skip("git not available")
-	}
-	if runtime.GOOS == "windows" {
-		t.Skip("shell hooks are not exercised on windows")
 	}
 	ctx = context.Background()
 	dir := t.TempDir()
@@ -347,8 +343,8 @@ func TestDanglingSymlinkHookKept(t *testing.T) {
 // With the git dir outside the workspace (git init --separate-git-dir), the
 // dispatcher still finds the scripts: the root comes from the allow file.
 func TestSeparateGitDir(t *testing.T) {
-	if !gitx.Available() || runtime.GOOS == "windows" {
-		t.Skip("git shell hooks not available")
+	if !gitx.Available() {
+		t.Skip("git not available")
 	}
 	ctx := context.Background()
 	base := t.TempDir()

@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -18,9 +17,6 @@ func initWorkspace(t *testing.T) (ctx context.Context, root string) {
 	t.Helper()
 	if !gitx.Available() {
 		t.Skip("git not available on PATH")
-	}
-	if runtime.GOOS == "windows" {
-		t.Skip("skipping git-integration test on windows")
 	}
 	ctx = context.Background()
 	root = t.TempDir()

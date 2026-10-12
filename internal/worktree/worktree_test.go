@@ -71,9 +71,6 @@ func setupWorkspace(t *testing.T) (ctx context.Context, root string) {
 	if !gitx.Available() {
 		t.Skip("git not available on PATH")
 	}
-	if runtime.GOOS == "windows" {
-		t.Skip("skipping git-integration test on windows")
-	}
 	ctx = context.Background()
 	base := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(base); err == nil {
