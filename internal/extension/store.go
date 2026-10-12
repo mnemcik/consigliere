@@ -209,7 +209,12 @@ func EnsureTree(ctx context.Context, repo, mirror, commit string) (string, error
 	if _, err := gitx.RunEnv(ctx, mirror, env, "read-tree", commit); err != nil {
 		return "", err
 	}
-	if _, err := gitx.RunEnv(ctx, mirror, env, "--work-tree="+staging, "checkout-index", "--all"); err != nil {
+	// The tree holds the repo's own bytes on every machine: the user's
+	// core.autocrlf (on by default with Git for Windows) would otherwise write
+	// CRLF, which breaks shell scripts and makes the tree differ per machine.
+	// The extension's own .gitattributes still apply.
+	if _, err := gitx.RunEnv(ctx, mirror, env, "-c", "core.autocrlf=false", "-c", "core.eol=lf",
+		"--work-tree="+staging, "checkout-index", "--all"); err != nil {
 		return "", err
 	}
 	if err := os.Rename(staging, dir); err != nil {

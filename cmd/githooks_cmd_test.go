@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"runtime"
 	"context"
 	"os"
 	"path/filepath"
@@ -78,6 +79,9 @@ func TestEnsureGitHooksExplainsLinkedWorktree(t *testing.T) {
 func TestSessionPullLatestApprovesPulledScript(t *testing.T) {
 	if !gitx.Available() {
 		t.Skip("git not available")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("a CRLF checkout of the script is never approved: https://github.com/mnemcik/consigliere/issues/170")
 	}
 	clearSessionEnv(t)
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())

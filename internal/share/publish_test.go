@@ -303,7 +303,7 @@ func TestPublishIgnoresGlobalGitignore(t *testing.T) {
 	f := newPublishFixture(t)
 	ignore := filepath.Join(t.TempDir(), "ignore")
 	write(t, filepath.Dir(ignore), "ignore", "decisions.md\n")
-	globalGitConfig(t, "[core]\n\texcludesFile = "+ignore+"\n")
+	globalGitConfig(t, "[core]\n\texcludesFile = "+filepath.ToSlash(ignore)+"\n")
 	f.publish(t, f.exports(t))
 	if tree := git(t, f.ctx, f.bare, "ls-tree", "-r", "--name-only", "main"); !strings.Contains(tree, "pilot/decisions.md") {
 		t.Errorf("a global gitignore must not drop a published file:\n%s", tree)
@@ -320,7 +320,7 @@ func TestPublishIgnoresGlobalHooks(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	globalGitConfig(t, "[core]\n\thooksPath = "+hooks+"\n")
+	globalGitConfig(t, "[core]\n\thooksPath = "+filepath.ToSlash(hooks)+"\n")
 	f.publish(t, f.exports(t))
 	if log := git(t, f.ctx, f.bare, "log", "-1", "--format=%B", "main"); !strings.Contains(log, PublishTrailer) {
 		t.Errorf("global hooks must not run in cg's clone; commit message:\n%s", log)

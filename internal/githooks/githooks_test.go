@@ -323,19 +323,20 @@ func TestNonExecutableScriptRuns(t *testing.T) {
 func TestDanglingSymlinkHookKept(t *testing.T) {
 	ctx, root := repo(t)
 	own := hookPath(t, ctx, root, "post-commit")
-	if err := os.Symlink("/nonexistent/hook", own); err != nil {
+	dangling := filepath.FromSlash("/nonexistent/hook") // Readlink gives OS separators
+	if err := os.Symlink(dangling, own); err != nil {
 		t.Fatal(err)
 	}
 	script(t, root, "post-commit", "a", filepath.Join(t.TempDir(), "log"))
 	ensure(t, ctx, root)
-	if target, err := os.Readlink(own + preSuffix); err != nil || target != "/nonexistent/hook" {
+	if target, err := os.Readlink(own + preSuffix); err != nil || target != dangling {
 		t.Errorf("symlink hook not moved aside: %q %v", target, err)
 	}
 	if err := os.RemoveAll(filepath.Join(root, DirRel)); err != nil {
 		t.Fatal(err)
 	}
 	ensure(t, ctx, root)
-	if target, err := os.Readlink(own); err != nil || target != "/nonexistent/hook" {
+	if target, err := os.Readlink(own); err != nil || target != dangling {
 		t.Errorf("symlink hook not restored: %q %v", target, err)
 	}
 }
