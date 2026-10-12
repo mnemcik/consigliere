@@ -134,11 +134,11 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	prev := ""
+	prev, prevCertain := "", false
 	if old, ok := findExtension(cfg, m.Name); ok {
-		prev = previousSource(old)
+		prev, prevCertain = previousSource(old), extension.ValidCommit(old.Commit)
 	}
-	res, err := reapply(root, filepath.Join(dest, path), m, prev, extInstallForce)
+	res, err := reapply(root, filepath.Join(dest, path), m, prev, prevCertain, extInstallForce)
 	if err != nil {
 		return err
 	}
@@ -176,8 +176,9 @@ type reapplyResult struct {
 // install intact rather than half-removed. Copied files the user changed are
 // kept (see extension.ApplyWith). prevSource is the manifest dir of the version
 // being replaced, used as the base for a ledger that predates recorded file
-// blobs; force overwrites unrecorded files in the way.
-func reapply(root, manifestDir string, m *extension.Manifest, prevSource string, force bool) (reapplyResult, error) {
+// blobs, and prevCertain says it is exactly the commit that was installed;
+// force overwrites unrecorded files in the way.
+func reapply(root, manifestDir string, m *extension.Manifest, prevSource string, prevCertain, force bool) (reapplyResult, error) {
 	var res reapplyResult
 	old, err := extension.LoadLedger(root, m.Name)
 	if err != nil {
@@ -186,11 +187,16 @@ func reapply(root, manifestDir string, m *extension.Manifest, prevSource string,
 	opts := extension.ApplyOptions{Old: old, Force: force}
 	if old != nil && old.Files == nil && prevSource != "" {
 		opts.LegacyBases = extension.LegacyBases(prevSource)
-		old.Files = opts.LegacyBases // the base for reversing dropped files too
+		opts.LegacyCertain = prevCertain
 	}
 	ledger, err := extension.ApplyWith(root, manifestDir, m, opts)
 	if err != nil {
 		return res, cgerr.New(cgerr.ExitUsage, "applying contributions for %q: %v", m.Name, err)
+	}
+	if old != nil && old.Files == nil {
+		// The base for reversing dropped files too. Set only after applying:
+		// ApplyWith must see that the old ledger had no recorded files.
+		old.Files = opts.LegacyBases
 	}
 	if orphan := extension.OrphanLedger(old, ledger); orphan != nil {
 		kept, rerr := extension.Reverse(root, orphan)
@@ -348,7 +354,14 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		if err != nil {
 			return out, done, err
 		}
-		if _, err := reapply(root, filepath.Join(tree, path), m, filepath.Join(tree, path), false); err != nil {
+		// A pinned commit is exactly what was installed, so its tree is the
+		// base for a ledger that predates content ids. A legacy entry's base
+		// is gone with its clone, so there is none.
+		prev := ""
+		if extension.ValidCommit(e.Commit) {
+			prev = filepath.Join(tree, path)
+		}
+		if _, err := reapply(root, filepath.Join(tree, path), m, prev, prev != "", false); err != nil {
 			return out, done, err
 		}
 		e.Commit = commit
@@ -741,7 +754,7 @@ func updateOne(ctx context.Context, out io.Writer, root string, ref *workspace.E
 	if err != nil {
 		return "", "", err
 	}
-	res, err := reapply(root, manifestDir, m, previousSource(ref), false)
+	res, err := reapply(root, manifestDir, m, previousSource(ref), extension.ValidCommit(ref.Commit), false)
 	if err != nil {
 		return "", "", err
 	}

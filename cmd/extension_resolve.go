@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -130,6 +132,18 @@ type pendingTarget struct {
 	base    []byte
 	theirs  []byte
 	current []byte
+	exists  bool // the workspace file exists
+	crlf    bool // the workspace file uses CRLF line endings
+}
+
+func toLF(b []byte) []byte { return bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n")) }
+
+// styled returns data in the workspace file's line-ending style.
+func (t *pendingTarget) styled(data []byte) []byte {
+	if !t.crlf {
+		return data
+	}
+	return bytes.ReplaceAll(toLF(data), []byte("\n"), []byte("\r\n"))
 }
 
 func loadPending(cmd *cobra.Command, name, file string) (*pendingTarget, error) {
@@ -145,7 +159,10 @@ func loadPending(cmd *cobra.Command, name, file string) (*pendingTarget, error) 
 	if err != nil {
 		return nil, fmt.Errorf("reading ledger for %q: %w", name, err)
 	}
-	dest := filepath.ToSlash(filepath.Clean(file))
+	dest, err := workspaceRel(root, file)
+	if err != nil {
+		return nil, err
+	}
 	t := &pendingTarget{root: root, ref: ref, ledger: ledger, index: -1}
 	if ledger != nil {
 		for i, p := range ledger.Pending {
@@ -158,17 +175,56 @@ func loadPending(cmd *cobra.Command, name, file string) (*pendingTarget, error) 
 		return nil, cgerr.New(cgerr.ExitUsage, "%s is not pending for %q; `cg extension pending` lists what is", dest, name)
 	}
 	t.path = filepath.Join(root, filepath.FromSlash(dest))
-	if t.base, err = extension.BlobContent(cmd.Context(), ref, t.file.Base); err != nil {
-		return nil, err
+	if t.file.Base != "" {
+		if t.base, err = extension.BlobContent(cmd.Context(), ref, t.file.Base); err != nil {
+			return nil, err
+		}
 	}
 	if t.theirs, err = extension.BlobContent(cmd.Context(), ref, t.file.Upstream); err != nil {
 		return nil, err
 	}
+	t.base, t.theirs = toLF(t.base), toLF(t.theirs)
 	t.current, err = os.ReadFile(t.path) //nolint:gosec // a recorded workspace file
-	if err != nil && !os.IsNotExist(err) {
+	switch {
+	case err == nil:
+		t.exists = true
+		// Compare and merge with LF line endings, as the repo stores them;
+		// a result is written back in the file's own style.
+		t.crlf = bytes.Contains(t.current, []byte("\r\n"))
+		t.current = toLF(t.current)
+	case !os.IsNotExist(err):
 		return nil, err
 	}
 	return t, nil
+}
+
+// workspaceRel turns a file argument (relative to the current directory, or
+// absolute) into the slash-separated, workspace-relative path the ledger uses.
+func workspaceRel(root, file string) (string, error) {
+	abs := file
+	if !filepath.IsAbs(abs) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+		abs = filepath.Join(cwd, file)
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	// Resolve symlinks on both sides (macOS temp dirs sit behind /var).
+	if r, err := filepath.EvalSymlinks(rootAbs); err == nil {
+		rootAbs = r
+	}
+	if d, err := filepath.EvalSymlinks(filepath.Dir(abs)); err == nil {
+		abs = filepath.Join(d, filepath.Base(abs))
+	}
+	rel, err := filepath.Rel(rootAbs, abs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", cgerr.New(cgerr.ExitUsage, "%s is outside the workspace", file)
+	}
+	return filepath.ToSlash(rel), nil
 }
 
 func runExtDiff(cmd *cobra.Command, args []string) error {
@@ -178,6 +234,21 @@ func runExtDiff(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	out := cmd.OutOrStdout()
+	if t.file.Base == "" {
+		_, _ = fmt.Fprintf(out, "cg has no record of the version it installed for %s (it was installed before cg recorded one), so it can't separate the two changes. This is your file against the extension's version:\n\n", t.file.Dest)
+		if err := writeDiff(cmd.Context(), out, t.current, t.theirs, "yours", "extension"); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintln(out, "\nWithout a base there is no three-way merge: choose --keep or --take.")
+		return nil
+	}
+	if t.file.UncertainBase {
+		_, _ = fmt.Fprintln(out, "Note: this was installed before cg recorded what it wrote, so \"installed\" below is the version cg found on this machine and may not be exactly what was installed.")
+		_, _ = fmt.Fprintln(out)
+	}
+	if !t.exists {
+		_, _ = fmt.Fprintf(out, "You deleted %s. --take restores the extension's version; --keep leaves it deleted.\n\n", t.file.Dest)
+	}
 	_, _ = fmt.Fprintf(out, "## The extension's change to %s (what cg installed → its new version)\n\n", t.file.Dest)
 	if err := writeDiff(cmd.Context(), out, t.base, t.theirs, "installed", "extension"); err != nil {
 		return err
@@ -185,6 +256,9 @@ func runExtDiff(cmd *cobra.Command, args []string) error {
 	_, _ = fmt.Fprintf(out, "\n## Your change to %s (what cg installed → your file)\n\n", t.file.Dest)
 	if err := writeDiff(cmd.Context(), out, t.base, t.current, "installed", "yours"); err != nil {
 		return err
+	}
+	if !t.exists {
+		return nil
 	}
 	if _, clean, err := mergeFile(cmd.Context(), t.current, t.base, t.theirs); err == nil {
 		if clean {
@@ -205,11 +279,17 @@ func runExtResolve(cmd *cobra.Command, args []string) error {
 	out := cmd.OutOrStdout()
 	switch {
 	case extResolveTake:
-		if err := writeWorkspaceFile(t.path, t.theirs); err != nil {
+		if err := writeWorkspaceFile(t.path, t.styled(t.theirs)); err != nil {
 			return err
 		}
 		_, _ = fmt.Fprintf(out, "%s: took the extension's version\n", t.file.Dest)
 	case extResolveMerge:
+		switch {
+		case t.file.Base == "":
+			return cgerr.New(cgerr.ExitUsage, "%s: cg doesn't know the version it installed, so there is nothing to merge against; choose --keep or --take", t.file.Dest)
+		case !t.exists:
+			return cgerr.New(cgerr.ExitUsage, "%s: you deleted the file, so there is nothing to merge into; --take restores it, --keep leaves it deleted", t.file.Dest)
+		}
 		merged, clean, err := mergeFile(cmd.Context(), t.current, t.base, t.theirs)
 		if err != nil {
 			return err
@@ -219,12 +299,16 @@ func runExtResolve(cmd *cobra.Command, args []string) error {
 				"%s: your change and the extension's overlap, so the merge isn't clean; edit the file by hand (see `cg extension diff %s %s`), then run --keep",
 				t.file.Dest, args[0], t.file.Dest)
 		}
-		if err := writeWorkspaceFile(t.path, merged); err != nil {
+		if err := writeWorkspaceFile(t.path, t.styled(merged)); err != nil {
 			return err
 		}
 		_, _ = fmt.Fprintf(out, "%s: merged the extension's change into your file\n", t.file.Dest)
 	default: // --keep
-		_, _ = fmt.Fprintf(out, "%s: kept your file\n", t.file.Dest)
+		if t.exists {
+			_, _ = fmt.Fprintf(out, "%s: kept your file\n", t.file.Dest)
+		} else {
+			_, _ = fmt.Fprintf(out, "%s: left deleted\n", t.file.Dest)
+		}
 	}
 	// The extension's current version is the new baseline: the file is raised
 	// again only when the extension changes it again.
@@ -280,10 +364,10 @@ func writeDiff(ctx context.Context, w io.Writer, a, b []byte, aName, bName strin
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	pa, pb := filepath.Join(dir, aName), filepath.Join(dir, bName)
-	if err := os.WriteFile(pa, a, 0o600); err != nil {
+	if err := os.WriteFile(pa, a, 0o600); err != nil { //nolint:gosec // fixed names in our own temp dir
 		return err
 	}
-	if err := os.WriteFile(pb, b, 0o600); err != nil {
+	if err := os.WriteFile(pb, b, 0o600); err != nil { //nolint:gosec // fixed names in our own temp dir
 		return err
 	}
 	// #nosec G204 -- fixed "git" binary; the arguments are temp file paths.

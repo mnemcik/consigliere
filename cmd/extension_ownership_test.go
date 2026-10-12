@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/mnemcik/consigliere/internal/extension"
 	"github.com/mnemcik/consigliere/internal/gitx"
+	"github.com/mnemcik/consigliere/internal/workspace"
 )
 
 const (
@@ -351,5 +353,193 @@ func TestSessionStartRaisesPendingFiles(t *testing.T) {
 	}
 	if out := hook(); strings.Contains(out, "additionalContext") {
 		t.Errorf("nothing pending, but the hook still raised it: %s", out)
+	}
+}
+
+// legacyEntry turns the installed demo entry into one from before the store
+// and before content ids: no commit in .cg.json, no files in the ledger. With
+// clone set, a legacy clone of repo at its current HEAD stands in for the old
+// name-keyed clone.
+func legacyEntry(t *testing.T, cfgHome, ws, repo string, clone bool) {
+	t.Helper()
+	cfg, err := workspace.Detect(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Extensions[0].Commit = ""
+	if err := cfg.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	l := ledgerFor(t, ws)
+	l.Files = nil
+	if err := l.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	if clone {
+		if _, err := gitx.Run(context.Background(), "", "clone", "--quiet", repo, legacyCloneDir(cfgHome)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// Review finding 2: a legacy clone may have moved since the install, so a base
+// read from it is uncertain. A file that matches neither it nor the new
+// version is raised, never kept silently.
+func TestLegacyCloneBaseIsUncertain(t *testing.T) {
+	cfgHome := t.TempDir()
+	ws, repo := installed(t, cfgHome) // note at v1 (installedTxt)
+	commitFile(t, repo, noteRel, "v2")
+	legacyEntry(t, cfgHome, ws, repo, true) // the shared legacy clone is already at v2
+
+	if _, err := runExtCfg(t, cfgHome, ws, "update", "demo"); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, filepath.Join(ws, noteRel)); got != installedTxt {
+		t.Errorf("note = %q, want it left for the user to decide", got)
+	}
+	p := ledgerFor(t, ws).Pending
+	if len(p) != 1 || !p[0].UncertainBase {
+		t.Fatalf("want the note pending with an uncertain base, got %+v", p)
+	}
+	out, err := runExtCfg(t, cfgHome, ws, "diff", "demo", noteRel)
+	if err != nil || !strings.Contains(out, "may not be exactly what was installed") {
+		t.Errorf("diff should flag the uncertain base: err %v\n%s", err, out)
+	}
+}
+
+// Review finding 3: a legacy entry whose clone is gone has no base at all.
+// update must not refuse (or advise --force, which would destroy the edit);
+// the file is raised, and only keep or take apply.
+func TestLegacyEntryWithoutCloneRaisesInsteadOfRefusing(t *testing.T) {
+	cfgHome := t.TempDir()
+	ws, repo := installed(t, cfgHome)
+	legacyEntry(t, cfgHome, ws, repo, false)
+	writeNote(t, ws, "local edits")
+
+	if out, err := runExtCfg(t, cfgHome, ws, "update", "demo"); err != nil {
+		t.Fatalf("update refused: %v\n%s", err, out)
+	}
+	if got := readFile(t, filepath.Join(ws, noteRel)); got != "local edits" {
+		t.Errorf("note = %q, want the user's edits", got)
+	}
+	p := ledgerFor(t, ws).Pending
+	if len(p) != 1 || p[0].Base != "" {
+		t.Fatalf("want the note pending with no base, got %+v", p)
+	}
+	out, err := runExtCfg(t, cfgHome, ws, "diff", "demo", noteRel)
+	if err != nil || !strings.Contains(out, "no record of the version it installed") {
+		t.Errorf("diff should say the base is unknown: err %v\n%s", err, out)
+	}
+	if _, err := runExtCfg(t, cfgHome, ws, "resolve", "demo", noteRel, "--merge"); err == nil {
+		t.Error("--merge without a base should be refused")
+	}
+	if _, err := runExtCfg(t, cfgHome, ws, "resolve", "demo", noteRel, "--keep"); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, filepath.Join(ws, noteRel)); got != "local edits" {
+		t.Errorf("--keep changed the note: %q", got)
+	}
+}
+
+// A deleted copied file is the user's change: not recreated silently, and
+// raised when the extension changes it.
+func TestDeletedFileIsTheUsersChange(t *testing.T) {
+	cfgHome := t.TempDir()
+	ws, repo := installed(t, cfgHome)
+	if err := os.Remove(filepath.Join(ws, noteRel)); err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, repo, "fragments/demo.md", "unrelated")
+	if _, err := runExtCfg(t, cfgHome, ws, "update", "demo"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(ws, noteRel)); !os.IsNotExist(err) {
+		t.Fatalf("update recreated a note the user deleted (stat err %v)", err)
+	}
+
+	commitFile(t, repo, noteRel, "v2")
+	if _, err := runExtCfg(t, cfgHome, ws, "update", "demo"); err != nil {
+		t.Fatal(err)
+	}
+	if len(ledgerFor(t, ws).Pending) != 1 {
+		t.Fatal("a deleted note the extension changed should be pending")
+	}
+	if _, err := runExtCfg(t, cfgHome, ws, "resolve", "demo", noteRel, "--merge"); err == nil {
+		t.Error("--merge into a deleted file should be refused")
+	}
+	abs := filepath.Join(ws, noteRel) // resolve also takes an absolute path
+	if _, err := runExtCfg(t, cfgHome, ws, "resolve", "demo", abs, "--take"); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, abs); got != "v2" {
+		t.Errorf("--take restored %q", got)
+	}
+}
+
+// Review finding 1: with core.autocrlf the exported files carry CRLF while the
+// repo stores LF. Content ids must still be the repo's blob ids, so diff and
+// resolve can read them, and an unedited file must not look edited.
+func TestOwnershipUnderAutocrlf(t *testing.T) {
+	if !gitx.Available() {
+		t.Skip("git not available")
+	}
+	cfgHome := t.TempDir()
+	ws := newWorkspace(t)
+	repo := makeExtRepo(t, testManifest)
+	commitFile(t, repo, noteRel, "a\nb\nc\nd\ne\n")
+
+	global := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(global, []byte("[core]\n\tautocrlf = true\n"), 0o644); err != nil { //nolint:gosec // test config
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
+
+	if _, err := runExtCfg(t, cfgHome, ws, "install", repo); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, filepath.Join(ws, noteRel)); !strings.Contains(got, "\r\n") {
+		t.Skipf("git didn't export CRLF here (%q); nothing to test", got)
+	}
+	// Unedited: an upstream change is simply taken.
+	commitFile(t, repo, "fragments/demo.md", "unrelated")
+	if _, err := runExtCfg(t, cfgHome, ws, "update", "demo"); err != nil {
+		t.Fatal(err)
+	}
+	if p := ledgerFor(t, ws).Pending; len(p) != 0 {
+		t.Fatalf("an unedited CRLF note looked edited: %+v", p)
+	}
+
+	writeNote(t, ws, "A\r\nb\r\nc\r\nd\r\ne\r\n")
+	commitFile(t, repo, noteRel, "a\nb\nc\nd\nE\n")
+	if _, err := runExtCfg(t, cfgHome, ws, "update", "demo"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runExtCfg(t, cfgHome, ws, "diff", "demo", noteRel); err != nil {
+		t.Fatalf("diff under autocrlf: %v", err)
+	}
+	if _, err := runExtCfg(t, cfgHome, ws, "resolve", "demo", noteRel, "--merge"); err != nil {
+		t.Fatalf("merge under autocrlf: %v", err)
+	}
+	if got := strings.ReplaceAll(readFile(t, filepath.Join(ws, noteRel)), "\r\n", "\n"); got != "A\nb\nc\nd\nE\n" {
+		t.Errorf("merged = %q", got)
+	}
+}
+
+// CodeRabbit: a destination that moves from notes to templates is still
+// shipped, so it isn't removed as an orphan.
+func TestDestinationMovedBetweenNotesAndTemplatesIsKept(t *testing.T) {
+	cfgHome := t.TempDir()
+	ws, repo := installed(t, cfgHome)
+	moved := strings.Replace(testManifest, `"notes": [{ "src": "notes/demo.md", "dest": "notes/demo.md" }]`,
+		`"templates": [{ "src": "notes/demo.md", "dest": "notes/demo.md" }]`, 1)
+	if moved == testManifest {
+		t.Fatal("fixture manifest did not change")
+	}
+	updateExtRepo(t, repo, moved, "")
+	if _, err := runExtCfg(t, cfgHome, ws, "update", "demo"); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, filepath.Join(ws, noteRel)); got != installedTxt {
+		t.Errorf("a destination still shipped was removed (now %q)", got)
 	}
 }

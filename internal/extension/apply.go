@@ -41,18 +41,27 @@ type ApplyOptions struct {
 	// Old is the ledger of the install being replaced, nil for a first install.
 	Old *Ledger
 	// LegacyBases stands in for Old.Files when Old predates them (see
-	// LegacyBases).
-	LegacyBases map[string]string
+	// LegacyBases). LegacyCertain says they come from exactly the commit that
+	// was installed (the store's tree at a recorded commit), rather than from
+	// a legacy clone that may have moved since.
+	LegacyBases   map[string]string
+	LegacyCertain bool
 	// Force overwrites an existing, unrecorded file that differs from the
 	// extension's version instead of refusing.
 	Force bool
 }
 
-func (o *ApplyOptions) base(dest string) string {
-	if o.Old != nil && o.Old.Files != nil {
-		return o.Old.Files[dest]
+func (o *ApplyOptions) base(dest string) fileBase {
+	if o.Old == nil {
+		return fileBase{}
 	}
-	return o.LegacyBases[dest]
+	b := fileBase{tracked: containsStr(o.Old.Notes, dest) || containsStr(o.Old.Templates, dest)}
+	if o.Old.Files != nil {
+		b.id = o.Old.Files[dest]
+	} else {
+		b.id, b.uncertain = o.LegacyBases[dest], !o.LegacyCertain
+	}
+	return b
 }
 
 // copyPlan is the decision for one copied file, made before anything is
@@ -60,7 +69,7 @@ func (o *ApplyOptions) base(dest string) string {
 type copyPlan struct {
 	dest     string
 	data     []byte
-	base     string
+	base     fileBase
 	next     string
 	decision copyDecision
 	template bool
@@ -74,11 +83,11 @@ func planCopies(root, cloneDir string, m *Manifest, opts *ApplyOptions) ([]copyP
 		if err != nil {
 			return err
 		}
-		disk, err := fileBlob(filepath.Join(root, filepath.FromSlash(c.Dest)))
+		disk, err := fileID(filepath.Join(root, filepath.FromSlash(c.Dest)))
 		if err != nil {
 			return err
 		}
-		p := copyPlan{dest: c.Dest, data: data, base: opts.base(c.Dest), next: BlobID(data), template: template}
+		p := copyPlan{dest: c.Dest, data: data, base: opts.base(c.Dest), next: ContentID(data), template: template}
 		p.decision = decideCopy(p.base, disk, p.next, opts.Force)
 		if p.decision == copyRefuse {
 			refused = append(refused, c.Dest)
@@ -181,10 +190,12 @@ func applyAll(root, cloneDir string, m *Manifest, l *Ledger, plans []copyPlan) e
 		case copyAdopt:
 			l.Files[p.dest] = p.next
 		case copyKeep:
-			l.Files[p.dest] = p.base
+			l.Files[p.dest] = p.base.id
 		case copyPending:
-			l.Files[p.dest] = p.base
-			l.Pending = append(l.Pending, PendingFile{Dest: p.dest, Base: p.base, Upstream: p.next})
+			if p.base.id != "" {
+				l.Files[p.dest] = p.base.id
+			}
+			l.Pending = append(l.Pending, PendingFile{Dest: p.dest, Base: p.base.id, Upstream: p.next, UncertainBase: p.base.uncertain})
 		case copyRefuse:
 			return &ConflictError{Paths: []string{p.dest}} // planCopies already refused
 		}
@@ -256,7 +267,7 @@ func Reverse(root string, l *Ledger) (kept []string, err error) {
 	}
 	for _, rel := range append(append([]string(nil), l.Notes...), l.Templates...) {
 		path := filepath.Join(root, filepath.FromSlash(rel))
-		disk, err := fileBlob(path)
+		disk, err := fileID(path)
 		if err != nil {
 			return kept, err
 		}
@@ -301,13 +312,14 @@ func OrphanLedger(old, next *Ledger) *Ledger {
 			orphan.ClaudeMDSections = append(orphan.ClaudeMDSections, id)
 		}
 	}
+	// A destination that moved between notes and templates is still shipped.
 	for _, p := range old.Notes {
-		if !containsStr(next.Notes, p) {
+		if !containsStr(next.Notes, p) && !containsStr(next.Templates, p) {
 			orphan.Notes = append(orphan.Notes, p)
 		}
 	}
 	for _, p := range old.Templates {
-		if !containsStr(next.Templates, p) {
+		if !containsStr(next.Notes, p) && !containsStr(next.Templates, p) {
 			orphan.Templates = append(orphan.Templates, p)
 		}
 	}

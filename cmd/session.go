@@ -204,21 +204,28 @@ func pendingFilesNotice(ctx context.Context, dir string) (user, claude string) {
 	if len(rows) == 0 {
 		return "", ""
 	}
+	const maxListed = 30
 	var list []string
-	for _, r := range rows {
+	for i, r := range rows {
+		if i == maxListed {
+			list = append(list, fmt.Sprintf("and %d more (`cg extension pending` lists all)", len(rows)-maxListed))
+			break
+		}
 		list = append(list, r.Extension+" "+r.File)
 	}
 	files := strings.Join(list, ", ")
 	user = fmt.Sprintf("cg: %d extension file(s) have an upstream change you haven't taken, because you changed them too: %s", len(rows), files)
-	claude = user + `.
-
-Raise this with the user now, one file at a time. Nothing changes until they decide.
-1. Run ` + "`cg extension diff <extension> <file>`" + `. It shows the extension's change and the user's change, both against what cg installed, and whether a three-way merge is clean.
+	// The procedure comes first, so a long file list can never push it out of
+	// what Claude reads.
+	claude = `cg: some contributed extension files were changed both by the user and by the extension, so cg kept the user's version and is waiting for a decision. Raise this with the user now, one file at a time. Nothing changes until they decide.
+1. Run ` + "`cg extension diff <extension> <file>`" + `. It shows the extension's change and the user's change, both against what cg installed, and whether a three-way merge is clean. It also says when the installed version is uncertain or unknown, or the user deleted the file.
 2. Recommend one option, with a one-line reason:
    - merge (` + "`cg extension resolve <extension> <file> --merge`" + `) when the two changes don't overlap and the merge is clean; check the merged result makes sense (valid JSON or YAML where the file is one). It is refused unless the merge is clean.
    - keep (` + "`--keep`" + `) when the user's change deliberately overrides what the extension changed.
    - take (` + "`--take`" + `) when the user's change was incidental or is now obsolete.
-3. Run the option the user chooses. Each makes the extension's version the new baseline, so the file is raised again only when the extension changes it again.`
+3. Run the option the user chooses. Each makes the extension's version the new baseline, so the file is raised again only when the extension changes it again.
+
+Files: ` + files
 	return user, claude
 }
 
