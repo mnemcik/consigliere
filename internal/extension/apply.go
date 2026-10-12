@@ -2,7 +2,6 @@ package extension
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -150,7 +149,7 @@ func Reverse(root string, l *Ledger) error {
 				}
 			}
 			if changed {
-				if err := os.WriteFile(claudePath, content, 0o644); err != nil { //nolint:gosec // workspace file
+				if err := writeFileAtomic(claudePath, content, 0o644); err != nil {
 					return err
 				}
 			}
@@ -267,7 +266,7 @@ func applySection(root, cloneDir, name string, s SectionContribution) error {
 		content = nil
 	}
 	next := UpsertSection(string(content), name, s.ID, strings.Trim(string(body), "\n"))
-	return os.WriteFile(claudePath, []byte(next), 0o644) //nolint:gosec // workspace file
+	return writeFileAtomic(claudePath, []byte(next), 0o644)
 }
 
 // applyGitignore inserts or replaces the extension's block in the workspace
@@ -286,7 +285,7 @@ func applyGitignore(root, cloneDir, name string, g SectionContribution) error {
 		content = nil
 	}
 	next := UpsertGitignore(string(content), name, g.ID, strings.Trim(string(body), "\n"))
-	return os.WriteFile(path, []byte(next), 0o644) //nolint:gosec // workspace file
+	return writeFileAtomic(path, []byte(next), 0o644)
 }
 
 // reverseGitignore removes the blocks recorded in l from the workspace
@@ -316,7 +315,7 @@ func reverseGitignore(root string, l *Ledger) error {
 	if strings.TrimSpace(text) == "" {
 		return removeIfPresent(path)
 	}
-	return os.WriteFile(path, []byte(text), 0o644) //nolint:gosec // workspace file
+	return writeFileAtomic(path, []byte(text), 0o644)
 }
 
 // applyHook copies the wrapper into .claude/hooks/ (executable) and registers it
@@ -347,29 +346,13 @@ func copyInto(cloneDir, root, src, dest string) error {
 }
 
 func copyFile(src, dest string, mode os.FileMode) error {
-	in, err := os.Open(src) //nolint:gosec // src is a manifest-declared path inside the clone
+	data, err := os.ReadFile(src) //nolint:gosec // src is a manifest-declared path inside the clone
 	if err != nil {
 		return err
 	}
-	defer func() { _ = in.Close() }()
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil { //nolint:gosec // workspace dir
-		return err
-	}
-	out, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode) //nolint:gosec // dest is workspace-relative
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
-		_ = os.Remove(dest) // don't leave a partial file the ledger won't track
-		return err
-	}
-	if err := out.Close(); err != nil {
-		_ = os.Remove(dest)
-		return err
-	}
-	// OpenFile only applies mode on create; ensure the executable bit sticks.
-	return os.Chmod(dest, mode)
+	// Atomic, so a hook or the gh shim run by a parallel session never executes
+	// a half-written file, and a failed copy leaves the previous file intact.
+	return writeFileAtomicMode(dest, data, mode)
 }
 
 func removeIfPresent(path string) error {
@@ -429,7 +412,7 @@ func (s *snapshot) restore() {
 	for _, f := range s.files {
 		if f.existed {
 			_ = os.MkdirAll(filepath.Dir(f.path), 0o755)
-			_ = os.WriteFile(f.path, f.data, f.mode)
+			_ = writeFileAtomicMode(f.path, f.data, f.mode)
 		} else {
 			_ = os.Remove(f.path)
 		}

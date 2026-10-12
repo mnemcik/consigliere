@@ -234,6 +234,8 @@ forbids cross-extension dependencies (declare none).
 | `cg extension remove <name> [--purge]` | Reverse every contribution recorded in the workspace ledger (delete the `ext:<name>:section` block, copied notes/templates, hook wrapper + settings entry, git-hook scripts and any dispatcher left with nothing to run, INDEX rows), drop the `.cg.json` entry, delete the ledger. `--purge` also deletes the shared clone. |
 | `cg extension update [<name>]` | Advance a **single-repo** extension's clone to the latest tag (or its default branch when untagged), then re-apply contributions (replace-in-place). A **co-located** (subdir) extension instead tracks the default branch and versions from its manifest — see [Co-located extensions](#co-located-extensions-monorepo). No `<name>` updates all installed extensions. |
 
+**Every workspace file is written atomically.** Install, update, remove and rollback write each file (copied notes, templates, hook wrappers, git-hook scripts, `CLAUDE.md`, `.gitignore`, `settings.json`, the ledger) to a temp file in the same directory and rename it into place. A hook or shim run by a parallel session therefore sees the old file or the new one, never a half-written one. A failed write leaves the previous file intact. An existing file keeps its permission bits (copied hook and git-hook scripts are always made executable), and a symlink is followed, so its target is replaced and the link survives.
+
 ### Re-install on fresh clone
 
 `.cg.json` records each installed extension. `cg init` (and a future

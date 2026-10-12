@@ -83,5 +83,5 @@ func (l *Ledger) Save(root string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p, append(data, '\n'), 0o644) //nolint:gosec // workspace-local ledger
+	return writeFileAtomic(p, append(data, '\n'), 0o644)
 }

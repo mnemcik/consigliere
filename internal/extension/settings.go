@@ -192,7 +192,7 @@ func saveSettings(path string, settings map[string]any) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o644) //nolint:gosec // workspace settings
+	return writeFileAtomic(path, append(data, '\n'), 0o644)
 }
 
 // NormalizeHookCommands rewrites bare framework-relative hook and statusLine
