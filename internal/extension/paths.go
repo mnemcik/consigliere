@@ -18,9 +18,10 @@ func CleanSubdir(p string) (string, error) {
 	if p == "" {
 		return "", nil
 	}
-	// Either separator works on every OS, so one manifest or .cg.json means the
-	// same thing everywhere: `..\x` is rejected on Unix too, and a path recorded
-	// on Windows still resolves on Unix.
+	// Either separator works on every OS: `..\x` is rejected on Unix too, and a
+	// subdir recorded in .cg.json on Windows still resolves on Unix. (Manifest
+	// src/dest/script paths are only validated here; the code that uses them
+	// reads them in slash form.)
 	slash := strings.ReplaceAll(p, `\`, "/")
 	cleaned := filepath.Clean(filepath.FromSlash(slash))
 	// "." cleans to the repo root, which the rest of the flow represents as the
