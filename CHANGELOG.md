@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.26.0](https://github.com/mnemcik/consigliere/compare/v1.25.0...v1.26.0) (2026-10-12)
+
+
+### Features
+
+* **extension:** gitignore contribution point ([#160](https://github.com/mnemcik/consigliere/issues/160)) ([2e905d1](https://github.com/mnemcik/consigliere/commit/2e905d15f57ce985e92e90469e142f090d5fc06a))
+
+
+### Bug Fixes
+
+* follow-ups from the remote-free and git-hooks reviews ([#157](https://github.com/mnemcik/consigliere/issues/157)) ([cbc5d43](https://github.com/mnemcik/consigliere/commit/cbc5d435cc3f7d5c2e025193411cdfa0aa357e1c))
+
 ## [1.25.0](https://github.com/mnemcik/consigliere/compare/v1.24.1...v1.25.0) (2026-10-06)
 
 
