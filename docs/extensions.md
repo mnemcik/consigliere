@@ -288,10 +288,22 @@ and what the extension ships now.
 | changed | changed | leaves your file alone and records it as **pending** |
 | (no base: not installed by cg) | differs from disk | install refuses without `--force` |
 
-`remove` deletes a copied file only when it is still as cg wrote it, and says
-which ones it kept. A file a new version no longer ships is treated the same.
-A ledger from before cg recorded blobs uses the previous version's own files as
-the base.
+Deleting a copied file is a change too: cg doesn't recreate it, and raises it as
+pending if the extension changes it. `remove` deletes a copied file only when it
+is still as cg wrote it, and says which ones it kept. A file a new version no
+longer ships is treated the same.
+
+Content is compared with line endings normalised to LF, so a file exported with
+CRLF (`core.autocrlf`, `.gitattributes`) matches the repo's LF version, and the
+ids are the repo's own blob ids on every machine.
+
+A ledger from before cg recorded these ids uses the previous version's own files
+as the base. That base is exact when the entry records a commit (the store's tree
+for it). It is **uncertain** when it comes from a legacy name-keyed clone, which
+may have moved since the install: a file that matches neither it nor the new
+version is then raised as pending, never kept silently. When there is no base at
+all (a legacy entry whose clone is gone), a file that differs from the new
+version is raised too, and only `--keep` or `--take` apply.
 
 **Pending files are raised at the next session start.** `cg session pull-latest`
 (the framework `SessionStart` hook) adds a one-line notice for the user and

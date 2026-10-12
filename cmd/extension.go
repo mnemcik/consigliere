@@ -225,8 +225,12 @@ func previousSource(ref *workspace.ExtensionRef) string {
 // printFileOutcomes tells the user which copied files reapply left alone.
 func printFileOutcomes(w io.Writer, name string, res reapplyResult) {
 	for _, p := range res.Pending {
-		_, _ = fmt.Fprintf(w, "  kept your %s: the extension changed it too; see `cg extension diff %s %s`, then `cg extension resolve %s %s --merge|--keep|--take`\n",
-			p.Dest, name, p.Dest, name, p.Dest)
+		why := "the extension changed it too"
+		if p.Base == "" || p.UncertainBase {
+			why = "it differs from the extension's version, and cg can't tell exactly what it installed"
+		}
+		_, _ = fmt.Fprintf(w, "  kept your %s: %s; see `cg extension diff %s %s`, then `cg extension resolve %s %s --merge|--keep|--take`\n",
+			p.Dest, why, name, p.Dest, name, p.Dest)
 	}
 	for _, k := range res.Kept {
 		_, _ = fmt.Fprintf(w, "  kept %s: the extension no longer ships it, but you changed it; delete it yourself if it's not needed\n", k)
