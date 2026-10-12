@@ -179,7 +179,8 @@ forbids cross-extension dependencies (declare none).
 2. **`notes`** — `[{ src, dest }]`. Copies `src` (relative to the extension repo)
    to `dest` (workspace-relative, conventionally under `notes/`). If a
    `notes/INDEX.md` exists, a pointer row is added under an
-   `<!-- ext:<name> -->`-marked region so removal is exact.
+   `<!-- ext:<name> -->`-marked region so removal is exact. A copied note is
+   the user's to edit: see [Files you change](#files-you-change).
 
 3. **`hooks`** — `[{ event, wrapper, command }]`. Installs the bash wrapper at
    `wrapper` into `.claude/hooks/`, registers it for `event` in
@@ -194,8 +195,8 @@ forbids cross-extension dependencies (declare none).
    it is **not** copied into the workspace.
 
 5. **`templates`** — `[{ src, dest }]`. Copies template files into the
-   workspace `templates/` tree (same copy semantics as notes, without the
-   INDEX pointer).
+   workspace `templates/` tree (same copy semantics as notes, including
+   [Files you change](#files-you-change), without the INDEX pointer).
 
 6. **`git-hooks`** — `[{ hook, script }]`. Copies the executable `script` to
    `.cg/git-hooks/<hook>.d/<name>-<base>` in the workspace, where it is
@@ -260,14 +261,51 @@ forbids cross-extension dependencies (declare none).
 | Command | Behaviour |
 |---------|-----------|
 | `cg extension install <registry>/<name>` | Resolve `<name>` in the **named** registry `<registry>` (from `.cg.json` `registries`; the built-in `cg` alias is the public catalogue) → fetch `repo` into the store and export the tree for the resolved commit → read manifest → apply all contributions → write ledger + `.cg.json` entry, including the commit. **Names are always fully qualified** — a bare name is rejected, so the source is unambiguous (no first-match search, no [dependency confusion](#multiple-registries-fully-qualified-names)). |
+| `cg extension install … --force` | Overwrite existing files the extension ships that no ledger records as its own. Without it, install refuses, before changing anything, when such a file differs from the extension's version. See [Files you change](#files-you-change). |
 | `cg extension install <repo-url>` | Skip the registry: fetch the URL directly, read its manifest, take `name` from the manifest. Source recorded as `direct`. |
 | `cg extension install … --ref <tag\|branch\|commit>` | Install at that ref. Default: the default branch. |
 | `cg extension install <repo-url> --path <subdir>` | Install a co-located extension whose manifest lives in `<subdir>` of a monorepo. Direct installs only; registry entries carry their own `path`. See [Co-located extensions](#co-located-extensions-monorepo). |
 | `cg extension list [--json]` | List installed extensions for the current workspace: name, version, source, installed-at. |
-| `cg extension remove <name> [--purge]` | Reverse every contribution recorded in the workspace ledger (delete the `ext:<name>:section` block, copied notes/templates, hook wrapper + settings entry, git-hook scripts and any dispatcher left with nothing to run, INDEX rows), drop the `.cg.json` entry, delete the ledger. The store's trees are shared, so they stay; `--purge` deletes only a legacy name-keyed clone. |
-| `cg extension update [<name>]` | Move a **single-repo** extension to its latest tag (or its default branch when untagged), record the new commit, then re-apply contributions (replace-in-place). A **co-located** (subdir) extension instead tracks the default branch and versions from its manifest — see [Co-located extensions](#co-located-extensions-monorepo). No `<name>` updates all installed extensions. |
+| `cg extension remove <name> [--purge]` | Reverse every contribution recorded in the workspace ledger (delete the `ext:<name>:section` block, copied notes/templates that are still as cg wrote them, hook wrapper + settings entry, git-hook scripts and any dispatcher left with nothing to run, INDEX rows), drop the `.cg.json` entry, delete the ledger. The store's trees are shared, so they stay; `--purge` deletes only a legacy name-keyed clone. |
+| `cg extension update [<name>]` | Move a **single-repo** extension to its latest tag (or its default branch when untagged), record the new commit, then re-apply contributions (replace-in-place). A **co-located** (subdir) extension instead tracks the default branch and versions from its manifest — see [Co-located extensions](#co-located-extensions-monorepo). No `<name>` updates all installed extensions. Copied notes and templates you changed are kept: see [Files you change](#files-you-change). |
+| `cg extension pending [--json]` | List copied files that both you and the extension changed, which update left as yours. |
+| `cg extension diff <name> <file>` | For a pending file, show the extension's change and yours, each against what cg installed, and whether a three-way merge is clean. |
+| `cg extension resolve <name> <file> --merge\|--keep\|--take` | Settle a pending file: merge the extension's change into yours (refused unless the merge is clean), keep yours, or take the extension's. Each makes the extension's version the new baseline. |
 
 **Every workspace file is written atomically.** Install, update, remove and rollback write each file (copied notes, templates, hook wrappers, git-hook scripts, `CLAUDE.md`, `.gitignore`, `settings.json`, the ledger, `.cg.json`) to a temp file in the same directory and rename it into place. A hook or shim run by a parallel session therefore sees the old file or the new one, never a half-written one. A failed write leaves the previous file intact. Copied files get a fixed mode (`0644`, or `0755` for hook and git-hook scripts); `CLAUDE.md`, `.gitignore`, `settings.json`, the ledger and `.cg.json` keep the mode they have, and a new one gets `0644` regardless of the umask. A file without its owner write bit is refused rather than replaced. This checks the mode bits, not access rights, so it also refuses root, and it doesn't catch a writable-looking file owned by someone else. A symlink is followed, so its target is replaced and the link survives. Hard links to a replaced file keep the old content.
+
+### Files you change
+
+Copied notes and templates are yours to edit once installed. The ledger records
+the git blob id of the version cg last wrote for each one (`files`), and install,
+update and remove compare three versions: that one (the base), what is on disk,
+and what the extension ships now.
+
+| On disk vs base | Extension vs base | What cg does |
+|---|---|---|
+| unchanged | changed | updates the file |
+| changed | unchanged | leaves your file alone, silently |
+| changed | changed | leaves your file alone and records it as **pending** |
+| (no base: not installed by cg) | differs from disk | install refuses without `--force` |
+
+`remove` deletes a copied file only when it is still as cg wrote it, and says
+which ones it kept. A file a new version no longer ships is treated the same.
+A ledger from before cg recorded blobs uses the previous version's own files as
+the base.
+
+**Pending files are raised at the next session start.** `cg session pull-latest`
+(the framework `SessionStart` hook) adds a one-line notice for the user and
+context for Claude, which tells Claude to go through each file with the user:
+run `cg extension diff`, recommend merge, keep or take with a reason, and run
+`cg extension resolve` with the user's choice. The record is in the workspace
+ledger, so it travels with the workspace: an update nobody watched, such as
+`cg init` on a new machine, is raised in the next session wherever it runs. The
+notice repeats every session until the file is resolved.
+
+Hook wrappers and git-hook scripts are not covered: they are code that must
+match the extension's source for the trust model, so cg always owns them.
+`claude-md-sections` and `gitignore` blocks are delimited and replaced as a
+whole.
 
 ### Re-install on fresh clone
 

@@ -96,7 +96,7 @@ func TestApplyAndReverseAllContributions(t *testing.T) {
 	}
 
 	// Reverse undoes all of it.
-	if err := Reverse(root, ledger); err != nil {
+	if _, err := Reverse(root, ledger); err != nil {
 		t.Fatalf("Reverse: %v", err)
 	}
 	claude, _ = os.ReadFile(filepath.Join(root, "CLAUDE.md"))
@@ -163,7 +163,7 @@ func TestReverseToleratesMissingArtifacts(t *testing.T) {
 		Notes:            []string{"notes/gone.md"},
 		Hooks:            []LedgerHook{{Event: "SessionStart", Wrapper: ".claude/hooks/gone.sh"}},
 	}
-	if err := Reverse(root, l); err != nil {
+	if _, err := Reverse(root, l); err != nil {
 		t.Errorf("Reverse should tolerate already-absent artifacts, got %v", err)
 	}
 }
@@ -301,7 +301,7 @@ func TestApplyAndReverseGitHook(t *testing.T) {
 		t.Errorf("dropped git hook not reported as orphan: %+v", orphan)
 	}
 
-	if err := Reverse(root, ledger); err != nil {
+	if _, err := Reverse(root, ledger); err != nil {
 		t.Fatalf("Reverse: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(want))); !os.IsNotExist(err) {
@@ -350,7 +350,7 @@ func TestApplyAndReverseGitignore(t *testing.T) {
 		t.Errorf("reapply should be idempotent:\n got: %q\nwant: %q", got, want)
 	}
 
-	if err := Reverse(root, ledger); err != nil {
+	if _, err := Reverse(root, ledger); err != nil {
 		t.Fatalf("Reverse: %v", err)
 	}
 	assertFile(t, path, base)
@@ -367,7 +367,7 @@ func TestReverseGitignoreDeletesFileItCreated(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("Apply should create .gitignore: %v", err)
 	}
-	if err := Reverse(root, ledger); err != nil {
+	if _, err := Reverse(root, ledger); err != nil {
 		t.Fatalf("Reverse: %v", err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {

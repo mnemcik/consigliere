@@ -99,3 +99,9 @@ func replaceFile(target string, data []byte, mode os.FileMode) error {
 	}
 	return nil
 }
+
+// WriteFileAtomic is writeFileAtomic for callers outside the package, such as
+// `cg extension resolve` writing a workspace file.
+func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
+	return writeFileAtomic(path, data, perm)
+}

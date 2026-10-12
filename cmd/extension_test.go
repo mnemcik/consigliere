@@ -11,6 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+
 	"github.com/mnemcik/consigliere/internal/extension"
 	"github.com/mnemcik/consigliere/internal/gitx"
 	"github.com/mnemcik/consigliere/internal/workspace"
@@ -34,6 +37,14 @@ func runExtCfg(t *testing.T, configHome, workdir string, args ...string) (string
 	extInstallRef = ""
 	extInstallPath = ""
 	extRemovePurge = false
+	extInstallForce = false
+	extPendingJSON = false
+	extResolveKeep, extResolveTake, extResolveMerge = false, false, false
+	// cobra keeps a flag's Changed state across Execute calls, which the
+	// resolve command's mutually-exclusive group reads.
+	for _, c := range []*cobra.Command{extInstallCmd, extResolveCmd, extPendingCmd} {
+		c.Flags().VisitAll(func(f *pflag.Flag) { f.Changed = false })
+	}
 
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)

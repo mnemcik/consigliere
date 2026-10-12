@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mnemcik/consigliere/internal/extension"
 	"github.com/mnemcik/consigliere/internal/gitx"
 	"github.com/mnemcik/consigliere/internal/session"
 	"github.com/mnemcik/consigliere/internal/workspace"
@@ -146,14 +147,24 @@ func runSessionPullLatest(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return nil
 	}
-	// A fresh clone has the contributed git-hook scripts (versioned) but not
-	// the dispatcher in .git/hooks (unversioned); this runs at every session
-	// start, so reconcile here and say so only when something is wrong. It runs
-	// after the pull, deferred, so it approves the scripts the pull brought in.
+	// Claude Code reads one JSON object from a hook, so every part of the
+	// report is collected and emitted once, at the end.
+	var notices []string
+	var claudeContext string
 	defer func() {
+		// A fresh clone has the contributed git-hook scripts (versioned) but
+		// not the dispatcher in .git/hooks (unversioned); this runs at every
+		// session start, so reconcile here and say so only when something is
+		// wrong. It runs after the pull, so it approves the scripts the pull
+		// brought in, and so does the pending-files check below.
 		if msgs := ensureGitHooks(cmd.Context(), cwd); len(msgs) > 0 {
-			emitSystemMessage(cmd.OutOrStdout(), "cg: "+strings.Join(msgs, "; "))
+			notices = append(notices, "cg: "+strings.Join(msgs, "; "))
 		}
+		if user, claude := pendingFilesNotice(cmd.Context(), cwd); user != "" {
+			notices = append(notices, user)
+			claudeContext = claude
+		}
+		emitHookOutput(cmd.OutOrStdout(), strings.Join(notices, "\n"), claudeContext)
 	}()
 	landingBranch := workspace.DefaultLandingBranch
 	if root, cerr := gitx.CommonRoot(cmd.Context(), cwd); cerr == nil {
@@ -171,9 +182,69 @@ func runSessionPullLatest(cmd *cobra.Command, _ []string) error {
 
 	res := session.PullLatest(cmd.Context(), cwd, landingBranch)
 	if res.SystemMessage != "" {
-		emitSystemMessage(cmd.OutOrStdout(), res.SystemMessage)
+		notices = append(notices, res.SystemMessage)
 	}
 	return nil
+}
+
+// pendingFilesNotice reports extension files that both the user and the
+// extension changed (see `cg extension pending`). It returns a one-line notice
+// for the user, and context for Claude: Claude raises the files with the user
+// and recommends how to settle each. Both are empty when nothing is pending.
+func pendingFilesNotice(ctx context.Context, dir string) (user, claude string) {
+	root, err := gitx.CommonRoot(ctx, dir)
+	if err != nil {
+		return "", ""
+	}
+	cfg, err := workspace.Detect(root)
+	if err != nil || cfg == nil {
+		return "", ""
+	}
+	rows := pendingRows(extension.PendingAll(root, cfg.Extensions))
+	if len(rows) == 0 {
+		return "", ""
+	}
+	var list []string
+	for _, r := range rows {
+		list = append(list, r.Extension+" "+r.File)
+	}
+	files := strings.Join(list, ", ")
+	user = fmt.Sprintf("cg: %d extension file(s) have an upstream change you haven't taken, because you changed them too: %s", len(rows), files)
+	claude = user + `.
+
+Raise this with the user now, one file at a time. Nothing changes until they decide.
+1. Run ` + "`cg extension diff <extension> <file>`" + `. It shows the extension's change and the user's change, both against what cg installed, and whether a three-way merge is clean.
+2. Recommend one option, with a one-line reason:
+   - merge (` + "`cg extension resolve <extension> <file> --merge`" + `) when the two changes don't overlap and the merge is clean; check the merged result makes sense (valid JSON or YAML where the file is one). It is refused unless the merge is clean.
+   - keep (` + "`--keep`" + `) when the user's change deliberately overrides what the extension changed.
+   - take (` + "`--take`" + `) when the user's change was incidental or is now obsolete.
+3. Run the option the user chooses. Each makes the extension's version the new baseline, so the file is raised again only when the extension changes it again.`
+	return user, claude
+}
+
+// emitHookOutput writes the hook's single JSON object: systemMessage for the
+// user and, when set, additionalContext for Claude. It writes nothing when
+// both are empty.
+func emitHookOutput(w io.Writer, systemMessage, additionalContext string) {
+	if systemMessage == "" && additionalContext == "" {
+		return
+	}
+	type specific struct {
+		HookEventName     string `json:"hookEventName"`
+		AdditionalContext string `json:"additionalContext"`
+	}
+	out := struct {
+		SystemMessage      string    `json:"systemMessage,omitempty"`
+		HookSpecificOutput *specific `json:"hookSpecificOutput,omitempty"`
+	}{SystemMessage: systemMessage}
+	if additionalContext != "" {
+		out.HookSpecificOutput = &specific{HookEventName: "SessionStart", AdditionalContext: additionalContext}
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		return
+	}
+	_, _ = fmt.Fprintln(w, string(data))
 }
 
 var (
@@ -464,15 +535,4 @@ func decodeStdin(r io.Reader, v any) error {
 		return err
 	}
 	return json.Unmarshal(data, v)
-}
-
-// emitSystemMessage writes a Claude Code {"systemMessage": "..."} object.
-func emitSystemMessage(w io.Writer, msg string) {
-	out, err := json.Marshal(struct {
-		SystemMessage string `json:"systemMessage"`
-	}{msg})
-	if err != nil {
-		return
-	}
-	_, _ = fmt.Fprintln(w, string(out))
 }
