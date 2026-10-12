@@ -576,3 +576,28 @@ func TestLegacyLedgerDroppedNote(t *testing.T) {
 		}
 	}
 }
+
+// An extension repo that stores a file with CRLF: its content id is not a blob
+// in the repo, so diff can't show it and says why, while --keep still works.
+func TestCRLFStoredRepoStillResolvesWithKeep(t *testing.T) {
+	cfgHome := t.TempDir()
+	ws, repo := installed(t, cfgHome)
+	writeNote(t, ws, "mine\n")
+	commitFile(t, repo, noteRel, "v2\r\nstored with CRLF\r\n")
+	if _, err := runExtCfg(t, cfgHome, ws, "update", "demo"); err != nil {
+		t.Fatal(err)
+	}
+	if len(ledgerFor(t, ws).Pending) != 1 {
+		t.Fatal("setup: expected one pending file")
+	}
+	out, err := runExtCfg(t, cfgHome, ws, "diff", "demo", noteRel)
+	if err == nil || !strings.Contains(err.Error()+out, "CRLF") {
+		t.Errorf("diff should explain it can't read the version: err %v\n%s", err, out)
+	}
+	if _, err := runExtCfg(t, cfgHome, ws, "resolve", "demo", noteRel, "--keep"); err != nil {
+		t.Fatalf("--keep must work without the versions: %v", err)
+	}
+	if len(ledgerFor(t, ws).Pending) != 0 {
+		t.Error("--keep didn't clear the pending file")
+	}
+}

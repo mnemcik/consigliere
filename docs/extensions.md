@@ -294,8 +294,10 @@ is still as cg wrote it, and says which ones it kept. A file a new version no
 longer ships is treated the same.
 
 Content is compared with line endings normalised to LF, so a file exported with
-CRLF (`core.autocrlf`, `.gitattributes`) matches the repo's LF version, and the
-ids are the repo's own blob ids on every machine.
+CRLF (`core.autocrlf`, `.gitattributes`) matches the repo's LF version, and for a
+repo that stores LF the ids are its own blob ids on every machine. If an
+extension's repo stores a file with CRLF, `diff`, `--merge` and `--take` can't
+read its versions and say so; `--keep` still works.
 
 A ledger from before cg recorded these ids uses the previous version's own files
 as the base. That base is exact when the entry records a commit (the store's tree

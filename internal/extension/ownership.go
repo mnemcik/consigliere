@@ -91,7 +91,7 @@ type ConflictError struct {
 
 func (e *ConflictError) Error() string {
 	return fmt.Sprintf("these files exist, differ from the extension's version, and cg has no record of writing them: %s. "+
-		"Move them aside and run the command again, or run `cg extension install <source> --force` to overwrite them",
+		"Move them aside and run the command again (an install can instead overwrite them with --force)",
 		strings.Join(e.Paths, ", "))
 }
 
@@ -167,7 +167,9 @@ func BlobContent(ctx context.Context, ref *workspace.ExtensionRef, id string) ([
 			return out, nil
 		}
 	}
-	return nil, errors.New("blob " + id[:12] + " is not in the extension's repo on this machine; run `cg extension update " + ref.Name + "`")
+	return nil, errors.New("cg can't read version " + id[:12] + " from the extension's repo on this machine. " +
+		"If `cg extension update " + ref.Name + "` doesn't help, the repo may store the file with CRLF line endings, which cg can't match; " +
+		"--keep still works")
 }
 
 // PendingAll returns every pending file recorded in the workspace's ledgers,

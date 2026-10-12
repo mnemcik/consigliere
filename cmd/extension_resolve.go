@@ -133,10 +133,18 @@ type pendingTarget struct {
 	theirs  []byte
 	current []byte
 	exists  bool // the workspace file exists
-	crlf    bool // the workspace file uses CRLF line endings
+	crlf    bool // the workspace file uses only CRLF line endings
+	blobErr error
 }
 
 func toLF(b []byte) []byte { return bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n")) }
+
+// usesCRLF reports whether every line ending in b is CRLF. A file with mixed
+// endings is written back with LF.
+func usesCRLF(b []byte) bool {
+	crlf := bytes.Count(b, []byte("\r\n"))
+	return crlf > 0 && crlf == bytes.Count(b, []byte("\n"))
+}
 
 // styled returns data in the workspace file's line-ending style.
 func (t *pendingTarget) styled(data []byte) []byte {
@@ -175,13 +183,13 @@ func loadPending(cmd *cobra.Command, name, file string) (*pendingTarget, error) 
 		return nil, cgerr.New(cgerr.ExitUsage, "%s is not pending for %q; `cg extension pending` lists what is", dest, name)
 	}
 	t.path = filepath.Join(root, filepath.FromSlash(dest))
+	// The versions are needed by diff, --merge and --take, not by --keep, so
+	// a failure to read them is kept for the commands that need them.
 	if t.file.Base != "" {
-		if t.base, err = extension.BlobContent(cmd.Context(), ref, t.file.Base); err != nil {
-			return nil, err
-		}
+		t.base, t.blobErr = extension.BlobContent(cmd.Context(), ref, t.file.Base)
 	}
-	if t.theirs, err = extension.BlobContent(cmd.Context(), ref, t.file.Upstream); err != nil {
-		return nil, err
+	if t.blobErr == nil {
+		t.theirs, t.blobErr = extension.BlobContent(cmd.Context(), ref, t.file.Upstream)
 	}
 	t.base, t.theirs = toLF(t.base), toLF(t.theirs)
 	t.current, err = os.ReadFile(t.path) //nolint:gosec // a recorded workspace file
@@ -190,7 +198,7 @@ func loadPending(cmd *cobra.Command, name, file string) (*pendingTarget, error) 
 		t.exists = true
 		// Compare and merge with LF line endings, as the repo stores them;
 		// a result is written back in the file's own style.
-		t.crlf = bytes.Contains(t.current, []byte("\r\n"))
+		t.crlf = usesCRLF(t.current)
 		t.current = toLF(t.current)
 	case !os.IsNotExist(err):
 		return nil, err
@@ -232,6 +240,9 @@ func runExtDiff(cmd *cobra.Command, args []string) error {
 	t, err := loadPending(cmd, args[0], args[1])
 	if err != nil {
 		return err
+	}
+	if t.blobErr != nil {
+		return t.blobErr
 	}
 	out := cmd.OutOrStdout()
 	if t.file.Base == "" {
@@ -277,6 +288,9 @@ func runExtResolve(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	out := cmd.OutOrStdout()
+	if t.blobErr != nil && !extResolveKeep {
+		return t.blobErr
+	}
 	switch {
 	case extResolveTake:
 		if err := writeWorkspaceFile(t.path, t.styled(t.theirs)); err != nil {

@@ -214,7 +214,7 @@ func pendingFilesNotice(ctx context.Context, dir string) (user, claude string) {
 		list = append(list, r.Extension+" "+r.File)
 	}
 	files := strings.Join(list, ", ")
-	user = fmt.Sprintf("cg: %d extension file(s) have an upstream change you haven't taken, because you changed them too: %s", len(rows), files)
+	user = fmt.Sprintf("cg: %d extension file(s) differ from the extension's version and need your decision: %s", len(rows), files)
 	// The procedure comes first, so a long file list can never push it out of
 	// what Claude reads.
 	claude = `cg: some contributed extension files were changed both by the user and by the extension, so cg kept the user's version and is waiting for a decision. Raise this with the user now, one file at a time. Nothing changes until they decide.

@@ -167,6 +167,9 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 type reapplyResult struct {
 	Pending []extension.PendingFile // both sides changed; awaiting `resolve`
 	Kept    []string                // dropped by the new version but edited, so not deleted
+	// KeptUnknown says cg had no record of what it wrote for the kept files,
+	// so it can't tell whether they were edited.
+	KeptUnknown bool
 }
 
 // reapply applies m's contributions into the workspace and persists the ledger,
@@ -197,6 +200,7 @@ func reapply(root, manifestDir string, m *extension.Manifest, prevSource string,
 		// The base for reversing dropped files too. Set only after applying:
 		// ApplyWith must see that the old ledger had no recorded files.
 		old.Files = opts.LegacyBases
+		res.KeptUnknown = old.Files == nil
 	}
 	if orphan := extension.OrphanLedger(old, ledger); orphan != nil {
 		kept, rerr := extension.Reverse(root, orphan)
@@ -232,8 +236,12 @@ func printFileOutcomes(w io.Writer, name string, res reapplyResult) {
 		_, _ = fmt.Fprintf(w, "  kept your %s: %s; see `cg extension diff %s %s`, then `cg extension resolve %s %s --merge|--keep|--take`\n",
 			p.Dest, why, name, p.Dest, name, p.Dest)
 	}
+	why := "you changed it"
+	if res.KeptUnknown {
+		why = "cg can't tell whether you changed it"
+	}
 	for _, k := range res.Kept {
-		_, _ = fmt.Fprintf(w, "  kept %s: the extension no longer ships it, but you changed it; delete it yourself if it's not needed\n", k)
+		_, _ = fmt.Fprintf(w, "  kept %s: the extension no longer ships it, but %s; delete it yourself if it's not needed\n", k, why)
 	}
 }
 
