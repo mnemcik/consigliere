@@ -1,7 +1,9 @@
 package extension
 
 import (
+	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -181,5 +183,26 @@ func TestWriteFileAtomicFailureKeepsPreviousFile(t *testing.T) {
 	}
 	if got := readFile(t, path); got != "previous" {
 		t.Errorf("content = %q, want the previous content intact", got)
+	}
+}
+
+// A file without its owner write bit is refused, as the in-place write it
+// replaces was: the rename would otherwise drop the protection silently.
+func TestWriteFileAtomicRefusesReadOnlyFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "CLAUDE.md")
+	writeTestFile(t, path, "protected", 0o444)
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) }) //nolint:gosec // test temp dir
+
+	for name, write := range map[string]func() error{
+		"keep mode":  func() error { return writeFileAtomic(path, []byte("new"), 0o644) },
+		"force mode": func() error { return writeFileAtomicMode(path, []byte("new"), 0o644) },
+	} {
+		if err := write(); !errors.Is(err, fs.ErrPermission) {
+			t.Errorf("%s: err = %v, want a permission error", name, err)
+		}
+	}
+	if got := readFile(t, path); got != "protected" {
+		t.Errorf("content = %q, want it untouched", got)
 	}
 }

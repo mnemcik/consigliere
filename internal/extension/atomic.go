@@ -1,6 +1,7 @@
 package extension
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -10,29 +11,39 @@ import (
 // temp file in the same directory, which is then renamed over path. A failed
 // write leaves the previous file intact.
 //
-// Like os.WriteFile, perm applies only when path does not exist; an existing
-// file keeps its mode. A symlink at path is followed, so its target is replaced
-// and the link itself survives (a CLAUDE.md linked to AGENTS.md stays linked).
+// An existing file keeps its mode; a new file gets perm exactly (the umask is
+// not applied, unlike os.WriteFile). An existing file without its owner write
+// bit is refused, as writing through it would have been. A symlink at path is
+// followed, so its target is replaced and the link itself survives (a
+// CLAUDE.md linked to AGENTS.md stays linked). The rename gives the file a new
+// inode, so hard links to the previous file keep the previous content.
 func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
-	target, err := resolveTarget(path)
-	if err != nil {
-		return err
-	}
-	mode := perm
-	if info, err := os.Stat(target); err == nil {
-		mode = info.Mode().Perm()
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	return replaceFile(target, data, mode)
+	return writeAtomic(path, data, perm, false)
 }
 
 // writeFileAtomicMode is writeFileAtomic with mode always applied, existing
 // file or not. The mode is set on the temp file before the rename, so an
 // executable never appears without its executable bit.
 func writeFileAtomicMode(path string, data []byte, mode os.FileMode) error {
+	return writeAtomic(path, data, mode, true)
+}
+
+func writeAtomic(path string, data []byte, perm os.FileMode, force bool) error {
 	target, err := resolveTarget(path)
 	if err != nil {
+		return err
+	}
+	mode := perm
+	info, err := os.Stat(target)
+	switch {
+	case err == nil:
+		if info.Mode().Perm()&0o200 == 0 {
+			return &fs.PathError{Op: "write", Path: target, Err: fs.ErrPermission}
+		}
+		if !force {
+			mode = info.Mode().Perm()
+		}
+	case !os.IsNotExist(err):
 		return err
 	}
 	return replaceFile(target, data, mode)

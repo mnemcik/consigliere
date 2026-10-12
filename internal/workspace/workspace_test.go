@@ -1,8 +1,11 @@
 package workspace
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -167,4 +170,42 @@ func sameDir(t *testing.T, a, b string) bool {
 		return ra == b
 	}
 	return ra == rb
+}
+
+func TestSaveIsAtomicKeepsModeAndFollowsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "real.json")
+	if err := os.WriteFile(cfgFile, []byte(`{"type":"consigliere","version":"1.0.0"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, ConfigFile)
+	if err := os.Symlink("real.json", link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	reader, err := os.Open(cfgFile) //nolint:gosec // test temp dir
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reader.Close() }()
+
+	cfg := &Config{Type: "consigliere", Version: "2.0.0"}
+	if err := cfg.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	if seen, _ := io.ReadAll(reader); !strings.Contains(string(seen), `"1.0.0"`) {
+		t.Errorf("a reader opened before Save saw %q, want the complete previous content", seen)
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf(".cg.json is no longer a symlink (err %v)", err)
+	}
+	got, err := os.ReadFile(cfgFile) //nolint:gosec // test temp dir
+	if err != nil || !strings.Contains(string(got), `"2.0.0"`) {
+		t.Errorf("link target = %q (err %v), want the new config", got, err)
+	}
+	if runtime.GOOS != "windows" {
+		if info, _ := os.Stat(cfgFile); info.Mode().Perm() != 0o600 {
+			t.Errorf("mode = %o, want the existing 600", info.Mode().Perm())
+		}
+	}
 }
