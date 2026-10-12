@@ -543,3 +543,36 @@ func TestDestinationMovedBetweenNotesAndTemplatesIsKept(t *testing.T) {
 		t.Errorf("a destination still shipped was removed (now %q)", got)
 	}
 }
+
+// A legacy ledger's dropped note is removed when unedited (its base comes from
+// the pinned tree) and kept when edited.
+func TestLegacyLedgerDroppedNote(t *testing.T) {
+	dropped := strings.Replace(testManifest, `,
+    "notes": [{ "src": "notes/demo.md", "dest": "notes/demo.md" }]`, "", 1)
+	if dropped == testManifest {
+		t.Fatal("fixture manifest did not change")
+	}
+	for _, edited := range []bool{false, true} {
+		cfgHome := t.TempDir()
+		ws, repo := installed(t, cfgHome)
+		l := ledgerFor(t, ws)
+		l.Files = nil
+		if err := l.Save(ws); err != nil {
+			t.Fatal(err)
+		}
+		if edited {
+			writeNote(t, ws, "mine")
+		}
+		updateExtRepo(t, repo, dropped, "")
+		if _, err := runExtCfg(t, cfgHome, ws, "update", "demo"); err != nil {
+			t.Fatal(err)
+		}
+		_, err := os.Stat(filepath.Join(ws, noteRel))
+		if edited && err != nil {
+			t.Errorf("an edited dropped note was deleted: %v", err)
+		}
+		if !edited && !os.IsNotExist(err) {
+			t.Errorf("an unedited dropped note was kept (stat err %v)", err)
+		}
+	}
+}
