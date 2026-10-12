@@ -45,7 +45,7 @@ func TestExtensionsDirHonorsXDG(t *testing.T) {
 	if got := CloneDir("foo"); got != filepath.Join(want, "foo") {
 		t.Errorf("CloneDir = %q", got)
 	}
-	if got := StagingDir(); got != filepath.Join(want, ".staging") {
-		t.Errorf("StagingDir = %q", got)
+	if got := MirrorDir("https://example.com/o/r.git"); filepath.Dir(got) != filepath.Join(want, "mirrors") {
+		t.Errorf("MirrorDir = %q", got)
 	}
 }

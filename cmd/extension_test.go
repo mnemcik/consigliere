@@ -43,10 +43,31 @@ func runExtCfg(t *testing.T, configHome, workdir string, args ...string) (string
 	return buf.String(), err
 }
 
-// cloneDirFor returns the install path of name under a given config home,
-// mirroring internal/extension.CloneDir.
+// cloneDirFor returns the legacy name-keyed install path of name under a given
+// config home, mirroring internal/extension.CloneDir.
 func cloneDirFor(configHome, name string) string {
 	return filepath.Join(configHome, "consigliere", "extensions", name)
+}
+
+// sourceFor returns the store tree the workspace's entry for name reads, under
+// the XDG_CONFIG_HOME runExtCfg set, and fails if the entry has no commit.
+func sourceFor(t *testing.T, ws, name string) string {
+	t.Helper()
+	cfg, err := workspace.Detect(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range cfg.Extensions {
+		e := &cfg.Extensions[i]
+		if e.Name == name {
+			if !extension.ValidCommit(e.Commit) {
+				t.Fatalf("entry %q records no commit: %+v", name, e)
+			}
+			return extension.SourceRoot(e)
+		}
+	}
+	t.Fatalf("extension %q not recorded", name)
+	return ""
 }
 
 // updateExtRepo rewrites the fixture's manifest, commits, and optionally tags it,
@@ -337,42 +358,47 @@ func TestExtRemove(t *testing.T) {
 	if _, err := runExtCfg(t, cfgHome, ws, "install", repo); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	clone := cloneDirFor(cfgHome, "demo")
-	if _, err := os.Stat(clone); err != nil {
-		t.Fatalf("clone should exist after install: %v", err)
-	}
+	tree := sourceFor(t, ws, "demo")
+	mustExist(t, tree)
 
-	// remove (no purge): entry gone, clone left in place.
+	// remove: entry gone; the store tree is shared across workspaces, so it stays.
 	out, err := runExtCfg(t, cfgHome, ws, "remove", "demo")
 	if err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	if !strings.Contains(out, "Removed demo") || !strings.Contains(out, "left in place") {
+	if !strings.Contains(out, "Removed demo") {
 		t.Errorf("unexpected remove output: %q", out)
 	}
 	cfg, _ := workspace.Detect(ws)
 	if len(cfg.Extensions) != 0 {
 		t.Errorf("entry should be gone, got %+v", cfg.Extensions)
 	}
-	if _, err := os.Stat(clone); err != nil {
-		t.Errorf("clone should remain without --purge: %v", err)
-	}
+	mustExist(t, tree)
 
 	// removing an absent extension errors.
 	if _, err := runExtCfg(t, cfgHome, ws, "remove", "demo"); err == nil {
 		t.Error("removing an uninstalled extension should error")
 	}
 
-	// reinstall + remove --purge deletes the clone.
+	// reinstall + remove --purge deletes a legacy clone but keeps the tree.
 	if _, err := runExtCfg(t, cfgHome, ws, "install", repo); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runExtCfg(t, cfgHome, ws, "remove", "--purge", "demo"); err != nil {
+	legacy := cloneDirFor(cfgHome, "demo")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err = runExtCfg(t, cfgHome, ws, "remove", "--purge", "demo")
+	if err != nil {
 		t.Fatalf("remove --purge: %v", err)
 	}
-	if _, err := os.Stat(clone); !os.IsNotExist(err) {
-		t.Errorf("clone should be gone after --purge, stat err = %v", err)
+	if !strings.Contains(out, "purged legacy clone") {
+		t.Errorf("unexpected remove --purge output: %q", out)
 	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Errorf("legacy clone should be gone after --purge, stat err = %v", err)
+	}
+	mustExist(t, tree)
 }
 
 func TestExtUpdateUntagged(t *testing.T) {
@@ -606,9 +632,9 @@ func TestInitReinstallsMissingExtensionClone(t *testing.T) {
 	}
 
 	// Simulate a fresh machine: the workspace's .cg.json still lists the
-	// extension, but the clone and applied artifacts are gone.
-	clone := cloneDirFor(cfgHome, "full")
-	if err := os.RemoveAll(clone); err != nil {
+	// extension, but the whole store and the applied artifacts are gone.
+	tree := sourceFor(t, ws, "full")
+	if err := os.RemoveAll(filepath.Join(cfgHome, "consigliere", "extensions")); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(filepath.Join(ws, "notes", "full-guide.md")); err != nil {
@@ -627,7 +653,11 @@ func TestInitReinstallsMissingExtensionClone(t *testing.T) {
 		t.Fatalf("init --force: %v", err)
 	}
 
-	mustExist(t, clone)
+	// Restored at the recorded commit, not at whatever upstream holds now.
+	mustExist(t, tree)
+	if got := sourceFor(t, ws, "full"); got != tree {
+		t.Errorf("re-installed at %s, want the recorded %s", got, tree)
+	}
 	mustExist(t, filepath.Join(ws, "notes", "full-guide.md"))
 	// The extension entry must survive the .cg.json rewrite.
 	cfg, _ := workspace.Detect(ws)

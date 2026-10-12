@@ -55,18 +55,11 @@ func ExtensionsDir() string {
 	return filepath.Join(configBase(), "extensions")
 }
 
-// CloneDir is the install directory for the named extension. name must be a
+// CloneDir is the legacy, name-keyed install directory, read only for entries
+// recorded before the store (see store.go). name must be a
 // validated extension name (matching the manifest's nameRe — [a-z0-9-]+); the
 // install flow validates m.Name via Manifest.Validate before calling this, so
 // name never contains path separators or "..".
 func CloneDir(name string) string {
 	return filepath.Join(ExtensionsDir(), name)
-}
-
-// StagingDir is the transient clone target used before the manifest is read:
-// install clones here, validates, then renames to CloneDir(name) (the name is
-// only known after the manifest is parsed). A deterministic, dot-prefixed name
-// keeps it out of the way of real extensions and avoids any randomness.
-func StagingDir() string {
-	return filepath.Join(ExtensionsDir(), ".staging")
 }

@@ -187,9 +187,13 @@ func TestExtInstallSubdirDirectIsolation(t *testing.T) {
 	if !strings.Contains(string(claude), "ext:1pw:section:start=creds") {
 		t.Errorf("1pw section missing from CLAUDE.md:\n%s", claude)
 	}
-	// Each extension has its own name-keyed clone.
-	mustExist(t, cloneDirFor(cfgHome, "1pw"))
-	mustExist(t, cloneDirFor(cfgHome, "vault"))
+	// Both read the store tree of their repo at the recorded commit: the same
+	// repo and commit share one tree.
+	tree1, tree2 := sourceFor(t, ws, "1pw"), sourceFor(t, ws, "vault")
+	mustExist(t, tree1)
+	if tree1 != tree2 {
+		t.Errorf("co-located extensions at one commit should share a tree: %s vs %s", tree1, tree2)
+	}
 }
 
 // TestExtInstallSubdirFromRegistry resolves a registry entry carrying a path.
@@ -311,14 +315,11 @@ func TestExtRemoveSubdirLeavesSibling(t *testing.T) {
 		t.Fatalf("remove 1pw: %v", err)
 	}
 
-	// 1pw gone; vault intact.
-	if _, err := os.Stat(cloneDirFor(cfgHome, "1pw")); !os.IsNotExist(err) {
-		t.Errorf("1pw clone should be purged, stat err=%v", err)
-	}
+	// 1pw gone; vault intact, including the tree they share.
+	mustExist(t, sourceFor(t, ws, "vault"))
 	if _, err := os.Stat(filepath.Join(ws, "notes", "creds.md")); !os.IsNotExist(err) {
 		t.Errorf("1pw note should be reversed, stat err=%v", err)
 	}
-	mustExist(t, cloneDirFor(cfgHome, "vault"))
 	mustExist(t, filepath.Join(ws, "notes", "vault.md"))
 	cfg, _ := workspace.Detect(ws)
 	if len(cfg.Extensions) != 1 || cfg.Extensions[0].Name != "vault" {

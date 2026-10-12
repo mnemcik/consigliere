@@ -51,17 +51,44 @@ contributions); project decisions DEC-001 (manifest schema v1) and DEC-002
   registries (public + private) and installs are fully qualified —
   see [Multiple registries](#multiple-registries-fully-qualified-names).
 - **Extension repo**: holds `cg-extension.json` plus the contribution payloads.
-- **Clone**: `cg extension install` clones the repo to
-  `~/.config/consigliere/extensions/<name>/` (machine-shared source of truth).
+- **Store**: `cg extension install` fetches the repo into a machine-shared
+  store, keyed by repo and commit, and records the installed commit in the
+  workspace. See [Install layout](#install-layout-dec-002).
 - **Workspace**: contributions are *applied* per-workspace and tracked in a
   per-workspace ledger (`.cg/ext/<name>.json`) + `.cg.json` `extensions[]`.
 
 ## Install layout (DEC-002)
 
-The cloned extension source is **per machine**, XDG-compliant:
+The extension source is **per machine**, XDG-compliant, and keyed by **repo and
+commit**, so no workspace's install or update can change what another workspace
+reads:
 
 ```
-~/.config/consigliere/extensions/<name>/      # the cloned extension repo (shared across this machine's workspaces)
+~/.config/consigliere/extensions/
+  mirrors/<key>.git                  # one bare mirror per repo URL: fetches, ref resolution
+  trees/<key>@<commit>/              # one exported tree per commit, never modified after it is written
+    <path>/                          # the extension's manifest dir (repo root when path is empty)
+```
+
+`<key>` is the repo URL's last path segment plus 12 hex characters of the URL's
+SHA-256, which keeps it readable, collision-safe and free of path traversal.
+A tree is checked out through a private index into a staging directory and
+renamed into place, so a reader never sees a partial one. Each workspace records
+the commit it installed in `.cg.json` (`extensions[].commit`): install, update,
+`cg init`'s re-install, git-hook approval and external-subcommand discovery all
+read the tree at that commit. Co-located extensions at one commit share a tree,
+and same-named extensions from different repos never meet. Trees are kept when
+an extension is removed, since other workspaces may use them; a prune step does
+not exist yet.
+
+An entry recorded before the store (no `commit`) reads the legacy name-keyed
+clone at `~/.config/consigliere/extensions/<name>/` until its next install or
+update records a commit.
+
+A manifest dir looks like this:
+
+```
+<tree>/<path>/
   cg-extension.json
   fragments/<id>.md                  # CLAUDE.md section bodies
   notes/<file>.md                    # notes to copy into the workspace
@@ -76,7 +103,7 @@ The cloned extension source is **per machine**, XDG-compliant:
 second config tree (project DEC-002, 2026-06-14).
 
 What was *applied to a given workspace* is recorded **in that workspace**, not in
-the shared clone, because one clone may back several workspaces:
+the store, because one tree may back several workspaces:
 
 ```
 <workspace>/.cg/ext/<name>.json      # install ledger: exactly what this workspace got
@@ -85,7 +112,7 @@ the shared clone, because one clone may back several workspaces:
 
 This refines the project todo's original `~/.config/consigliere/extensions/<name>/.install-log.json`
 placement: the ledger must be per-workspace so `cg extension remove` reverses the
-right workspace, and so two workspaces sharing one clone don't fight over one
+right workspace, and so two workspaces sharing one tree don't fight over one
 log. See DEC-002.
 
 ## Manifest schema v1 (`cg-extension.json`)
@@ -131,7 +158,7 @@ forbids cross-extension dependencies (declare none).
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
 | `manifest` | int | yes | Manifest **schema** version. v1 = `1`. `cg` refuses a manifest whose `manifest` it doesn't understand. |
-| `name` | string | yes | Short, lowercase, `[a-z0-9-]+`. The install name, the `.cg.json` key, the clone directory, the `ext:<name>:section` namespace, and the `cg-<name>` binary stem. Must be unique in the registry. |
+| `name` | string | yes | Short, lowercase, `[a-z0-9-]+`. The install name, the `.cg.json` key, the legacy clone directory, the `ext:<name>:section` namespace, and the `cg-<name>` binary stem. Must be unique in the registry. |
 | `version` | string | yes | Extension semver. Recorded in `.cg.json`; compared on `cg extension update`. |
 | `description` | string | yes | One line, shown in `cg extension list` and the registry. |
 | `contributes` | object | yes | The contribution points (all seven keys below). Each is an array; an empty/absent array means "contributes nothing of this type". |
@@ -182,20 +209,19 @@ forbids cross-extension dependencies (declare none).
    - **Trust.** Git never versions hooks, so that a pull or a checkout cannot
      make code run. Versioned scripts would undo that, so a script runs only
      when it is *approved*: its content must match the same script in the
-     machine-local clone of an extension recorded in `.cg.json` — code the user
-     installed on this machine. cg writes the approved scripts (path and git
+     store's tree at the commit `.cg.json` records for that extension, which is
+     code the user installed on this machine. cg writes the approved scripts (path and git
      blob id) to `cg-hooks.allow` in the git dir, which is not versioned. The
      dispatcher runs only listed scripts whose content still matches, and
      warns about any other; cg reports unapproved scripts too. A script that
      arrives by pull or checkout therefore does not run until `cg extension
-     install` or `update` approves it, unless that extension is already cloned
-     on this machine (below), and on a new machine scripts start running once
-     `cg init` or `cg extension install` has fetched the clones.
-     Approval follows `.cg.json`, and the clones are shared by every workspace
-     on the machine (one per extension name). So a `.cg.json` entry, including
-     one that arrives by pull, approves the scripts of an extension already
-     cloned on this machine for another workspace, without an install in this
-     one.
+     install` or `update` approves it, unless the tree for that exact commit is
+     already on this machine (below), and on a new machine scripts start running
+     once `cg init` or `cg extension install` has fetched it.
+     Approval follows `.cg.json`, and trees are shared by every workspace on the
+     machine. So a `.cg.json` entry, including one that arrives by pull,
+     approves the scripts of a commit already in the store for another
+     workspace, without an install in this one.
    - **Reconciling.** `.git/hooks` is not versioned, so cg installs or removes
      dispatchers to match the approved scripts on `cg extension
      install|update|remove`, `cg init`, `cg sync --apply` and every session
@@ -226,21 +252,23 @@ forbids cross-extension dependencies (declare none).
 
 | Command | Behaviour |
 |---------|-----------|
-| `cg extension install <registry>/<name>` | Resolve `<name>` in the **named** registry `<registry>` (from `.cg.json` `registries`; the built-in `cg` alias is the public catalogue) → clone `repo` to `~/.config/consigliere/extensions/<name>/` (skip if present) → read manifest → apply all contributions → write ledger + `.cg.json` entry. **Names are always fully qualified** — a bare name is rejected, so the source is unambiguous (no first-match search, no [dependency confusion](#multiple-registries-fully-qualified-names)). |
-| `cg extension install <repo-url>` | Skip the registry: clone the URL directly, read its manifest, take `name` from the manifest. Source recorded as `direct`. |
-| `cg extension install … --ref <tag\|branch>` | Pin the clone to a ref. Default: latest tag, else the default branch. |
+| `cg extension install <registry>/<name>` | Resolve `<name>` in the **named** registry `<registry>` (from `.cg.json` `registries`; the built-in `cg` alias is the public catalogue) → fetch `repo` into the store and export the tree for the resolved commit → read manifest → apply all contributions → write ledger + `.cg.json` entry, including the commit. **Names are always fully qualified** — a bare name is rejected, so the source is unambiguous (no first-match search, no [dependency confusion](#multiple-registries-fully-qualified-names)). |
+| `cg extension install <repo-url>` | Skip the registry: fetch the URL directly, read its manifest, take `name` from the manifest. Source recorded as `direct`. |
+| `cg extension install … --ref <tag\|branch\|commit>` | Install at that ref. Default: the default branch. |
 | `cg extension install <repo-url> --path <subdir>` | Install a co-located extension whose manifest lives in `<subdir>` of a monorepo. Direct installs only; registry entries carry their own `path`. See [Co-located extensions](#co-located-extensions-monorepo). |
 | `cg extension list [--json]` | List installed extensions for the current workspace: name, version, source, installed-at. |
-| `cg extension remove <name> [--purge]` | Reverse every contribution recorded in the workspace ledger (delete the `ext:<name>:section` block, copied notes/templates, hook wrapper + settings entry, git-hook scripts and any dispatcher left with nothing to run, INDEX rows), drop the `.cg.json` entry, delete the ledger. `--purge` also deletes the shared clone. |
-| `cg extension update [<name>]` | Advance a **single-repo** extension's clone to the latest tag (or its default branch when untagged), then re-apply contributions (replace-in-place). A **co-located** (subdir) extension instead tracks the default branch and versions from its manifest — see [Co-located extensions](#co-located-extensions-monorepo). No `<name>` updates all installed extensions. |
+| `cg extension remove <name> [--purge]` | Reverse every contribution recorded in the workspace ledger (delete the `ext:<name>:section` block, copied notes/templates, hook wrapper + settings entry, git-hook scripts and any dispatcher left with nothing to run, INDEX rows), drop the `.cg.json` entry, delete the ledger. The store's trees are shared, so they stay; `--purge` deletes only a legacy name-keyed clone. |
+| `cg extension update [<name>]` | Move a **single-repo** extension to its latest tag (or its default branch when untagged), record the new commit, then re-apply contributions (replace-in-place). A **co-located** (subdir) extension instead tracks the default branch and versions from its manifest — see [Co-located extensions](#co-located-extensions-monorepo). No `<name>` updates all installed extensions. |
 
 **Every workspace file is written atomically.** Install, update, remove and rollback write each file (copied notes, templates, hook wrappers, git-hook scripts, `CLAUDE.md`, `.gitignore`, `settings.json`, the ledger, `.cg.json`) to a temp file in the same directory and rename it into place. A hook or shim run by a parallel session therefore sees the old file or the new one, never a half-written one. A failed write leaves the previous file intact. Copied files get a fixed mode (`0644`, or `0755` for hook and git-hook scripts); `CLAUDE.md`, `.gitignore`, `settings.json`, the ledger and `.cg.json` keep the mode they have, and a new one gets `0644` regardless of the umask. A file without its owner write bit is refused rather than replaced. This checks the mode bits, not access rights, so it also refuses root, and it doesn't catch a writable-looking file owned by someone else. A symlink is followed, so its target is replaced and the link survives. Hard links to a replaced file keep the old content.
 
 ### Re-install on fresh clone
 
-`.cg.json` records each installed extension. `cg init` (and a future
-`cg extension sync`) re-runs `cg extension install` for every `extensions[]`
-entry, so cloning a workspace to a new machine restores its extensions.
+`.cg.json` records each installed extension and its commit. For every
+`extensions[]` entry whose tree is missing on this machine, `cg init` fetches
+**that commit** and re-applies its contributions, so every machine applies the
+same content no matter what upstream holds by then. An entry without a commit
+is installed from the default branch, and the commit is recorded.
 
 ## External-subcommand discovery
 
@@ -248,7 +276,7 @@ Modelled on git's `git foo` → `git-foo` pattern. When `cg <verb> …` is not a
 known built-in subcommand, the resolver looks for an executable named
 `cg-<verb>`:
 
-1. in each installed extension's `bin/` (per the workspace's `.cg.json`), then
+1. in each installed extension's `bin/`, in the tree at the commit the workspace's `.cg.json` records, then
 2. on `$PATH`.
 
 If found, `cg` `exec`s it with the remaining arguments and forwards the exit
@@ -273,6 +301,7 @@ Additive and optional; absence = no extensions. Existing fields unchanged.
       "registry": "cg",                           // alias resolved through (registry installs); absent for direct
       "repo": "https://github.com/mnemcik/cg-extensions",
       "path": "1password",                        // optional: subdir for a co-located extension; absent = repo root
+      "commit": "51559d0…",                       // full commit installed; absent for entries recorded before the store
       "installed": "2026-06-14T10:00:00Z"
     }
   ]
@@ -406,15 +435,14 @@ cg extension install https://github.com/mnemcik/cg-extensions --path 1password
 `--path` applies only to direct repo-url installs; a registry name carries its
 own `path`. The subdir is validated (relative, no `..` escape) before use.
 
-**Isolation.** Each extension still gets its own name-keyed clone under
-`~/.config/consigliere/extensions/<name>/` (the whole repo is cloned, the
-manifest and payloads are read from `<clone>/<path>`). Co-located siblings
-therefore install, remove, and update independently — `remove --purge` of one
-never touches another's clone. The subdir is recorded in `.cg.json` (`path`) so
-update and fresh-clone re-install know where each manifest lives.
+**Isolation.** Co-located extensions share the repo's mirror and, at the same
+commit, one tree; each is read from `<tree>/<path>`. They still install, remove
+and update independently, because each `.cg.json` entry records its own commit
+and removing one never deletes a tree. The subdir is recorded in `.cg.json`
+(`path`) so update and fresh-clone re-install know where each manifest lives.
 
 **Versioning.** A single-repo extension's git tags are its releases, so `update`
-checks out the latest tag (or the default branch when untagged). A whole-repo tag
+moves to the latest tag (or the default branch when untagged). A whole-repo tag
 can't map to a single co-located extension's version, so a subdir extension's
 `update` instead tracks the repo's **default branch** and takes the version from
 the manifest's own `version` field. Bump the manifest `version` in the subdir to
@@ -448,9 +476,9 @@ Explicitly **out** for v1 (documented here so they aren't silently assumed):
 
 ## Open questions deferred to implementation
 
-- Whether `remove` of a clone shared by multiple workspaces should refuse
-  without `--purge` when other workspaces still reference it (v1: `remove`
-  leaves the clone, `--purge` deletes it unconditionally).
+- How to prune store trees and mirrors no workspace uses any more. Trees are
+  shared and `remove` keeps them, so the store only grows (each tree is small:
+  a few hundred KB for the `cg-extensions` monorepo).
 - Conflict handling if two extensions declare the same `ext:<name>:section` id
   — names are registry-unique so the namespace can't actually collide; revisit
   only if direct-install bypasses uniqueness.

@@ -80,7 +80,12 @@ type ExtensionRef struct {
 	// Path is the subdir within Repo holding cg-extension.json (and its payload
 	// files) when an extension is co-located with others in one repo (a monorepo).
 	// Empty means the repo root — the single-extension-per-repo default.
-	Path      string `json:"path,omitempty"`
+	Path string `json:"path,omitempty"`
+	// Commit is the full commit of Repo the workspace installed. Install,
+	// update and re-install read the extension from the store's tree for this
+	// commit, so another workspace's install can't change it. Empty for an entry
+	// recorded before the store existed, which reads the legacy clone.
+	Commit    string `json:"commit,omitempty"`
 	Installed string `json:"installed"` // RFC3339 timestamp
 }
 

@@ -369,11 +369,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Re-install any extensions recorded in .cg.json whose machine-shared clone
 	// is missing (the re-cloned-workspace scenario). Present clones are left as-is.
-	reinstalled, rerr := reinstallMissingExtensions(cmd, dir, priorExtensions)
+	restored, reinstalled, rerr := reinstallMissingExtensions(cmd, dir, priorExtensions)
 	if rerr != nil {
 		return rerr
 	}
 	created = append(created, reinstalled...)
+	if len(reinstalled) > 0 {
+		// Record the commits of legacy entries that were installed fresh.
+		cgJSON.Extensions = restored
+		if err := cgJSON.Save(dir); err != nil {
+			return fmt.Errorf("writing %s: %w", workspace.ConfigFile, err)
+		}
+	}
 	printGitHookWarnings(commandErr(cmd), ensureGitHooks(commandContext(cmd), dir))
 
 	// Summary

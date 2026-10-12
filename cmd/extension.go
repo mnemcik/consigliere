@@ -122,7 +122,7 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 		return cgerr.New(cgerr.ExitUsage, "%v", err)
 	}
 
-	m, dest, err := installFrom(cmd.Context(), repo, extInstallRef, path)
+	m, dest, commit, err := installFrom(cmd.Context(), repo, extInstallRef, path)
 	if err != nil {
 		return err
 	}
@@ -136,6 +136,7 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 		Registry:  regAlias,
 		Repo:      repo,
 		Path:      path,
+		Commit:    commit,
 		Installed: time.Now().UTC().Format(time.RFC3339),
 	})
 	if err := cfg.Save(root); err != nil {
@@ -252,71 +253,96 @@ func printGitHookWarnings(w io.Writer, msgs []string) {
 	}
 }
 
-// reinstallMissingExtensions re-clones and re-applies any extension recorded in
-// .cg.json whose machine-shared clone is absent (the re-cloned-workspace case),
-// leaving present clones untouched. Returns short descriptions for the init
-// summary.
-func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspace.ExtensionRef) ([]string, error) {
+// reinstallMissingExtensions restores, for every extension recorded in
+// .cg.json, the source this machine is missing (the re-cloned-workspace case)
+// and re-applies its contributions. An entry with a recorded commit is
+// restored at exactly that commit, so every machine applies the same content.
+// An entry without one predates the store: when its legacy clone is missing it
+// is installed from the default branch and its commit is recorded. Present
+// sources are left as they are. It returns the entries, with any newly
+// recorded commits, and short descriptions for the init summary.
+func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspace.ExtensionRef) ([]workspace.ExtensionRef, []string, error) {
+	out := append([]workspace.ExtensionRef(nil), exts...)
 	var done []string
-	for _, e := range exts {
-		if _, err := os.Stat(extension.CloneDir(e.Name)); err == nil {
-			continue // clone present; nothing to re-clone
+	for i := range out {
+		e := &out[i]
+		if _, err := os.Stat(extension.SourceRoot(e)); err == nil {
+			continue // source present; nothing to restore
 		}
 		if !gitx.Available() {
-			return done, cgerr.New(cgerr.ExitUsage, "git is required to re-install extension %q", e.Name)
+			return out, done, cgerr.New(cgerr.ExitUsage, "git is required to re-install extension %q", e.Name)
 		}
 		path, perr := extension.CleanSubdir(e.Path)
 		if perr != nil {
-			return done, cgerr.New(cgerr.ExitUsage, "extension %q: %v", e.Name, perr)
+			return out, done, cgerr.New(cgerr.ExitUsage, "extension %q: %v", e.Name, perr)
 		}
-		m, dest, err := installFrom(cmd.Context(), e.Repo, "", path)
+		var (
+			m      *extension.Manifest
+			tree   string
+			commit = e.Commit
+			err    error
+		)
+		if extension.ValidCommit(commit) {
+			tree, err = extension.FetchTree(cmd.Context(), e.Repo, commit)
+			if err != nil {
+				return out, done, cgerr.New(cgerr.ExitUsage, "restoring %q at %s: %v", e.Name, commit[:12], err)
+			}
+			m, err = loadValidManifest(filepath.Join(tree, path), e.Name)
+		} else {
+			m, tree, commit, err = installFrom(cmd.Context(), e.Repo, "", path)
+		}
 		if err != nil {
-			return done, err
+			return out, done, err
 		}
-		if err := reapply(root, filepath.Join(dest, path), m); err != nil {
-			return done, err
+		if err := reapply(root, filepath.Join(tree, path), m); err != nil {
+			return out, done, err
 		}
-		done = append(done, fmt.Sprintf("extension %q v%s (re-installed)", m.Name, m.Version))
+		e.Commit = commit
+		done = append(done, fmt.Sprintf("extension %q v%s (re-installed at %s)", m.Name, m.Version, commit[:12]))
 	}
-	return done, nil
+	return out, done, nil
 }
 
-// installFrom clones repo (at ref, if non-empty) into a staging dir, reads and
-// validates the manifest at <staging>/<path> (path empty = repo root), and
-// atomically renames the whole clone into the machine-shared install location
-// keyed by the extension name. It returns the validated manifest and the clone
-// root (the manifest and its payloads live at <cloneRoot>/<path>). It does not
-// touch the workspace — callers Apply contributions and record the .cg.json entry.
-func installFrom(ctx context.Context, repo, ref, path string) (*extension.Manifest, string, error) {
-	staging := extension.StagingDir()
-	if err := os.RemoveAll(staging); err != nil {
-		return nil, "", fmt.Errorf("clearing staging dir: %w", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(staging), 0o755); err != nil { //nolint:gosec // user config dir
-		return nil, "", fmt.Errorf("creating extensions dir: %w", err)
-	}
-	// Best-effort cleanup: harmless once a successful install renames staging away.
-	defer func() { _ = os.RemoveAll(staging) }()
-
-	if err := gitx.Clone(ctx, repo, staging, ref); err != nil {
-		return nil, "", cgerr.New(cgerr.ExitUsage, "cloning %s: %v", repo, err)
-	}
-	m, err := extension.LoadManifest(filepath.Join(staging, path))
+// installFrom fetches repo into the machine-shared store, resolves ref (empty
+// means the default branch) to a commit, exports that commit's tree, and reads
+// and validates the manifest at <tree>/<path> (path empty = repo root). It
+// returns the manifest, the tree root and the commit. It does not touch the
+// workspace: callers apply the contributions and record the .cg.json entry.
+func installFrom(ctx context.Context, repo, ref, path string) (m *extension.Manifest, tree, commit string, err error) {
+	mirror, err := extension.EnsureMirror(ctx, repo, true)
 	if err != nil {
-		return nil, "", cgerr.New(cgerr.ExitUsage, "reading %s: %v", extension.ManifestFile, err)
+		return nil, "", "", cgerr.New(cgerr.ExitUsage, "fetching %s: %v", repo, err)
+	}
+	commit, err = extension.ResolveCommit(ctx, mirror, ref)
+	if err != nil {
+		return nil, "", "", cgerr.New(cgerr.ExitUsage, "resolving %s: %v", repo, err)
+	}
+	tree, err = extension.EnsureTree(ctx, repo, mirror, commit)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("exporting %s at %s: %w", repo, commit[:12], err)
+	}
+	m, err = loadValidManifest(filepath.Join(tree, path), "")
+	if err != nil {
+		return nil, "", "", err
+	}
+	return m, tree, commit, nil
+}
+
+// loadValidManifest reads and validates the manifest in dir. A non-empty want
+// must match the manifest's name, so a recorded entry can't pick up another
+// extension's manifest.
+func loadValidManifest(dir, want string) (*extension.Manifest, error) {
+	m, err := extension.LoadManifest(dir)
+	if err != nil {
+		return nil, cgerr.New(cgerr.ExitUsage, "reading %s: %v", extension.ManifestFile, err)
 	}
 	if err := m.Validate(); err != nil {
-		return nil, "", cgerr.New(cgerr.ExitUsage, "invalid %s: %v", extension.ManifestFile, err)
+		return nil, cgerr.New(cgerr.ExitUsage, "invalid %s: %v", extension.ManifestFile, err)
 	}
-
-	dest := extension.CloneDir(m.Name)
-	if err := os.RemoveAll(dest); err != nil {
-		return nil, "", fmt.Errorf("clearing prior install at %s: %w", dest, err)
+	if want != "" && m.Name != want {
+		return nil, cgerr.New(cgerr.ExitUsage, "%s in %s names %q, but .cg.json records %q", extension.ManifestFile, dir, m.Name, want)
 	}
-	if err := os.Rename(staging, dest); err != nil {
-		return nil, "", fmt.Errorf("installing to %s: %w", dest, err)
-	}
-	return m, dest, nil
+	return m, nil
 }
 
 // resolveQualified resolves alias to its registry source, fetches that one
@@ -410,7 +436,8 @@ func runExtList(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 	_, _ = fmt.Fprintf(out, "%-20s %-10s %-12s %s\n", "NAME", "VERSION", "SOURCE", "REPO")
-	for _, e := range exts {
+	for i := range exts {
+		e := &exts[i]
 		// For registry installs show the alias the extension came from (its
 		// fully-qualified prefix); direct installs show "direct".
 		src := e.Source
@@ -527,14 +554,19 @@ func runExtRemove(cmd *cobra.Command, args []string) error {
 
 	out := cmd.OutOrStdout()
 	_, _ = fmt.Fprintf(out, "Removed %s from this workspace\n", name)
+	// The store's trees are shared by every workspace on the machine and keyed
+	// by commit, so they stay; --purge deletes only a legacy name-keyed clone.
 	clone := extension.CloneDir(name)
+	if _, err := os.Stat(clone); err != nil {
+		return nil
+	}
 	if extRemovePurge {
 		if err := os.RemoveAll(clone); err != nil {
 			return fmt.Errorf("purging clone %s: %w", clone, err)
 		}
-		_, _ = fmt.Fprintf(out, "  purged shared clone: %s\n", clone)
+		_, _ = fmt.Fprintf(out, "  purged legacy clone: %s\n", clone)
 	} else {
-		_, _ = fmt.Fprintf(out, "  shared clone left in place: %s (use --purge to delete)\n", clone)
+		_, _ = fmt.Fprintf(out, "  legacy clone left in place: %s (use --purge to delete)\n", clone)
 	}
 	return nil
 }
@@ -567,12 +599,13 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 	out := cmd.OutOrStdout()
 	for i := range targets {
 		old := targets[i].Version
-		newVer, err := updateOne(cmd.Context(), root, targets[i].Name, targets[i].Path)
+		newVer, commit, err := updateOne(cmd.Context(), root, &targets[i])
 		if err != nil {
 			return err
 		}
 		ref := targets[i]
 		ref.Version = newVer
+		ref.Commit = commit
 		cfg.UpsertExtension(&ref)
 		// Persist after each target so a later target's failure can't leave an
 		// already-applied update unrecorded in .cg.json.
@@ -589,53 +622,47 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// updateOne fetches the clone of name, advances it to the right commit,
-// re-validates the manifest at <clone>/<path>, re-applies its contributions to
-// the workspace (reverse the prior ledger, then apply the new manifest), and
-// returns the new version (always the manifest's own version field).
+// updateOne fetches the extension's repo into the store, picks the commit to
+// move to, re-validates the manifest at <tree>/<path>, re-applies its
+// contributions (new manifest first, then reverse what it dropped), and
+// returns the new version (the manifest's own version field) and commit.
 //
 // Commit selection depends on layout. A root extension (path == "") is its own
-// repo, so its git tags are its releases: check out the latest tag, or track the
-// default branch when untagged. A subdir extension (path != "") shares one repo
-// with siblings, so whole-repo tags don't map to a single extension's version —
-// track the default branch and let the manifest's version field be the source of
-// truth.
-func updateOne(ctx context.Context, root, name, path string) (string, error) {
-	clone := extension.CloneDir(name)
-	if _, err := os.Stat(clone); err != nil {
-		return "", cgerr.New(cgerr.ExitUsage,
-			"clone for %q missing at %s; reinstall it", name, clone)
-	}
-	if err := gitx.Fetch(ctx, clone, "origin", "--tags"); err != nil {
-		return "", cgerr.New(cgerr.ExitUsage, "fetching %q: %v", name, err)
-	}
-	if tag := gitx.LatestTag(ctx, clone); path == "" && tag != "" {
-		if err := gitx.Checkout(ctx, clone, tag); err != nil {
-			return "", cgerr.New(cgerr.ExitUsage, "checking out %s of %q: %v", tag, name, err)
-		}
-	} else {
-		db := gitx.DefaultBranch(ctx, clone)
-		if err := gitx.Checkout(ctx, clone, db); err != nil {
-			return "", cgerr.New(cgerr.ExitUsage, "checking out %s of %q: %v", db, name, err)
-		}
-		if err := gitx.MergeFFOnly(ctx, clone, "origin/"+db); err != nil {
-			return "", cgerr.New(cgerr.ExitUsage, "fast-forwarding %q: %v", name, err)
-		}
-	}
-	manifestDir := filepath.Join(clone, path)
-	m, err := extension.LoadManifest(manifestDir)
+// repo, so its git tags are its releases: take the latest tag, or the default
+// branch when untagged. A subdir extension (path != "") shares one repo with
+// siblings, so whole-repo tags don't map to a single extension's version:
+// take the default branch and let the manifest's version field be the source
+// of truth.
+func updateOne(ctx context.Context, root string, ref *workspace.ExtensionRef) (version, commit string, err error) {
+	path, err := extension.CleanSubdir(ref.Path)
 	if err != nil {
-		return "", cgerr.New(cgerr.ExitUsage, "reading %s for %q: %v", extension.ManifestFile, name, err)
+		return "", "", cgerr.New(cgerr.ExitUsage, "extension %q: %v", ref.Name, err)
 	}
-	if err := m.Validate(); err != nil {
-		return "", cgerr.New(cgerr.ExitUsage, "invalid %s for %q: %v", extension.ManifestFile, name, err)
+	mirror, err := extension.EnsureMirror(ctx, ref.Repo, true)
+	if err != nil {
+		return "", "", cgerr.New(cgerr.ExitUsage, "fetching %q: %v", ref.Name, err)
 	}
-
-	// Re-apply: new manifest first, then reverse any contributions it dropped.
+	target := ""
+	if tag := gitx.LatestTag(ctx, mirror); path == "" && tag != "" {
+		target = tag
+	}
+	commit, err = extension.ResolveCommit(ctx, mirror, target)
+	if err != nil {
+		return "", "", cgerr.New(cgerr.ExitUsage, "resolving %q: %v", ref.Name, err)
+	}
+	tree, err := extension.EnsureTree(ctx, ref.Repo, mirror, commit)
+	if err != nil {
+		return "", "", fmt.Errorf("exporting %q at %s: %w", ref.Name, commit[:12], err)
+	}
+	manifestDir := filepath.Join(tree, path)
+	m, err := loadValidManifest(manifestDir, ref.Name)
+	if err != nil {
+		return "", "", err
+	}
 	if err := reapply(root, manifestDir, m); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return m.Version, nil
+	return m.Version, commit, nil
 }
 
 // findExtension returns the workspace's recorded entry for name.

@@ -11,19 +11,21 @@ import (
 // TrustedGitHookScripts returns the scripts githooks.Ensure may approve: for
 // every git-hooks contribution of every extension installed in the workspace
 // (refs, from .cg.json), its workspace-relative install path mapped to the blob
-// id of that script in the extension's machine-local clone. An extension whose
-// clone is missing or unreadable contributes nothing, so its scripts stay
-// unapproved until `cg init` or `cg extension install` restores the clone.
+// id of that script in the extension's source on this machine: the store's
+// tree at the commit the workspace recorded (SourceRoot). An extension whose
+// source is missing or unreadable contributes nothing, so its scripts stay
+// unapproved until `cg init` or `cg extension install` restores it.
 // dir is any directory in the workspace's repository, used for the object
 // format.
 func TrustedGitHookScripts(ctx context.Context, dir string, refs []workspace.ExtensionRef) map[string]string {
 	trusted := map[string]string{}
-	for _, ref := range refs {
+	for i := range refs {
+		ref := &refs[i]
 		path, err := CleanSubdir(ref.Path)
 		if err != nil {
 			continue
 		}
-		manifestDir := filepath.Join(CloneDir(ref.Name), path)
+		manifestDir := filepath.Join(SourceRoot(ref), path)
 		m, err := LoadManifest(manifestDir)
 		if err != nil || m.Validate() != nil || m.Name != ref.Name {
 			continue
