@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.27.0](https://github.com/mnemcik/consigliere/compare/v1.26.0...v1.27.0) (2026-10-12)
+
+
+### Features
+
+* **extension:** per-commit extension store ([#165](https://github.com/mnemcik/consigliere/issues/165)) ([9a3e1e6](https://github.com/mnemcik/consigliere/commit/9a3e1e646589c45c0dbdcabb39a181e68c6cf470))
+
+
+### Bug Fixes
+
+* **extension:** write workspace files atomically ([#163](https://github.com/mnemcik/consigliere/issues/163)) ([755abba](https://github.com/mnemcik/consigliere/commit/755abba0e6fa57874c026ae89c9fbdfeeb828aea))
+
 ## [1.26.0](https://github.com/mnemcik/consigliere/compare/v1.25.0...v1.26.0) (2026-10-12)
 
 
