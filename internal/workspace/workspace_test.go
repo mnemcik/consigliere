@@ -184,19 +184,27 @@ func TestSaveIsAtomicKeepsModeAndFollowsSymlink(t *testing.T) {
 	if err := os.Symlink("real.json", link); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	reader, err := os.Open(cfgFile) //nolint:gosec // test temp dir
-	if err != nil {
-		t.Fatal(err)
+	// Windows refuses to rename over a file another handle has open, so the
+	// open-reader check runs elsewhere; link and mode are checked everywhere.
+	var reader *os.File
+	if runtime.GOOS != "windows" {
+		r, err := os.Open(cfgFile) //nolint:gosec // test temp dir
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = r.Close() }()
+		reader = r
 	}
-	defer func() { _ = reader.Close() }()
 
 	cfg := &Config{Type: "consigliere", Version: "2.0.0"}
 	if err := cfg.Save(dir); err != nil {
 		t.Fatal(err)
 	}
 
-	if seen, _ := io.ReadAll(reader); !strings.Contains(string(seen), `"1.0.0"`) {
-		t.Errorf("a reader opened before Save saw %q, want the complete previous content", seen)
+	if reader != nil {
+		if seen, _ := io.ReadAll(reader); !strings.Contains(string(seen), `"1.0.0"`) {
+			t.Errorf("a reader opened before Save saw %q, want the complete previous content", seen)
+		}
 	}
 	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Errorf(".cg.json is no longer a symlink (err %v)", err)

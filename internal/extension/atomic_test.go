@@ -60,6 +60,9 @@ func TestWriteFileAtomicCreatesAndReplaces(t *testing.T) {
 // still reads the complete previous content, because the write replaces the
 // directory entry instead of truncating the file in place.
 func TestCopyFileNeverTruncatesAnOpenFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows refuses to rename over a file another handle has open")
+	}
 	dir := t.TempDir()
 	src := filepath.Join(dir, "new.sh")
 	dest := filepath.Join(dir, "hook.sh")

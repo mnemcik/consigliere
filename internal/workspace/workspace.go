@@ -138,13 +138,17 @@ func (c *Config) Save(dir string) error {
 		return err
 	}
 	perm := os.FileMode(0o644)
-	if info, err := os.Stat(path); err == nil {
+	info, err := os.Stat(path)
+	switch {
+	case err == nil:
 		// A file without its owner write bit is refused, as the in-place
 		// write was; the rename would otherwise drop the protection.
 		if info.Mode().Perm()&0o200 == 0 {
 			return &fs.PathError{Op: "write", Path: path, Err: fs.ErrPermission}
 		}
 		perm = info.Mode().Perm()
+	case !errors.Is(err, fs.ErrNotExist):
+		return err
 	}
 	return replaceFile(path, append(data, '\n'), perm)
 }
