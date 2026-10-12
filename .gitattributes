@@ -1,0 +1,4 @@
+# Check text files out with LF on every OS. cg embeds templates/ into the binary
+# and records content hashes of what it ships, so a CRLF checkout (Git for
+# Windows' default) would build a binary whose files don't match those hashes.
+* text=auto eol=lf

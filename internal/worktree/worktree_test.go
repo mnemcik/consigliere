@@ -29,15 +29,22 @@ func TestValidSlug(t *testing.T) {
 }
 
 func TestWorktreePath(t *testing.T) {
+	// abs turns a Unix-style absolute path into one that is absolute on this OS.
+	abs := func(p string) string {
+		if runtime.GOOS == "windows" {
+			return `C:` + filepath.FromSlash(p)
+		}
+		return p
+	}
 	tests := []struct {
 		name string
 		opt  Options
 		slug string
 		want string
 	}{
-		{"default prefix = root", Options{Root: "/ws"}, "x", "/ws--x"},
-		{"absolute prefix", Options{Root: "/ws", Prefix: "/other"}, "x", "/other--x"},
-		{"relative prefix resolved against root", Options{Root: "/ws", Prefix: "wt"}, "x", "/ws/wt--x"},
+		{"default prefix = root", Options{Root: abs("/ws")}, "x", abs("/ws--x")},
+		{"absolute prefix", Options{Root: abs("/ws"), Prefix: abs("/other")}, "x", abs("/other--x")},
+		{"relative prefix resolved against root", Options{Root: abs("/ws"), Prefix: "wt"}, "x", abs("/ws/wt--x")},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

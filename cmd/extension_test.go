@@ -258,7 +258,7 @@ func TestExtInstallFromRegistry(t *testing.T) {
 	repo := makeExtRepo(t, testManifest)
 	// Registry index points the name "demo" at the local fixture repo.
 	index := `{"version":1,"extensions":[{"name":"demo","description":"d","repo":"` +
-		repo + `","latestVersion":"0.2.0","manifestUrl":"x"}]}`
+		jsonPath(repo) + `","latestVersion":"0.2.0","manifestUrl":"x"}]}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(index))
 	}))
@@ -664,4 +664,9 @@ func TestInitReinstallsMissingExtensionClone(t *testing.T) {
 	if len(cfg.Extensions) != 1 || cfg.Extensions[0].Name != "full" {
 		t.Errorf("extensions[] should be preserved across init --force: %+v", cfg.Extensions)
 	}
+}
+
+// jsonPath escapes the backslashes of a Windows path for a JSON string literal.
+func jsonPath(p string) string {
+	return strings.ReplaceAll(p, `\`, `\\`)
 }

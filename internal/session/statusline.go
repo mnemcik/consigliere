@@ -6,6 +6,7 @@ import (
 	"hash/fnv"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -70,13 +71,24 @@ func runUpstream(ctx context.Context, upstream string, input []byte) string {
 	// only a bare path. A malicious workspace could run code here exactly as it
 	// could via settings.json, so the real trust boundary is opening an untrusted
 	// workspace, not this call.
-	cmd := exec.CommandContext(ctx, "bash", "-c", upstream)
+	cmd := exec.CommandContext(ctx, "bash", "-c", bashCommand(upstream))
 	cmd.Stdin = strings.NewReader(string(input))
 	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
 	return strings.TrimRight(string(out), "\n")
+}
+
+// bashCommand returns upstream as a command for bash -c. On Windows a bare
+// script path such as C:\Users\me\up.sh would lose its backslashes to bash's
+// quoting, so a value that names an existing file is passed as a quoted path
+// with forward slashes, which Git Bash accepts.
+func bashCommand(upstream string) string {
+	if runtime.GOOS != "windows" || !fileExists(upstream) {
+		return upstream
+	}
+	return "'" + strings.ReplaceAll(filepath.ToSlash(upstream), "'", `'\''`) + "'"
 }
 
 func renderBadge(root string, c *Context, badgeFormat string) string {

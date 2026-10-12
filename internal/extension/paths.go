@@ -24,11 +24,24 @@ func CleanSubdir(p string) (string, error) {
 	if cleaned == "." {
 		return "", nil
 	}
-	if filepath.IsAbs(cleaned) || cleaned == ".." ||
+	if rooted(p) || filepath.IsAbs(cleaned) || cleaned == ".." ||
 		strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("invalid subdir %q: must be a relative path inside the repo", p)
 	}
 	return cleaned, nil
+}
+
+// rooted reports whether p starts at a root or names a drive, whatever the OS,
+// so a manifest is valid or invalid the same way everywhere. filepath.IsAbs
+// alone differs: on Windows "/etc/passwd" isn't absolute (it has no drive) and
+// "C:x" is relative to drive C's current directory, and on Unix `\x` and "C:x"
+// are plain relative names.
+func rooted(p string) bool {
+	if strings.HasPrefix(p, "/") || strings.HasPrefix(p, `\`) {
+		return true
+	}
+	return len(p) >= 2 && p[1] == ':' &&
+		(p[0] >= 'a' && p[0] <= 'z' || p[0] >= 'A' && p[0] <= 'Z')
 }
 
 // configBase returns cg's config root. It mirrors internal/autoupdate.StateDir:

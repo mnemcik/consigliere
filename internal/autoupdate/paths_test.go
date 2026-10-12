@@ -21,6 +21,7 @@ func TestStateDirFallsBackToHomeConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads this on Windows
 
 	got := StateDir()
 	want := filepath.Join(home, ".config", "consigliere")

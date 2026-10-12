@@ -39,10 +39,11 @@ func TestReadContext(t *testing.T) {
 }
 
 func TestIsContextPath(t *testing.T) {
-	root := "/ws"
+	root := t.TempDir()
 	ctxFile := ContextFile(root, "abc")
 	cases := map[string]bool{
-		ctxFile: true,
+		ctxFile:                   true,
+		filepath.ToSlash(ctxFile): true, // Windows tools may send C:/... paths
 		filepath.Join(ContextDir(root), "x.json"): true,
 		filepath.Join(root, "notes", "n.md"):      false,
 		"":                                        false,

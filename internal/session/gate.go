@@ -140,10 +140,7 @@ func pruneStaleContexts(root string, pruneDays int) {
 		if err != nil || f == nil {
 			continue // in use, or cannot lock: leave it
 		}
-		if !fileExists(badge) { // a writer may have claimed the session meanwhile
-			_ = os.Remove(l)
-		}
-		unlockFile(f)
+		removeLocked(f, l, !fileExists(badge)) // a writer may have claimed the session meanwhile
 	}
 }
 

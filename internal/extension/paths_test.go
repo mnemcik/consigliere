@@ -27,7 +27,9 @@ func TestCleanSubdir(t *testing.T) {
 		}
 	}
 
-	for _, bad := range []string{"..", "../escape", "a/../../escape", "/abs/path"} {
+	// Rooted and drive paths are rejected on every OS, not only where
+	// filepath.IsAbs calls them absolute.
+	for _, bad := range []string{"..", "../escape", "a/../../escape", "/abs/path", `\abs\path`, "C:x", "C:/abs", `c:\abs`} {
 		if _, err := CleanSubdir(bad); err == nil {
 			t.Errorf("CleanSubdir(%q) should have errored", bad)
 		}

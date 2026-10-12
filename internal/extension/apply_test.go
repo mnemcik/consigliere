@@ -3,6 +3,7 @@ package extension
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -82,7 +83,7 @@ func TestApplyAndReverseAllContributions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hook wrapper not installed: %v", err)
 	}
-	if info.Mode()&0o100 == 0 {
+	if runtime.GOOS != "windows" && info.Mode()&0o100 == 0 { // Windows has no executable bit
 		t.Errorf("hook wrapper should be executable, mode=%v", info.Mode())
 	}
 	settings, _ := os.ReadFile(filepath.Join(root, ".claude", "settings.json"))
@@ -293,7 +294,7 @@ func TestApplyAndReverseGitHook(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm()&0o100 == 0 {
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o100 == 0 { // Windows has no executable bit
 		t.Errorf("script not executable: %v", info.Mode())
 	}
 

@@ -107,6 +107,9 @@ func TestExtractBinaryMissingEntry(t *testing.T) {
 }
 
 func TestUnderBrewPrefix(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Homebrew prefixes are Unix paths; there is no Homebrew on Windows")
+	}
 	cases := map[string]bool{
 		"/opt/homebrew/bin/cg":               true,
 		"/opt/homebrew/Caskroom/cg/1.0.0/cg": true,

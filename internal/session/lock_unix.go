@@ -48,3 +48,13 @@ func unlockFile(f *os.File) {
 	_ = unix.Flock(int(f.Fd()), unix.LOCK_UN)
 	_ = f.Close()
 }
+
+// removeLocked releases the lock f holds on path, first deleting path when
+// remove is set. On Unix the file can be deleted while it is locked, so no
+// other writer can take the lock in between.
+func removeLocked(f *os.File, path string, remove bool) {
+	if remove {
+		_ = os.Remove(path)
+	}
+	unlockFile(f)
+}
