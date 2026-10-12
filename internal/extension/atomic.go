@@ -13,7 +13,8 @@ import (
 //
 // An existing file keeps its mode; a new file gets perm exactly (the umask is
 // not applied, unlike os.WriteFile). An existing file without its owner write
-// bit is refused, as writing through it would have been. A symlink at path is
+// bit is refused, as writing through it would have been (a mode-bit check, not
+// an access check). A symlink at path is
 // followed, so its target is replaced and the link itself survives (a
 // CLAUDE.md linked to AGENTS.md stays linked). The rename gives the file a new
 // inode, so hard links to the previous file keep the previous content.

@@ -1,7 +1,9 @@
 package workspace
 
 import (
+	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -207,5 +209,36 @@ func TestSaveIsAtomicKeepsModeAndFollowsSymlink(t *testing.T) {
 		if info, _ := os.Stat(cfgFile); info.Mode().Perm() != 0o600 {
 			t.Errorf("mode = %o, want the existing 600", info.Mode().Perm())
 		}
+	}
+}
+
+func TestSaveRefusesReadOnlyConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ConfigFile)
+	if err := os.WriteFile(path, []byte(`{"type":"consigliere"}`), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) }) //nolint:gosec // test temp dir
+	cfg := &Config{Type: "consigliere", Version: "2.0.0"}
+	if err := cfg.Save(dir); !errors.Is(err, fs.ErrPermission) {
+		t.Errorf("err = %v, want a permission error", err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != `{"type":"consigliere"}` { //nolint:gosec // test temp dir
+		t.Errorf("content = %q, want it untouched", got)
+	}
+}
+
+func TestSaveReportsSymlinkLoop(t *testing.T) {
+	dir := t.TempDir()
+	link := filepath.Join(dir, ConfigFile)
+	if err := os.Symlink(ConfigFile, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	cfg := &Config{Type: "consigliere"}
+	if err := cfg.Save(dir); err == nil {
+		t.Error("Save replaced a looping symlink instead of returning its error")
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf(".cg.json is no longer the symlink (err %v)", err)
 	}
 }

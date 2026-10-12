@@ -3,6 +3,7 @@ package workspace
 import (
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -129,11 +130,20 @@ func (c *Config) Save(dir string) error {
 	// A symlinked .cg.json is written through, as os.WriteFile did, rather
 	// than replaced by a regular file.
 	path := filepath.Join(dir, ConfigFile)
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+	resolved, err := filepath.EvalSymlinks(path)
+	switch {
+	case err == nil:
 		path = resolved
+	case !errors.Is(err, fs.ErrNotExist):
+		return err
 	}
 	perm := os.FileMode(0o644)
 	if info, err := os.Stat(path); err == nil {
+		// A file without its owner write bit is refused, as the in-place
+		// write was; the rename would otherwise drop the protection.
+		if info.Mode().Perm()&0o200 == 0 {
+			return &fs.PathError{Op: "write", Path: path, Err: fs.ErrPermission}
+		}
 		perm = info.Mode().Perm()
 	}
 	return replaceFile(path, append(data, '\n'), perm)
