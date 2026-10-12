@@ -78,14 +78,18 @@ func SourceRoot(ref *workspace.ExtensionRef) string {
 	return CloneDir(ref.Name)
 }
 
-// EnsureMirror makes sure repo's mirror exists, creating it with a mirror
-// clone, and fetches into an existing one when fetch is true. It returns the
-// mirror's path.
+// EnsureMirror makes sure repo's mirror exists, creating it, and fetches into
+// an existing one when fetch is true. It returns the mirror's path.
+//
+// The mirror holds only branches and tags. A full mirror clone would also copy
+// refs such as GitHub's refs/pull/*, which carry commits from unmerged forks:
+// a commit recorded in a pulled .cg.json could then select fork code under a
+// trusted repo URL.
 func EnsureMirror(ctx context.Context, repo string, fetch bool) (string, error) {
 	dir := MirrorDir(repo)
-	if _, err := os.Stat(dir); err == nil {
+	if dirExists(dir) {
 		if fetch {
-			if _, err := gitx.Run(ctx, dir, "fetch", "--quiet", "--prune", "--tags", "origin"); err != nil {
+			if err := fetchMirror(ctx, dir); err != nil {
 				return "", err
 			}
 		}
@@ -100,17 +104,50 @@ func EnsureMirror(ctx context.Context, repo string, fetch bool) (string, error) 
 		return "", err
 	}
 	defer func() { _ = os.RemoveAll(staging) }() // no-op once renamed
-	if _, err := gitx.Run(ctx, "", "clone", "--quiet", "--mirror", "--", repo, staging); err != nil {
+	const config = "config"
+	for _, args := range [][]string{
+		{"init", "--quiet", "--bare"},
+		{config, "remote.origin.url", repo},
+		{config, "remote.origin.fetch", "+refs/heads/*:refs/heads/*"},
+		{config, "--add", "remote.origin.fetch", "+refs/tags/*:refs/tags/*"},
+	} {
+		if _, err := gitx.Run(ctx, staging, args...); err != nil {
+			return "", err
+		}
+	}
+	if err := fetchMirror(ctx, staging); err != nil {
 		return "", err
 	}
 	if err := os.Rename(staging, dir); err != nil {
 		// A concurrent install created it first; use theirs.
-		if _, serr := os.Stat(dir); serr == nil {
+		if dirExists(dir) {
 			return dir, nil
 		}
 		return "", err
 	}
 	return dir, nil
+}
+
+// fetchMirror fetches the mirror's branches and tags, pruning deleted ones, and
+// points its HEAD at the remote's default branch, so "" keeps resolving to the
+// default branch after an upstream rename.
+func fetchMirror(ctx context.Context, dir string) error {
+	if _, err := gitx.Run(ctx, dir, "fetch", "--quiet", "--prune", "origin"); err != nil {
+		return err
+	}
+	out, err := gitx.Run(ctx, dir, "ls-remote", "--symref", "origin", "HEAD")
+	if err != nil {
+		return nil // HEAD is a convenience; the fetch itself succeeded
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if rest, ok := strings.CutPrefix(line, "ref: "); ok {
+			if target, _, ok := strings.Cut(rest, "\t"); ok && strings.HasPrefix(target, "refs/heads/") {
+				_, _ = gitx.Run(ctx, dir, "symbolic-ref", "HEAD", target)
+			}
+			break
+		}
+	}
+	return nil
 }
 
 // ResolveCommit resolves ref (a tag, branch or commit; "" means the default
@@ -123,7 +160,18 @@ func ResolveCommit(ctx context.Context, mirror, ref string) (string, error) {
 	if err != nil || !ValidCommit(out) {
 		return "", fmt.Errorf("ref %q not found", ref)
 	}
+	if !Reachable(ctx, mirror, out) {
+		return "", fmt.Errorf("commit %s is not on any branch or tag", out[:12])
+	}
 	return out, nil
+}
+
+// Reachable reports whether commit is on a branch or tag of the mirror. Only
+// such commits are installed: a commit the mirror still holds after upstream
+// dropped it (a force push, a deleted branch) is no longer published code.
+func Reachable(ctx context.Context, mirror, commit string) bool {
+	out, err := gitx.Run(ctx, mirror, "for-each-ref", "--count=1", "--format=%(refname)", "--contains", commit, "refs/heads", "refs/tags")
+	return err == nil && out != ""
 }
 
 // HasCommit reports whether the mirror holds commit.
@@ -186,12 +234,12 @@ func FetchTree(ctx context.Context, repo, commit string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !HasCommit(ctx, mirror, commit) {
+	if !HasCommit(ctx, mirror, commit) || !Reachable(ctx, mirror, commit) {
 		if _, err := EnsureMirror(ctx, repo, true); err != nil {
 			return "", err
 		}
-		if !HasCommit(ctx, mirror, commit) {
-			return "", errors.New("commit " + commit[:12] + " is not in " + repo)
+		if !HasCommit(ctx, mirror, commit) || !Reachable(ctx, mirror, commit) {
+			return "", errors.New("commit " + commit[:12] + " is not on any branch or tag of " + repo)
 		}
 	}
 	return EnsureTree(ctx, repo, mirror, commit)

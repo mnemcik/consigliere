@@ -173,7 +173,7 @@ func TestExtInstallSubdirDirectIsolation(t *testing.T) {
 	if len(cfg.Extensions) != 2 {
 		t.Fatalf("expected 2 extensions recorded, got %+v", cfg.Extensions)
 	}
-	if r := findRef(cfg.Extensions, "1pw"); r == nil || r.Path != "1pw" || r.Repo != repo {
+	if r := findRef(cfg.Extensions, "1pw"); r == nil || r.Path != "1pw" || r.Repo != resolvedPath(t, repo) {
 		t.Errorf("1pw ref wrong: %+v", r)
 	}
 	if r := findRef(cfg.Extensions, "vault"); r == nil || r.Path != "vault" {

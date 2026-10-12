@@ -30,12 +30,12 @@ func init() {
 	rootCmd.AddCommand(extensionCmd)
 	extensionCmd.AddCommand(extInstallCmd, extListCmd, extRemoveCmd, extUpdateCmd)
 	extInstallCmd.Flags().StringVar(&extInstallRef, "ref", "",
-		"git ref (tag or branch) to check out after cloning (default: the repo's default branch)")
+		"tag, branch or commit to install (default: the repo's default branch)")
 	extInstallCmd.Flags().StringVar(&extInstallPath, "path", "",
 		"subdir within the repo holding cg-extension.json (for monorepos; direct repo-url installs only)")
 	extListCmd.Flags().BoolVar(&extListJSON, "json", false, "output as JSON")
 	extRemoveCmd.Flags().BoolVar(&extRemovePurge, "purge", false,
-		"also delete the machine-shared clone under ~/.config/consigliere/extensions/")
+		"also delete a legacy name-keyed clone under ~/.config/consigliere/extensions/ (store trees are shared and kept)")
 }
 
 var extensionCmd = &cobra.Command{
@@ -120,6 +120,11 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	path, err = extension.CleanSubdir(path)
 	if err != nil {
 		return cgerr.New(cgerr.ExitUsage, "%v", err)
+	}
+	// A local repo is recorded, and keyed in the store, by its absolute path,
+	// so ../ext from two directories never names one mirror.
+	if source == workspace.ExtSourceDirect {
+		repo = absLocalRepo(repo)
 	}
 
 	m, dest, commit, err := installFrom(cmd.Context(), repo, extInstallRef, path)
@@ -466,6 +471,25 @@ func looksLikeRepoSource(s string) bool {
 		return true
 	}
 	return false
+}
+
+// absLocalRepo returns repo as an absolute, symlink-resolved path when it is
+// an existing local directory, and unchanged otherwise (a URL).
+func absLocalRepo(repo string) string {
+	if strings.Contains(repo, "://") || strings.HasPrefix(repo, "git@") {
+		return repo
+	}
+	if info, err := os.Stat(repo); err != nil || !info.IsDir() { //nolint:gosec // the user named this local repo to install from
+		return repo
+	}
+	abs, err := filepath.Abs(repo)
+	if err != nil {
+		return repo
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved
+	}
+	return abs
 }
 
 // requireWorkspace resolves the workspace root and its config, erroring when the

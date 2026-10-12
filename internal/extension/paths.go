@@ -45,6 +45,11 @@ func configBase() string {
 		}
 		base = filepath.Join(home, ".config")
 	}
+	// git runs some store commands from inside the mirror, so a relative
+	// XDG_CONFIG_HOME must not stay relative.
+	if abs, err := filepath.Abs(base); err == nil {
+		base = abs
+	}
 	return filepath.Join(base, "consigliere")
 }
 

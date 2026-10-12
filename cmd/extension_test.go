@@ -115,7 +115,7 @@ func makeExtRepo(t *testing.T, manifest string) string {
 			t.Fatalf("git %v: %v", args, err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(dir, "cg-extension.json"), []byte(manifest), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "cg-extension.json"), []byte(manifest), 0o644); err != nil { //nolint:gosec // fixture in a test temp dir
 		t.Fatal(err)
 	}
 	writeReferencedStubs(t, dir, manifest)
@@ -210,7 +210,7 @@ func TestExtInstallDirectFromLocalRepo(t *testing.T) {
 		t.Fatalf("expected 1 extension recorded, got %d", len(cfg.Extensions))
 	}
 	e := cfg.Extensions[0]
-	if e.Name != "demo" || e.Version != "0.2.0" || e.Source != workspace.ExtSourceDirect || e.Repo != repo {
+	if e.Name != "demo" || e.Version != "0.2.0" || e.Source != workspace.ExtSourceDirect || e.Repo != resolvedPath(t, repo) {
 		t.Errorf("recorded ref wrong: %+v", e)
 	}
 	if e.Installed == "" {

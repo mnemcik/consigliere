@@ -136,3 +136,136 @@ func TestEnsureTreeExportsOnceWithModes(t *testing.T) {
 		t.Error("an invalid commit must be refused")
 	}
 }
+
+// newRepo creates a repo with one commit on main and returns its path.
+func newRepo(t *testing.T) string {
+	t.Helper()
+	ctx := context.Background()
+	repo := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		if _, err := gitx.Run(ctx, repo, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run("init", "--quiet", "--initial-branch=main")
+	run("config", "user.email", "t@example.com")
+	run("config", "user.name", "test")
+	if err := os.WriteFile(filepath.Join(repo, "f"), []byte("main"), 0o644); err != nil { //nolint:gosec // test fixture
+		t.Fatal(err)
+	}
+	run("add", "-A")
+	run("commit", "--quiet", "-m", "main")
+	return repo
+}
+
+// commitOnBranch commits a change on a new branch and returns its commit,
+// leaving main checked out.
+func commitOnBranch(t *testing.T, repo, branch string) string {
+	t.Helper()
+	ctx := context.Background()
+	for _, args := range [][]string{{"checkout", "--quiet", "-b", branch}} {
+		if _, err := gitx.Run(ctx, repo, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(repo, "f"), []byte(branch), 0o644); err != nil { //nolint:gosec // test fixture
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"commit", "--quiet", "-am", branch}, {"checkout", "--quiet", "main"}} {
+		if _, err := gitx.Run(ctx, repo, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sha, err := gitx.Run(ctx, repo, "rev-parse", branch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sha
+}
+
+// A commit published only under a non-branch ref (GitHub's refs/pull/*, which
+// carry unmerged fork code) is never fetched, so it can't be installed.
+func TestStoreIgnoresPullRefs(t *testing.T) {
+	if !gitx.Available() {
+		t.Skip("git not available")
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	ctx := context.Background()
+	repo := newRepo(t)
+	fork := commitOnBranch(t, repo, "fork")
+	for _, args := range [][]string{{"update-ref", "refs/pull/1/head", fork}, {"branch", "--quiet", "-D", "fork"}} {
+		if _, err := gitx.Run(ctx, repo, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mirror, err := EnsureMirror(ctx, repo, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if HasCommit(ctx, mirror, fork) {
+		t.Error("the mirror fetched a commit that is only under refs/pull/")
+	}
+	if _, err := ResolveCommit(ctx, mirror, fork); err == nil {
+		t.Error("--ref <fork commit> resolved")
+	}
+	if _, err := FetchTree(ctx, repo, fork); err == nil {
+		t.Error("a recorded fork commit was restored")
+	}
+}
+
+// A commit the mirror still holds after upstream deleted its branch is no
+// longer published, so it isn't installed either.
+func TestStoreRefusesUnreachableCommit(t *testing.T) {
+	if !gitx.Available() {
+		t.Skip("git not available")
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	ctx := context.Background()
+	repo := newRepo(t)
+	gone := commitOnBranch(t, repo, "short-lived")
+	mirror, err := EnsureMirror(ctx, repo, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitx.Run(ctx, repo, "branch", "--quiet", "-D", "short-lived"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := EnsureMirror(ctx, repo, true); err != nil {
+		t.Fatal(err)
+	}
+	if !HasCommit(ctx, mirror, gone) {
+		t.Skip("the mirror already dropped the object; nothing to check")
+	}
+	if _, err := ResolveCommit(ctx, mirror, gone); err == nil {
+		t.Error("an unreachable commit resolved")
+	}
+	if _, err := FetchTree(ctx, repo, gone); err == nil {
+		t.Error("an unreachable recorded commit was restored")
+	}
+}
+
+// After upstream renames its default branch, "" resolves to the new one.
+func TestStoreFollowsDefaultBranchRename(t *testing.T) {
+	if !gitx.Available() {
+		t.Skip("git not available")
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	ctx := context.Background()
+	repo := newRepo(t)
+	mirror, err := EnsureMirror(ctx, repo, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitx.Run(ctx, repo, "branch", "--quiet", "-m", "main", "trunk"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := EnsureMirror(ctx, repo, true); err != nil {
+		t.Fatal(err)
+	}
+	want, _ := gitx.Run(ctx, repo, "rev-parse", "trunk")
+	if got, err := ResolveCommit(ctx, mirror, ""); err != nil || got != want {
+		t.Errorf("default branch resolves to %q (err %v), want trunk's %s", got, err, want)
+	}
+}

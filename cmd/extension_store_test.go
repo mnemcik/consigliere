@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/mnemcik/consigliere/internal/extension"
@@ -32,6 +33,17 @@ func commitFile(t *testing.T, repo, rel, body string) {
 	if _, err := gitx.Run(ctx, repo, "commit", "--quiet", "-m", "change "+rel); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// resolvedPath is p as a direct install records a local repo: absolute, with
+// symlinks resolved (macOS temp dirs live under the /var → /private/var link).
+func resolvedPath(t *testing.T, p string) string {
+	t.Helper()
+	r, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
 }
 
 func entryFor(t *testing.T, ws string) workspace.ExtensionRef {
@@ -75,8 +87,12 @@ func TestExtUpdateInOneWorkspaceLeavesAnotherAlone(t *testing.T) {
 		t.Fatalf("update in B: %v\n%s", err, out)
 	}
 
-	if b := entryFor(t, wsB); b.Commit == before.Commit {
+	b := entryFor(t, wsB)
+	if b.Commit == before.Commit {
 		t.Fatalf("B should have moved to the new commit, still at %s", b.Commit)
+	}
+	if got := readFile(t, filepath.Join(extension.SourceRoot(&b), "hooks", "x.sh")); got != "#!/bin/sh\necho v2\n" {
+		t.Errorf("B reads %q, want the new script", got)
 	}
 	after := entryFor(t, wsA)
 	if after.Commit != before.Commit {
@@ -209,5 +225,41 @@ func TestTamperedCommitFallsBackToLegacyPath(t *testing.T) {
 		if got := extension.SourceRoot(&ref); got != extension.CloneDir("demo") {
 			t.Errorf("commit %q: SourceRoot = %s, want the legacy path", c, got)
 		}
+	}
+}
+
+// A relative local repo path is keyed by the repo it names, not by the string:
+// ../ext from two directories must not share a mirror.
+func TestRelativeLocalRepoPathsDoNotShareAMirror(t *testing.T) {
+	if !gitx.Available() {
+		t.Skip("git not available")
+	}
+	cfgHome := t.TempDir()
+	install := func(manifestBody string) string {
+		parent := t.TempDir()
+		if err := os.Rename(makeExtRepo(t, manifestBody), filepath.Join(parent, "ext")); err != nil {
+			t.Fatal(err)
+		}
+		ws := filepath.Join(parent, "ws")
+		if err := os.Mkdir(ws, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		cfg := workspace.Config{Type: workspace.TypeConsigliere, Version: "1.3.0"}
+		if err := cfg.Save(ws); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := runExtCfg(t, cfgHome, ws, "install", "../ext"); err != nil {
+			t.Fatalf("install ../ext: %v\n%s", err, out)
+		}
+		return ws
+	}
+	ws1 := install(testManifest)
+	ws2 := install(strings.Replace(testManifest, `"version": "0.2.0"`, `"version": "9.0.0"`, 1))
+
+	if v := entryFor(t, ws2).Version; v != "9.0.0" {
+		t.Errorf("second ../ext installed v%s, want its own v9.0.0", v)
+	}
+	if r1, r2 := entryFor(t, ws1).Repo, entryFor(t, ws2).Repo; r1 == r2 || !filepath.IsAbs(r1) {
+		t.Errorf("recorded repos %q and %q: want two distinct absolute paths", r1, r2)
 	}
 }

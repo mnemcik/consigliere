@@ -71,7 +71,10 @@ reads:
 ```
 
 `<key>` is the repo URL's last path segment plus 12 hex characters of the URL's
-SHA-256, which keeps it readable, collision-safe and free of path traversal.
+SHA-256, which keeps it readable, collision-safe and free of path traversal. A
+local repo is recorded and keyed by its absolute, symlink-resolved path. The
+mirror fetches only branches and tags, and follows the remote's default branch.
+Only a commit that is on a branch or tag is installed or restored.
 A tree is checked out through a private index into a staging directory and
 renamed into place, so a reader never sees a partial one. Each workspace records
 the commit it installed in `.cg.json` (`extensions[].commit`): install, update,
@@ -209,8 +212,12 @@ forbids cross-extension dependencies (declare none).
    - **Trust.** Git never versions hooks, so that a pull or a checkout cannot
      make code run. Versioned scripts would undo that, so a script runs only
      when it is *approved*: its content must match the same script in the
-     store's tree at the commit `.cg.json` records for that extension, which is
-     code the user installed on this machine. cg writes the approved scripts (path and git
+     store's tree at the commit `.cg.json` records for that extension. That is
+     a commit of the recorded repo that is on one of its branches or tags (the
+     store fetches nothing else, so fork refs such as `refs/pull/*` never
+     qualify). A recorded commit can still arrive by pull, so `cg init`
+     restores code the `.cg.json` names, not only code installed by hand on
+     this machine. cg writes the approved scripts (path and git
      blob id) to `cg-hooks.allow` in the git dir, which is not versioned. The
      dispatcher runs only listed scripts whose content still matches, and
      warns about any other; cg reports unapproved scripts too. A script that
