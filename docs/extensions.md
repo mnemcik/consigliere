@@ -74,7 +74,7 @@ reads:
 SHA-256, which keeps it readable, collision-safe and free of path traversal. A
 local repo is recorded and keyed by its absolute, symlink-resolved path. The
 mirror fetches only branches and tags, and follows the remote's default branch.
-Only a commit that is on a branch or tag is installed or restored.
+Only a commit that is on a branch or tag, as of the store's last fetch, is installed or restored.
 A tree is checked out through a private index into a staging directory and
 renamed into place, so a reader never sees a partial one. Each workspace records
 the commit it installed in `.cg.json` (`extensions[].commit`): install, update,
