@@ -140,7 +140,7 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 		Source:    source,
 		Registry:  regAlias,
 		Repo:      repo,
-		Path:      path,
+		Path:      filepath.ToSlash(path), // .cg.json is shared across OSes
 		Commit:    commit,
 		Installed: time.Now().UTC().Format(time.RFC3339),
 	})

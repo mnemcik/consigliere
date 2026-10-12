@@ -25,6 +25,14 @@ jobs:
         with:
           version: latest
 
+      # The _windows.go files only compile for Windows, so lint them there too.
+      - name: golangci-lint (Windows build)
+        uses: golangci/golangci-lint-action@v9
+        env:
+          GOOS: windows
+        with:
+          version: latest
+
   test:
     name: Test
     # Windows is a supported platform, so its tests run like the others'. Linux

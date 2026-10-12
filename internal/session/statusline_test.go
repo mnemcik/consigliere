@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -146,5 +147,33 @@ func TestColorFromSlugDeterministic(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("color %d not in palette", a)
+	}
+}
+
+// On Windows a script path upstream is quoted with forward slashes, so bash
+// keeps its backslashes, spaces and quotes; elsewhere it passes unchanged.
+func TestBashCommandScriptPath(t *testing.T) {
+	script := filepath.Join(t.TempDir(), "it's a dir", "up.sh")
+	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(script, []byte("#!/usr/bin/env bash\nprintf 'BASE'\n"), 0o755); err != nil { //nolint:gosec // test fixture
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" {
+		if got := bashCommand(script); got != script {
+			t.Errorf("bashCommand(%q) = %q, want it unchanged", script, got)
+		}
+		return
+	}
+	want := "'" + strings.ReplaceAll(filepath.ToSlash(script), "'", `'\''`) + "'"
+	if got := bashCommand(script); got != want {
+		t.Errorf("bashCommand(%q) = %q, want %q", script, got, want)
+	}
+	if got := runUpstream(context.Background(), script, nil); got != "BASE" {
+		t.Errorf("runUpstream(%q) = %q, want %q", script, got, "BASE")
+	}
+	if got := bashCommand("echo hi"); got != "echo hi" {
+		t.Errorf("a command that is not a file changed: %q", got)
 	}
 }

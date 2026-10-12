@@ -18,26 +18,30 @@ func CleanSubdir(p string) (string, error) {
 	if p == "" {
 		return "", nil
 	}
-	cleaned := filepath.Clean(filepath.FromSlash(p))
+	// Either separator works on every OS, so one manifest or .cg.json means the
+	// same thing everywhere: `..\x` is rejected on Unix too, and a path recorded
+	// on Windows still resolves on Unix.
+	slash := strings.ReplaceAll(p, `\`, "/")
+	cleaned := filepath.Clean(filepath.FromSlash(slash))
 	// "." cleans to the repo root, which the rest of the flow represents as the
 	// empty sentinel; returning "." would wrongly look like subdir mode.
 	if cleaned == "." {
 		return "", nil
 	}
-	if rooted(p) || filepath.IsAbs(cleaned) || cleaned == ".." ||
+	if rooted(slash) || filepath.IsAbs(cleaned) || cleaned == ".." ||
 		strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("invalid subdir %q: must be a relative path inside the repo", p)
 	}
 	return cleaned, nil
 }
 
-// rooted reports whether p starts at a root or names a drive, whatever the OS,
-// so a manifest is valid or invalid the same way everywhere. filepath.IsAbs
-// alone differs: on Windows "/etc/passwd" isn't absolute (it has no drive) and
-// "C:x" is relative to drive C's current directory, and on Unix `\x` and "C:x"
-// are plain relative names.
+// rooted reports whether p, in slash form, starts at a root or names a drive,
+// whatever the OS, so a manifest is valid or invalid the same way everywhere.
+// filepath.IsAbs alone differs: on Windows "/etc/passwd" isn't absolute (it has
+// no drive) and "C:x" is relative to drive C's current directory, and on Unix
+// "C:x" is a plain relative name.
 func rooted(p string) bool {
-	if strings.HasPrefix(p, "/") || strings.HasPrefix(p, `\`) {
+	if strings.HasPrefix(p, "/") {
 		return true
 	}
 	return len(p) >= 2 && p[1] == ':' &&
