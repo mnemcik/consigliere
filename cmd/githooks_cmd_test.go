@@ -1,10 +1,10 @@
 package cmd
 
 import (
-	"runtime"
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
