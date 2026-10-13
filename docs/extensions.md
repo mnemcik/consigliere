@@ -293,9 +293,10 @@ pending if the extension changes it. `remove` deletes a copied file only when it
 is still as cg wrote it, and says which ones it kept. A file a new version no
 longer ships is treated the same.
 
-Content is compared with line endings normalised to LF, so a file exported with
-CRLF (`core.autocrlf`, `.gitattributes`) matches the repo's LF version, and for a
-repo that stores LF the ids are its own blob ids on every machine. If an
+Content is compared with line endings normalised to LF, so a CRLF checkout of
+the workspace (Git for Windows' default `core.autocrlf`) matches the repo's LF
+version, and for a repo that stores LF the ids are its own blob ids on every
+machine. If an
 extension's repo stores a file with CRLF, `diff`, `--merge` and `--take` can't
 read its versions and say so; `--keep` still works.
 
@@ -383,7 +384,13 @@ diff. Not user-edited.
   "subcommands": [{ "namespace": "secret", "binary": "cg-1password" }],
   "indexRows": [{ "file": "notes/INDEX.md", "marker": "ext:1password" }],
   "gitHooks": [".cg/git-hooks/post-commit.d/1password-check.sh"],
-  "gitignore": ["1password-cache"]
+  "gitignore": ["1password-cache"],
+  // the git blob id of each copied file as cg last wrote it (see Files you change)
+  "files": {
+    "notes/credentials-policy.md": "3b18e512dba79e4c8300dd08aeb37f8e728b8dad",
+    "templates/credential-request.md": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+  }
+  // "pending": [...] appears only while a file is pending
 }
 ```
 
