@@ -114,6 +114,9 @@ func TestScriptsCheckedOutWithLF(t *testing.T) {
 	write(origin, ".claude/hooks/gate.sh", script, 0o755)
 	write(origin, ".cg/git-hooks/post-commit.d/demo-x", script, 0o755)
 	write(origin, "notes/n.md", "a\nb\n", 0o644)
+	// Sorts first in git's listing, so trimming the output would lose its space.
+	const lead = " lead.sh"
+	write(origin, lead, script, 0o755)
 	git(origin, "add", "-A")
 	git(origin, "commit", "--quiet", "-m", "before the block")
 
@@ -154,8 +157,8 @@ func TestScriptsCheckedOutWithLF(t *testing.T) {
 	write(before, bin, binData, 0o755)
 	git(before, "add", "--", bin)
 	pending, err := NormalizeScriptLineEndings(ctx, before, false)
-	if err != nil || len(pending) != 2 {
-		t.Fatalf("dry run = %v, %v; want the two scripts", pending, err)
+	if err != nil || len(pending) != 3 {
+		t.Fatalf("dry run = %q, %v; want the three scripts", pending, err)
 	}
 	if got := read(before, ".claude/hooks/gate.sh"); got == script {
 		t.Fatal("dry run rewrote a script")
@@ -172,6 +175,9 @@ func TestScriptsCheckedOutWithLF(t *testing.T) {
 	}
 	if runtime.GOOS != "windows" && info.Mode().Perm()&0o100 == 0 { // Windows has no executable bit
 		t.Errorf("gate.sh lost its executable bit: %v", info.Mode())
+	}
+	if got := read(before, lead); got != script {
+		t.Errorf("%q after normalising = %q", lead, got)
 	}
 	if got := read(before, "notes/n.md"); got != "a\r\nb\r\n" {
 		t.Errorf("notes/n.md was rewritten: %q", got)

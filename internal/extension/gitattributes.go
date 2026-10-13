@@ -78,14 +78,16 @@ func NormalizeScriptLineEndings(ctx context.Context, root string, apply bool) ([
 	if !gitx.Available() {
 		return nil, nil
 	}
+	// RunRaw, not Run: Run trims the output, which would cut a leading or
+	// trailing space off the first or last path.
 	args := append([]string{"ls-files", "-z", "--"}, scriptPathspecs...)
-	out, err := gitx.Run(ctx, root, args...)
+	out, err := gitx.RunRaw(ctx, root, args...)
 	if err != nil {
 		return nil, nil //nolint:nilerr // not a git repository: nothing to normalise
 	}
 	staged := indexBlobs(ctx, root)
 	var changed, refresh []string
-	for _, rel := range strings.Split(out, "\x00") {
+	for _, rel := range strings.Split(string(out), "\x00") {
 		if rel == "" {
 			continue
 		}
@@ -133,12 +135,12 @@ func binary(data []byte) bool {
 
 // indexBlobs returns the index's blob id for each file cg's block covers.
 func indexBlobs(ctx context.Context, root string) map[string]string {
-	out, err := gitx.Run(ctx, root, append([]string{"ls-files", "-s", "-z", "--"}, scriptPathspecs...)...)
+	out, err := gitx.RunRaw(ctx, root, append([]string{"ls-files", "-s", "-z", "--"}, scriptPathspecs...)...)
 	if err != nil {
 		return nil
 	}
 	blobs := map[string]string{}
-	for _, entry := range strings.Split(out, "\x00") {
+	for _, entry := range strings.Split(string(out), "\x00") {
 		// <mode> SP <object> SP <stage> TAB <path>
 		meta, rel, ok := strings.Cut(entry, "\t")
 		if f := strings.Fields(meta); ok && len(f) == 3 && f[2] == "0" {
