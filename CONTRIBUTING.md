@@ -60,14 +60,14 @@ After changing a slash command, skill, hook wrapper or the status line, run `go 
 
 ## Supported platforms
 
-cg supports **Linux, macOS and Windows**, and CI runs the tests on all three. A change isn't done until it works on each, and the Windows test check is required to merge. Known gap on Windows: cg's hooks need Git for Windows ([#169](https://github.com/mnemcik/consigliere/issues/169)). Things that differ on Windows:
+cg supports **Linux, macOS and Windows**, and CI runs the tests on all three. A change isn't done until it works on each, and the Windows test check is required to merge. On Windows, cg's hooks and status line need Git for Windows; `cg init` and `cg sync` warn when Git Bash isn't found (`internal/gitbash`). Things that differ on Windows:
 
 - **Paths.** Build disk paths with `filepath`. Paths written to files cg stores or compares (`.cg.json`, ledgers, manifests) use `/`; convert with `filepath.ToSlash` / `FromSlash` at the boundary. Don't assume a path starts with `/`: Windows paths have a drive letter.
 - **Line endings.** Git on Windows checks files out with CRLF by default (`core.autocrlf`). Code that hashes, compares or parses text must not depend on the line ending (`manifest.HashContent` and `manifest.LF` normalise), and tests that compare file content must not either. A workspace's shell scripts are checked out with LF through cg's `.gitattributes` block ([workspace sync](docs/workspace-sync.md#line-endings)).
 - **File modes.** Windows has no executable bit, and `chmod` only toggles read-only. Don't let behaviour or tests depend on mode bits there.
 - **Open files.** A file that is open can't be deleted or renamed over on Windows. Close files before replacing or removing them, including in tests (`t.TempDir` cleanup fails on a file left open).
 - **Locks and processes.** Platform code goes in `_unix.go` / `_windows.go` files behind build tags, as in `internal/session/lock_*.go`. Both sides need tests that run on their platform.
-- **Shell.** Don't shell out to `sh`, `bash` or Unix tools from Go; use Go or `git`. The one exception is the status line's `upstream` command, which is a user's shell command by design (`runUpstream`). Hook wrappers are bash scripts that `settings.json` runs by path. Claude Code runs hooks in Git Bash on Windows when it is installed, and in PowerShell otherwise ([hooks reference](https://code.claude.com/docs/en/hooks)), so on Windows they work only with Git for Windows installed. The status line is a bash script too.
+- **Shell.** Don't shell out to `sh`, `bash` or Unix tools from Go; use Go or `git`. The one exception is the status line's `upstream` command, which is a user's shell command by design (`runUpstream`). On Windows it runs with Git Bash (`gitbash.Find`) rather than the first `bash` on `PATH`, which can be WSL's; only when no Git Bash is found does it fall back to `PATH`. Hook wrappers are bash scripts that `settings.json` runs by path. Claude Code runs hooks in Git Bash on Windows when it is installed, and in PowerShell otherwise ([hooks reference](https://code.claude.com/docs/en/hooks)), so on Windows they work only with Git for Windows installed. The status line is a bash script too.
 
 When a test can't apply on one platform, skip it there with a reason (`t.Skip("…on Windows: …")`) rather than leaving it to fail.
 

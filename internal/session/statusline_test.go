@@ -187,3 +187,19 @@ func TestBashCommandScriptPath(t *testing.T) {
 		t.Errorf("a command that is not a file changed: %q", got)
 	}
 }
+
+// On Windows the upstream runs with Git Bash, not the first bash on PATH, which
+// can be WSL's; elsewhere it runs with bash from PATH.
+func TestUpstreamShell(t *testing.T) {
+	got := upstreamShell()
+	if runtime.GOOS != "windows" {
+		if got != "bash" {
+			t.Errorf("upstreamShell() = %q, want %q", got, "bash")
+		}
+		return
+	}
+	if !filepath.IsAbs(got) || !strings.EqualFold(filepath.Base(got), "bash.exe") ||
+		strings.Contains(strings.ToLower(got), `\system32\`) {
+		t.Errorf("upstreamShell() = %q, want the path of Git for Windows' bash.exe", got)
+	}
+}

@@ -81,6 +81,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	printGitBashWarning(commandErr(cmd))
 
 	if !syncApply {
 		// The manifest is what sync itself records, so it is the accurate

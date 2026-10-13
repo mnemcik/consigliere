@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mnemcik/consigliere/internal/gitbash"
 	"github.com/mnemcik/consigliere/internal/meta"
 )
 
@@ -72,7 +73,7 @@ func runUpstream(ctx context.Context, upstream string, input []byte) string {
 	// only a bare path. A malicious workspace could run code here exactly as it
 	// could via settings.json, so the real trust boundary is opening an untrusted
 	// workspace, not this call.
-	cmd := exec.CommandContext(ctx, "bash", "-c", bashCommand(upstream))
+	cmd := exec.CommandContext(ctx, upstreamShell(), "-c", bashCommand(upstream))
 	cmd.Stdin = strings.NewReader(string(input))
 	// Killing bash on timeout doesn't kill its children on Windows, and a child
 	// that holds stdout open would keep Output waiting for it: stop waiting soon
@@ -85,6 +86,19 @@ func runUpstream(ctx context.Context, upstream string, input []byte) string {
 		return ""
 	}
 	return strings.TrimRight(string(out), "\n")
+}
+
+// upstreamShell returns the bash to run the upstream with. On Windows that is
+// Git Bash, the bash Claude Code runs the status line itself with, rather than
+// the first bash on PATH, which can be WSL's. Without Git Bash it falls back to
+// PATH, so another bash a user has set up still works.
+func upstreamShell() string {
+	if runtime.GOOS == "windows" {
+		if p, ok := gitbash.Find(); ok {
+			return p
+		}
+	}
+	return "bash"
 }
 
 // bashCommand returns upstream as a command for bash -c. On Windows a bare

@@ -51,6 +51,10 @@ Downloads the latest release, verifies its SHA-256 against `checksums.txt`, and 
 
 Grab the archive for your platform from [Releases](https://github.com/mnemcik/consigliere/releases) and extract the `cg` binary anywhere on your `$PATH`. It's a **single executable, no runtime needed** — Windows builds ship as `.zip`, everything else as `.tar.gz`.
 
+### Windows
+
+cg itself needs nothing else, but the hooks and status line it sets up for Claude Code are bash scripts. On Windows, Claude Code runs them in Git Bash, so install [Git for Windows](https://git-scm.com/downloads/win); without it, Claude Code runs them in PowerShell, where they don't run. `cg init` and `cg sync` warn when they can't find Git Bash. If it is installed somewhere cg and Claude Code don't look, set `CLAUDE_CODE_GIT_BASH_PATH` to its `bash.exe` ([Claude Code on Windows](https://code.claude.com/docs/en/setup#install-on-native-windows)).
+
 ### Build from source
 
 ```bash
