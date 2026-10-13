@@ -128,8 +128,8 @@ func NormalizeScriptLineEndings(ctx context.Context, root string, apply bool) ([
 	return changed, nil
 }
 
-// matchesIndex reports whether lf, the LF content now at path, is the index's
-// blob staged, either exactly or once that blob's CRLF line endings are LF.
+// matchesIndex reports whether lf, the LF content now at path, equals the
+// index blob staged, either exactly or after converting its CRLF to LF.
 func matchesIndex(ctx context.Context, root, path, lf, staged string) bool {
 	if staged == "" {
 		return false

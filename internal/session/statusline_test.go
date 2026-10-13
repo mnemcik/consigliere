@@ -95,6 +95,14 @@ func TestRunUpstreamTimesOut(t *testing.T) {
 	}
 }
 
+// An upstream that prints its line and leaves a background child holding
+// stdout keeps its line.
+func TestRunUpstreamKeepsOutputWithBackgroundChild(t *testing.T) {
+	if got := runUpstream(context.Background(), "echo hi; (sleep 1) &", nil); got != "hi" {
+		t.Errorf("runUpstream = %q, want hi", got)
+	}
+}
+
 func TestStatuslineUpstreamThenBadge(t *testing.T) {
 	root := t.TempDir()
 	writeCtx(t, root, "s3", `{"area":"consigliere","project":"cg"}`)

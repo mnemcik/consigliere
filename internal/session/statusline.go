@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"os/exec"
@@ -78,7 +79,9 @@ func runUpstream(ctx context.Context, upstream string, input []byte) string {
 	// after the kill.
 	cmd.WaitDelay = 100 * time.Millisecond
 	out, err := cmd.Output()
-	if err != nil {
+	// ErrWaitDelay means the upstream exited on time and only a child of it was
+	// still holding stdout: its output is complete, so keep it.
+	if err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		return ""
 	}
 	return strings.TrimRight(string(out), "\n")
