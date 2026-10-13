@@ -476,9 +476,10 @@ func TestDeletedFileIsTheUsersChange(t *testing.T) {
 	}
 }
 
-// Review finding 1: with core.autocrlf the exported files carry CRLF while the
-// repo stores LF. Content ids must still be the repo's blob ids, so diff and
-// resolve can read them, and an unedited file must not look edited.
+// Review finding 1: in a workspace checked out with CRLF (Git for Windows'
+// default core.autocrlf) a note carries CRLF while the repo stores LF. Content
+// ids must still be the repo's blob ids, so diff and resolve can read them, and
+// an unedited file must not look edited.
 func TestOwnershipUnderAutocrlf(t *testing.T) {
 	if !gitx.Available() {
 		t.Skip("git not available")
@@ -497,9 +498,9 @@ func TestOwnershipUnderAutocrlf(t *testing.T) {
 	if _, err := runExtCfg(t, cfgHome, ws, "install", repo); err != nil {
 		t.Fatal(err)
 	}
-	if got := readFile(t, filepath.Join(ws, noteRel)); !strings.Contains(got, "\r\n") {
-		t.Skipf("git didn't export CRLF here (%q); nothing to test", got)
-	}
+	// The store exports the repo's bytes (LF); a CRLF checkout of the
+	// workspace is what puts CRLF on disk.
+	writeNote(t, ws, "a\r\nb\r\nc\r\nd\r\ne\r\n")
 	// Unedited: an upstream change is simply taken.
 	commitFile(t, repo, "fragments/demo.md", "unrelated")
 	if _, err := runExtCfg(t, cfgHome, ws, "update", "demo"); err != nil {
@@ -583,6 +584,11 @@ func TestCRLFStoredRepoStillResolvesWithKeep(t *testing.T) {
 	cfgHome := t.TempDir()
 	ws, repo := installed(t, cfgHome)
 	writeNote(t, ws, "mine\n")
+	// Store the CRLF as is, whatever the machine's core.autocrlf (on by default
+	// with Git for Windows, which would convert it on add).
+	if _, err := gitx.Run(context.Background(), repo, "config", "core.autocrlf", "false"); err != nil {
+		t.Fatal(err)
+	}
 	commitFile(t, repo, noteRel, "v2\r\nstored with CRLF\r\n")
 	if _, err := runExtCfg(t, cfgHome, ws, "update", "demo"); err != nil {
 		t.Fatal(err)
