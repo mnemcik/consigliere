@@ -53,7 +53,7 @@ Grab the archive for your platform from [Releases](https://github.com/mnemcik/co
 
 ### Windows
 
-cg itself needs nothing else, but the hooks and status line it sets up for Claude Code are bash scripts. On Windows, Claude Code runs them in Git Bash, so install [Git for Windows](https://git-scm.com/downloads/win); without it, Claude Code runs them in PowerShell, where they don't run. `cg init` and `cg sync` warn when they can't find Git Bash. If it is installed somewhere cg and Claude Code don't look, set `CLAUDE_CODE_GIT_BASH_PATH` to its `bash.exe` ([Claude Code on Windows](https://code.claude.com/docs/en/setup#install-on-native-windows)).
+cg itself needs nothing else, but the hooks and status line it sets up for Claude Code are bash scripts. On Windows, Claude Code runs them in Git Bash, so install [Git for Windows](https://git-scm.com/downloads/win); without it, Claude Code runs them in PowerShell, where they don't run. `cg init` and `cg sync` warn when they can't find Git Bash. If it is installed somewhere cg and Claude Code don't look, set `CLAUDE_CODE_GIT_BASH_PATH` to its `bash.exe` in the `env` block of `.claude/settings.json`, which cg reads too, or as an environment variable ([Claude Code on Windows](https://code.claude.com/docs/en/setup#install-on-native-windows)).
 
 ### Build from source
 

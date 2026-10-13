@@ -22,12 +22,14 @@ func gitBashWarning(goos string, find func() (string, bool)) string {
 	return "Git Bash not found. cg's hooks and status line are bash scripts, and on Windows " +
 		"Claude Code runs them only when Git for Windows is installed (https://git-scm.com/downloads/win). " +
 		"Without it they don't run. If Git Bash is installed where cg can't find it, set " +
-		gitbash.EnvVar + " to the path of its bash.exe."
+		gitbash.EnvVar + " to the path of its bash.exe, in the \"env\" block of .claude/settings.json or as an environment variable."
 }
 
-// printGitBashWarning prints gitBashWarning for this machine to w.
-func printGitBashWarning(w io.Writer) {
-	if msg := gitBashWarning(runtime.GOOS, gitbash.Find); msg != "" {
+// printGitBashWarning prints gitBashWarning for this machine and the workspace
+// at root to w.
+func printGitBashWarning(w io.Writer, root string) {
+	find := func() (string, bool) { return gitbash.Find(root) }
+	if msg := gitBashWarning(runtime.GOOS, find); msg != "" {
 		_, _ = fmt.Fprintf(w, "warning: %s\n", msg)
 	}
 }

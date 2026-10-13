@@ -388,7 +388,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 	printGitHookWarnings(commandErr(cmd), ensureGitHooks(commandContext(cmd), dir))
-	printGitBashWarning(commandErr(cmd))
+	printGitBashWarning(commandErr(cmd), dir)
 
 	// Summary
 	fmt.Println()

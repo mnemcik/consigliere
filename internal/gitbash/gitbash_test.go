@@ -2,6 +2,7 @@ package gitbash
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -69,6 +70,17 @@ func TestFind(t *testing.T) {
 			want:  userBash, wantOK: true,
 		},
 		{
+			name: "git in cmd doesn't look in the folder above Git", goos: "windows",
+			path:  map[string]string{"git": filepath.Join(gitRoot, "cmd", "git.exe")},
+			files: []string{filepath.Join("C:", "Program Files", "bin", "bash.exe")},
+		},
+		{
+			name: "32-bit install location", goos: "windows",
+			env:   map[string]string{"ProgramFiles(x86)": filepath.Join("C:", "Program Files (x86)")},
+			files: []string{filepath.Join("C:", "Program Files (x86)", "Git", "bin", "bash.exe")},
+			want:  filepath.Join("C:", "Program Files (x86)", "Git", "bin", "bash.exe"), wantOK: true,
+		},
+		{
 			name: "WSL bash on PATH is not Git Bash", goos: "windows",
 			path:  map[string]string{"bash": wslBash},
 			files: []string{wslBash},
@@ -91,11 +103,84 @@ func TestFind(t *testing.T) {
 				}
 				return false
 			}
-			got, ok := find(tt.goos, getenv, lookPath, exists)
+			got, ok := find(tt.goos, getenv, nil, lookPath, exists)
 			if got != tt.want || ok != tt.wantOK {
 				t.Errorf("find() = %q, %v; want %q, %v", got, ok, tt.want, tt.wantOK)
 			}
 		})
+	}
+}
+
+// EnvVar set in the "env" block of Claude Code's settings files is found the way
+// Claude Code's docs say to set it, in their precedence order, and the process
+// environment wins over them.
+func TestConfiguredFromSettings(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, content string) string {
+		t.Helper()
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	local := write("local.json", `{"env": {"`+EnvVar+`": "local"}}`)
+	shared := write("shared.json", `{"env": {"`+EnvVar+`": "shared"}}`)
+	other := write("other.json", `{"env": {"OTHER": "x"}}`)
+	broken := write("broken.json", `{not json`)
+	missing := filepath.Join(dir, "missing.json")
+	noEnv := func(string) string { return "" }
+
+	tests := []struct {
+		name     string
+		getenv   func(string) string
+		settings []string
+		want     string
+	}{
+		{"first file that sets it wins", noEnv, []string{local, shared}, "local"},
+		{"files without it, unreadable or broken are skipped", noEnv, []string{missing, broken, other, shared}, "shared"},
+		{"environment wins", func(k string) string {
+			if k == EnvVar {
+				return "env"
+			}
+			return ""
+		}, []string{local}, "env"},
+		{"nowhere", noEnv, []string{other}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := configured(tt.getenv, tt.settings); got != tt.want {
+				t.Errorf("configured() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+
+	// find uses a settings value only when that file exists.
+	bash := write("bash.exe", "")
+	settings := write("settings.json", `{"env": {"`+EnvVar+`": `+jsonString(bash)+`}}`)
+	notFound := func(string) (string, error) { return "", errors.New("not found") }
+	if got, ok := find("windows", noEnv, []string{settings}, notFound, fileExists); got != bash || !ok {
+		t.Errorf("find() = %q, %v; want %q from settings", got, ok, bash)
+	}
+}
+
+func jsonString(s string) string {
+	return `"` + strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), `"`, `\"`) + `"`
+}
+
+func TestSettingsFiles(t *testing.T) {
+	root, home := filepath.Join("w"), filepath.Join("h")
+	want := []string{
+		filepath.Join(root, ".claude", "settings.local.json"),
+		filepath.Join(root, ".claude", "settings.json"),
+		filepath.Join(home, ".claude", "settings.json"),
+	}
+	got := settingsFiles(root, home)
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("settingsFiles() = %v, want %v", got, want)
+	}
+	if got := settingsFiles("", home); len(got) != 1 {
+		t.Errorf("settingsFiles without a root = %v, want only the user's", got)
 	}
 }
 
@@ -105,7 +190,7 @@ func TestFindOnWindowsRunner(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("Git Bash lookup only applies on Windows")
 	}
-	p, ok := Find()
+	p, ok := Find("")
 	if !ok {
 		t.Fatal("Find() found no Git Bash on a runner with Git for Windows")
 	}

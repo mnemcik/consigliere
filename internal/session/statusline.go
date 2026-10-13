@@ -94,7 +94,7 @@ func runUpstream(ctx context.Context, upstream string, input []byte) string {
 // PATH, so another bash a user has set up still works.
 func upstreamShell() string {
 	if runtime.GOOS == "windows" {
-		if p, ok := gitbash.Find(); ok {
+		if p, ok := gitbash.Find(""); ok {
 			return p
 		}
 	}
