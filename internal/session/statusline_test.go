@@ -84,7 +84,9 @@ func TestRunUpstreamTimesOut(t *testing.T) {
 	defer func() { upstreamTimeout = saved }()
 
 	start := time.Now()
-	got := runUpstream(context.Background(), "sleep 5", nil)
+	// "; :" keeps bash from exec'ing sleep, so killing bash leaves sleep
+	// holding stdout open, as killing Git Bash always does on Windows.
+	got := runUpstream(context.Background(), "sleep 5; :", nil)
 	if got != "" {
 		t.Errorf("expected empty output on timeout, got %q", got)
 	}
