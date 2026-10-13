@@ -48,7 +48,7 @@ func find(goos string, getenv func(string) string, settings []string, lookPath f
 		p, err := lookPath("bash")
 		return p, err == nil
 	}
-	if p := configured(getenv, settings); p != "" && exists(p) {
+	if p := configured(getenv, settings); p != "" && shellName(p) && exists(p) {
 		return p, true
 	}
 	for _, p := range candidates(getenv, lookPath) {
@@ -59,25 +59,38 @@ func find(goos string, getenv func(string) string, settings []string, lookPath f
 	return "", false
 }
 
-// configured returns EnvVar from the environment, or else from the first
-// settings file that sets it in its "env" block. Unreadable files are skipped.
+// configured returns EnvVar as Claude Code sees it: from the first settings file
+// that sets it in its "env" block, since Claude Code writes those values over the
+// inherited environment, or else from the environment. Unreadable files are
+// skipped. Managed settings and --settings aren't read; a path set only there
+// gives a warning Claude Code wouldn't need.
 func configured(getenv func(string) string, settings []string) string {
-	if p := getenv(EnvVar); p != "" {
-		return p
-	}
 	for _, f := range settings {
 		data, err := os.ReadFile(f) // #nosec G304 -- Claude Code's own settings files
 		if err != nil {
 			continue
 		}
 		var s struct {
-			Env map[string]string `json:"env"`
+			Env map[string]any `json:"env"`
 		}
-		if json.Unmarshal(data, &s) == nil && s.Env[EnvVar] != "" {
-			return s.Env[EnvVar]
+		if json.Unmarshal(data, &s) != nil {
+			continue
+		}
+		if p, ok := s.Env[EnvVar].(string); ok && p != "" {
+			return p
 		}
 	}
-	return ""
+	return getenv(EnvVar)
+}
+
+// shellName reports whether p names a file Claude Code accepts as its shell; it
+// ignores EnvVar otherwise.
+func shellName(p string) bool {
+	switch strings.ToLower(filepath.Base(p)) {
+	case "bash.exe", "sh.exe", "bash", "sh":
+		return true
+	}
+	return false
 }
 
 // candidates lists where Git for Windows keeps bash.exe, in the order to try:

@@ -112,8 +112,8 @@ func TestFind(t *testing.T) {
 }
 
 // EnvVar set in the "env" block of Claude Code's settings files is found the way
-// Claude Code's docs say to set it, in their precedence order, and the process
-// environment wins over them.
+// Claude Code's docs say to set it, in their precedence order, and wins over the
+// process environment, as it does in Claude Code.
 func TestConfiguredFromSettings(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name, content string) string {
@@ -128,8 +128,15 @@ func TestConfiguredFromSettings(t *testing.T) {
 	shared := write("shared.json", `{"env": {"`+EnvVar+`": "shared"}}`)
 	other := write("other.json", `{"env": {"OTHER": "x"}}`)
 	broken := write("broken.json", `{not json`)
+	mixed := write("mixed.json", `{"env": {"DISABLE_TELEMETRY": 1, "`+EnvVar+`": "mixed"}}`)
 	missing := filepath.Join(dir, "missing.json")
 	noEnv := func(string) string { return "" }
+	fromEnv := func(k string) string {
+		if k == EnvVar {
+			return "env"
+		}
+		return ""
+	}
 
 	tests := []struct {
 		name     string
@@ -139,12 +146,9 @@ func TestConfiguredFromSettings(t *testing.T) {
 	}{
 		{"first file that sets it wins", noEnv, []string{local, shared}, "local"},
 		{"files without it, unreadable or broken are skipped", noEnv, []string{missing, broken, other, shared}, "shared"},
-		{"environment wins", func(k string) string {
-			if k == EnvVar {
-				return "env"
-			}
-			return ""
-		}, []string{local}, "env"},
+		{"a non-string env entry doesn't hide it", noEnv, []string{mixed}, "mixed"},
+		{"settings win over the environment", fromEnv, []string{local}, "local"},
+		{"environment when no settings file sets it", fromEnv, []string{other}, "env"},
 		{"nowhere", noEnv, []string{other}, ""},
 	}
 	for _, tt := range tests {
@@ -161,6 +165,13 @@ func TestConfiguredFromSettings(t *testing.T) {
 	notFound := func(string) (string, error) { return "", errors.New("not found") }
 	if got, ok := find("windows", noEnv, []string{settings}, notFound, fileExists); got != bash || !ok {
 		t.Errorf("find() = %q, %v; want %q from settings", got, ok, bash)
+	}
+
+	// Like Claude Code, a configured file not named bash or sh is ignored.
+	notBash := write("cmd.exe", "")
+	settings = write("settings.json", `{"env": {"`+EnvVar+`": `+jsonString(notBash)+`}}`)
+	if got, ok := find("windows", noEnv, []string{settings}, notFound, fileExists); ok {
+		t.Errorf("find() = %q, accepted a configured file not named bash or sh", got)
 	}
 }
 
