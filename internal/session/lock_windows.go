@@ -35,3 +35,14 @@ func unlockFile(f *os.File) {
 	_ = windows.UnlockFileEx(windows.Handle(f.Fd()), 0, 1, 0, new(windows.Overlapped))
 	_ = f.Close()
 }
+
+// removeLocked releases the lock f holds on path, then deletes path when remove
+// is set. Windows can't delete a file that is open, so the lock has to go
+// first. That is still safe: a writer that opens the file in between holds it
+// open, and the delete then fails and leaves it.
+func removeLocked(f *os.File, path string, remove bool) {
+	unlockFile(f)
+	if remove {
+		_ = os.Remove(path)
+	}
+}

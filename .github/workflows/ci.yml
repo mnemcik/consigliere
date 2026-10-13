@@ -25,16 +25,27 @@ jobs:
         with:
           version: latest
 
+      # The _windows.go files only compile for Windows, so lint them there too.
+      - name: golangci-lint (Windows build)
+        uses: golangci/golangci-lint-action@v9
+        env:
+          GOOS: windows
+        with:
+          version: latest
+
   test:
     name: Test
-    # Run on Linux and macOS so the git-integration tests (worktree/session)
-    # exercise both filesystems — notably macOS's /var → /private/var symlinks,
-    # which the worktree path matching has to canonicalize.
+    # Windows is a supported platform, so its tests run like the others'. Linux
+    # and macOS together exercise both Unix filesystems (notably macOS's /var →
+    # /private/var symlinks, which the worktree path matching has to
+    # canonicalize); Windows exercises drive-letter paths, CRLF checkouts
+    # (core.autocrlf is on by default there), file locking and replacing files
+    # that are open.
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
 
@@ -43,6 +54,8 @@ jobs:
           go-version-file: go.mod
 
       - name: Run tests
+        # bash on every OS: PowerShell splits -coverprofile=coverage.out at the dot.
+        shell: bash
         run: go test -v -race -coverprofile=coverage.out ./...
 
       - name: Upload coverage

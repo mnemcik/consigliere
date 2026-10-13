@@ -146,7 +146,8 @@ func MainWorktree(ctx context.Context, dir string) (string, error) {
 	// worktree; the real one is then only known from inside it.
 	if common, err := gitx.Run(ctx, dir, "rev-parse", "--path-format=absolute", "--git-common-dir"); err == nil &&
 		filepath.Clean(common) == filepath.Clean(trees[0].Path) {
-		return gitx.Run(ctx, dir, "rev-parse", "--show-toplevel")
+		top, err := gitx.Run(ctx, dir, "rev-parse", "--show-toplevel")
+		return gitx.OSPath(top), err
 	}
 	return trees[0].Path, nil
 }

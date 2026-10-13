@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -45,7 +46,7 @@ func TestInitInstallsClaudeIntegration(t *testing.T) {
 			t.Errorf("expected %s to exist: %v", f, err)
 			continue
 		}
-		if fi.Mode()&0o100 == 0 {
+		if runtime.GOOS != "windows" && fi.Mode()&0o100 == 0 { // Windows has no executable bit
 			t.Errorf("%s should be executable, mode=%v", f, fi.Mode())
 		}
 	}

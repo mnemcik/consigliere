@@ -15,6 +15,7 @@ func TestCleanSubdir(t *testing.T) {
 		"a/b":       filepath.Join("a", "b"),
 		"./1pw":     "1pw",
 		"a/../b":    "b",
+		`a\b`:       filepath.Join("a", "b"), // either separator, on every OS
 	}
 	for in, want := range ok {
 		got, err := CleanSubdir(in)
@@ -27,7 +28,9 @@ func TestCleanSubdir(t *testing.T) {
 		}
 	}
 
-	for _, bad := range []string{"..", "../escape", "a/../../escape", "/abs/path"} {
+	// Rooted and drive paths are rejected on every OS, not only where
+	// filepath.IsAbs calls them absolute.
+	for _, bad := range []string{"..", "../escape", "a/../../escape", "/abs/path", `\abs\path`, "C:x", "C:/abs", `c:\abs`, `..\escape`, `a\..\..\escape`} {
 		if _, err := CleanSubdir(bad); err == nil {
 			t.Errorf("CleanSubdir(%q) should have errored", bad)
 		}

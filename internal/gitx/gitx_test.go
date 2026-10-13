@@ -3,7 +3,6 @@ package gitx
 import (
 	"context"
 	"path/filepath"
-	"runtime"
 	"testing"
 )
 
@@ -14,9 +13,6 @@ func initRepo(t *testing.T) (ctx context.Context, dir string) {
 	t.Helper()
 	if !Available() {
 		t.Skip("git not available on PATH")
-	}
-	if runtime.GOOS == "windows" {
-		t.Skip("skipping git-integration test on windows")
 	}
 	ctx = context.Background()
 	dir = t.TempDir()

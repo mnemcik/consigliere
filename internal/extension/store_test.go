@@ -269,3 +269,49 @@ func TestStoreFollowsDefaultBranchRename(t *testing.T) {
 		t.Errorf("default branch resolves to %q (err %v), want trunk's %s", got, err, want)
 	}
 }
+
+// A tree holds the repo's own bytes whatever the user's git config says: with
+// core.autocrlf on (Git for Windows' default) a checkout would write CRLF, which
+// breaks a shell script and makes the tree differ from machine to machine.
+func TestEnsureTreeIgnoresAutocrlf(t *testing.T) {
+	if !gitx.Available() {
+		t.Skip("git not available")
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	ctx := context.Background()
+	repo := newRepo(t)
+	script := "#!/bin/sh\necho ok\n"
+	if err := os.WriteFile(filepath.Join(repo, "hook.sh"), []byte(script), 0o644); err != nil { //nolint:gosec // test fixture
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "-A"}, {"commit", "--quiet", "-m", "script"}} {
+		if _, err := gitx.Run(ctx, repo, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(cfg, []byte("[core]\n\tautocrlf = true\n"), 0o644); err != nil { //nolint:gosec // test fixture
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
+
+	mirror, err := EnsureMirror(ctx, repo, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := ResolveCommit(ctx, mirror, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := EnsureTree(ctx, repo, mirror, commit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(tree, "hook.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != script {
+		t.Errorf("tree holds %q, want the repo's bytes %q", got, script)
+	}
+}

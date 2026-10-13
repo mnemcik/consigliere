@@ -110,7 +110,7 @@ func TestExtInstallViaNamedGitRegistry(t *testing.T) {
 	}
 	content := makeMonorepo(t, map[string]string{"1pw": ext1pwManifest})
 	index := `{"version":1,"extensions":[{"name":"1pw","description":"d","repo":"` +
-		content + `","path":"1pw","latestVersion":"0.1.0","manifestUrl":"x"}]}`
+		jsonPath(content) + `","path":"1pw","latestVersion":"0.1.0","manifestUrl":"x"}]}`
 	registry := makeGitRegistry(t, index)
 
 	// Register the private "priv" registry in the workspace .cg.json.
@@ -204,7 +204,7 @@ func TestExtInstallSubdirFromRegistry(t *testing.T) {
 	ws := newWorkspace(t)
 	repo := makeMonorepo(t, map[string]string{"1pw": ext1pwManifest, "vault": extVaultManifest})
 	index := `{"version":1,"extensions":[{"name":"1pw","description":"d","repo":"` +
-		repo + `","path":"1pw","latestVersion":"0.1.0","manifestUrl":"x"}]}`
+		jsonPath(repo) + `","path":"1pw","latestVersion":"0.1.0","manifestUrl":"x"}]}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(index))
 	}))

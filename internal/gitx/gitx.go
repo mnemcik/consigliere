@@ -153,7 +153,7 @@ func WorktreePaths(ctx context.Context, dir string) ([]string, error) {
 	var paths []string
 	for _, line := range strings.Split(out, "\n") {
 		if rest, found := strings.CutPrefix(line, "worktree "); found {
-			paths = append(paths, strings.TrimSpace(rest))
+			paths = append(paths, OSPath(strings.TrimSpace(rest)))
 		}
 	}
 	return paths, nil
@@ -189,7 +189,7 @@ func WorktreeList(ctx context.Context, dir string) ([]Worktree, error) {
 		switch {
 		case strings.HasPrefix(line, "worktree "):
 			flush()
-			cur = &Worktree{Path: strings.TrimSpace(strings.TrimPrefix(line, "worktree "))}
+			cur = &Worktree{Path: OSPath(strings.TrimSpace(strings.TrimPrefix(line, "worktree ")))}
 		case cur == nil:
 			// ignore lines before the first worktree block
 		case strings.HasPrefix(line, "HEAD "):
@@ -229,7 +229,17 @@ func ShowToplevel(ctx context.Context, dir string) string {
 	if err != nil {
 		return ""
 	}
-	return out
+	return OSPath(out)
+}
+
+// OSPath converts a path git printed to the OS's form. Git for Windows prints
+// paths with forward slashes (C:/Users/...), which never compare equal to the
+// backslash paths filepath builds. Empty stays empty.
+func OSPath(p string) string {
+	if p == "" {
+		return ""
+	}
+	return filepath.Clean(filepath.FromSlash(p))
 }
 
 // WorktreeAdd attaches a new worktree at path checked out to an existing branch.

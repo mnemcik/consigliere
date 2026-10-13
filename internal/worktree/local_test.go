@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -26,9 +25,6 @@ func setupLocalWorkspace(t *testing.T) (ctx context.Context, root string) {
 	t.Helper()
 	if !gitx.Available() {
 		t.Skip("git not available on PATH")
-	}
-	if runtime.GOOS == "windows" {
-		t.Skip("skipping git-integration test on windows")
 	}
 	ctx = context.Background()
 	base := t.TempDir()

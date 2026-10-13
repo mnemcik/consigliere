@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -109,7 +110,7 @@ func TestApplySyncClaudeFilesRoundTrip(t *testing.T) {
 		t.Errorf("new file not installed: %q", got)
 	}
 	fi, err := os.Stat(filepath.Join(dir, filepath.FromSlash(hook)))
-	if err != nil || fi.Mode()&0o111 == 0 {
+	if err != nil || runtime.GOOS != "windows" && fi.Mode()&0o111 == 0 { // Windows has no executable bit
 		t.Errorf("hook must stay executable after update: %v %v", fi.Mode(), err)
 	}
 

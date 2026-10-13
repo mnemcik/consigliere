@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -63,8 +62,8 @@ func TestParseAcks(t *testing.T) {
 // root and the bare repo path.
 func shareWorkspace(t *testing.T) (root, bare string) {
 	t.Helper()
-	if !gitx.Available() || runtime.GOOS == "windows" {
-		t.Skip("git integration not exercised here")
+	if !gitx.Available() {
+		t.Skip("git not available")
 	}
 	ctx := context.Background()
 	root = t.TempDir()

@@ -18,17 +18,35 @@ func CleanSubdir(p string) (string, error) {
 	if p == "" {
 		return "", nil
 	}
-	cleaned := filepath.Clean(filepath.FromSlash(p))
+	// Either separator works on every OS: `..\x` is rejected on Unix too, and a
+	// subdir recorded in .cg.json on Windows still resolves on Unix. (Manifest
+	// src/dest/script paths are only validated here; the code that uses them
+	// reads them in slash form.)
+	slash := strings.ReplaceAll(p, `\`, "/")
+	cleaned := filepath.Clean(filepath.FromSlash(slash))
 	// "." cleans to the repo root, which the rest of the flow represents as the
 	// empty sentinel; returning "." would wrongly look like subdir mode.
 	if cleaned == "." {
 		return "", nil
 	}
-	if filepath.IsAbs(cleaned) || cleaned == ".." ||
+	if rooted(slash) || filepath.IsAbs(cleaned) || cleaned == ".." ||
 		strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("invalid subdir %q: must be a relative path inside the repo", p)
 	}
 	return cleaned, nil
+}
+
+// rooted reports whether p, in slash form, starts at a root or names a drive,
+// whatever the OS, so a manifest is valid or invalid the same way everywhere.
+// filepath.IsAbs alone differs: on Windows "/etc/passwd" isn't absolute (it has
+// no drive) and "C:x" is relative to drive C's current directory, and on Unix
+// "C:x" is a plain relative name.
+func rooted(p string) bool {
+	if strings.HasPrefix(p, "/") {
+		return true
+	}
+	return len(p) >= 2 && p[1] == ':' &&
+		(p[0] >= 'a' && p[0] <= 'z' || p[0] >= 'A' && p[0] <= 'Z')
 }
 
 // configBase returns cg's config root. It mirrors internal/autoupdate.StateDir:

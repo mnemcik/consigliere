@@ -37,6 +37,12 @@ func TestMigrateDryRunThenApplyInLinkedWorktree(t *testing.T) {
 	mustGit(t, ctx, repo, "add", "-A")
 	mustGit(t, ctx, repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "item")
 	wt := addWorktree(t, repo)
+	// Git for Windows checks the items out with CRLF (core.autocrlf), and
+	// migrate keeps a file's line endings, so compare with LF.
+	readFile := func(t *testing.T, p string) string {
+		t.Helper()
+		return strings.ReplaceAll(readFile(t, p), "\r\n", "\n")
+	}
 
 	out, err := runMigrateCmd(t, wt)
 	if err != nil {

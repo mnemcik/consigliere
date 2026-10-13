@@ -42,6 +42,7 @@ make check      # Run everything
 - Version is injected at build time via `-ldflags` — see Makefile.
 - `.cg.json` type field must be `"consigliere"` for workspace detection.
 - Sentinel comments in `templates/workspace/CLAUDE.md` use `cg:section` / `user:section` prefixes.
+- **Windows is a supported platform**, alongside Linux and macOS; CI runs the tests on all three. Check every change against the Windows rules in [CONTRIBUTING.md](CONTRIBUTING.md#supported-platforms): paths, line endings, file modes, open files, locks, shelling out.
 - Follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
 
 ## Release Process

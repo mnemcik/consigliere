@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -26,9 +25,6 @@ func repo(t *testing.T) (ctx context.Context, root string) {
 	t.Helper()
 	if !gitx.Available() {
 		t.Skip("git not available")
-	}
-	if runtime.GOOS == "windows" {
-		t.Skip("shell hooks are not exercised on windows")
 	}
 	ctx = context.Background()
 	dir := t.TempDir()
@@ -327,19 +323,20 @@ func TestNonExecutableScriptRuns(t *testing.T) {
 func TestDanglingSymlinkHookKept(t *testing.T) {
 	ctx, root := repo(t)
 	own := hookPath(t, ctx, root, "post-commit")
-	if err := os.Symlink("/nonexistent/hook", own); err != nil {
+	dangling := filepath.FromSlash("/nonexistent/hook") // Readlink gives OS separators
+	if err := os.Symlink(dangling, own); err != nil {
 		t.Fatal(err)
 	}
 	script(t, root, "post-commit", "a", filepath.Join(t.TempDir(), "log"))
 	ensure(t, ctx, root)
-	if target, err := os.Readlink(own + preSuffix); err != nil || target != "/nonexistent/hook" {
+	if target, err := os.Readlink(own + preSuffix); err != nil || target != dangling {
 		t.Errorf("symlink hook not moved aside: %q %v", target, err)
 	}
 	if err := os.RemoveAll(filepath.Join(root, DirRel)); err != nil {
 		t.Fatal(err)
 	}
 	ensure(t, ctx, root)
-	if target, err := os.Readlink(own); err != nil || target != "/nonexistent/hook" {
+	if target, err := os.Readlink(own); err != nil || target != dangling {
 		t.Errorf("symlink hook not restored: %q %v", target, err)
 	}
 }
@@ -347,8 +344,8 @@ func TestDanglingSymlinkHookKept(t *testing.T) {
 // With the git dir outside the workspace (git init --separate-git-dir), the
 // dispatcher still finds the scripts: the root comes from the allow file.
 func TestSeparateGitDir(t *testing.T) {
-	if !gitx.Available() || runtime.GOOS == "windows" {
-		t.Skip("git shell hooks not available")
+	if !gitx.Available() {
+		t.Skip("git not available")
 	}
 	ctx := context.Background()
 	base := t.TempDir()

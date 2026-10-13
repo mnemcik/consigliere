@@ -5,7 +5,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -66,8 +65,8 @@ func entryFor(t *testing.T, ws string) workspace.ExtensionRef {
 // another workspace on the same machine reads, including the git-hook script
 // its approval is checked against.
 func TestExtUpdateInOneWorkspaceLeavesAnotherAlone(t *testing.T) {
-	if !gitx.Available() || runtime.GOOS == "windows" {
-		t.Skip("needs git and a POSIX shell")
+	if !gitx.Available() {
+		t.Skip("git not available")
 	}
 	cfgHome := t.TempDir()
 	wsA := newGitRepo(t, filepath.Join(t.TempDir(), "a"), ".", `{"type":"consigliere","version":"1.3.0"}`)

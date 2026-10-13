@@ -3,6 +3,7 @@ package workspace
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -95,7 +96,7 @@ func TestSetVersionKeepsModeAndLeavesNoTempFile(t *testing.T) {
 	if err := SetVersion(dir, "1.25.0"); err != nil {
 		t.Fatal(err)
 	}
-	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o640 {
+	if info, err := os.Stat(path); err != nil || runtime.GOOS != "windows" && info.Mode().Perm() != 0o640 { // Windows has no group/other bits
 		t.Errorf("mode = %v, %v; want 0640", info.Mode().Perm(), err)
 	}
 	entries, _ := os.ReadDir(dir)
