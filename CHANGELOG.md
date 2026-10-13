@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.28.1](https://github.com/mnemcik/consigliere/compare/v1.28.0...v1.28.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **windows:** find Git Bash for hooks and the status line, and warn without it ([#173](https://github.com/mnemcik/consigliere/issues/173)) ([e2ea90f](https://github.com/mnemcik/consigliere/commit/e2ea90f45de1810bce1c41283b6995574c7d5120))
+
 ## [1.28.0](https://github.com/mnemcik/consigliere/compare/v1.27.0...v1.28.0) (2026-10-13)
 
 
