@@ -60,10 +60,10 @@ After changing a slash command, skill, hook wrapper or the status line, run `go 
 
 ## Supported platforms
 
-cg supports **Linux, macOS and Windows**, and CI runs the tests on all three. A change isn't done until it works on each. Known gaps on Windows: a workspace checked out with CRLF line endings ([#168](https://github.com/mnemcik/consigliere/issues/168), [#170](https://github.com/mnemcik/consigliere/issues/170)) and the need for Git for Windows ([#169](https://github.com/mnemcik/consigliere/issues/169)). Things that differ on Windows:
+cg supports **Linux, macOS and Windows**, and CI runs the tests on all three. A change isn't done until it works on each, and the Windows test check is required to merge. Known gap on Windows: cg's hooks need Git for Windows ([#169](https://github.com/mnemcik/consigliere/issues/169)). Things that differ on Windows:
 
 - **Paths.** Build disk paths with `filepath`. Paths written to files cg stores or compares (`.cg.json`, ledgers, manifests) use `/`; convert with `filepath.ToSlash` / `FromSlash` at the boundary. Don't assume a path starts with `/`: Windows paths have a drive letter.
-- **Line endings.** Git on Windows checks files out with CRLF by default (`core.autocrlf`). Code that hashes, compares or parses text must not depend on the line ending, and tests that compare file content must not either.
+- **Line endings.** Git on Windows checks files out with CRLF by default (`core.autocrlf`). Code that hashes, compares or parses text must not depend on the line ending (`manifest.HashContent` and `manifest.LF` normalise), and tests that compare file content must not either. A workspace's shell scripts are checked out with LF through cg's `.gitattributes` block ([workspace sync](docs/workspace-sync.md#line-endings)).
 - **File modes.** Windows has no executable bit, and `chmod` only toggles read-only. Don't let behaviour or tests depend on mode bits there.
 - **Open files.** A file that is open can't be deleted or renamed over on Windows. Close files before replacing or removing them, including in tests (`t.TempDir` cleanup fails on a file left open).
 - **Locks and processes.** Platform code goes in `_unix.go` / `_windows.go` files behind build tags, as in `internal/session/lock_*.go`. Both sides need tests that run on their platform.

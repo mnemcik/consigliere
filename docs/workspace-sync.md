@@ -87,7 +87,8 @@ re-clone so `cg sync` can reconcile after the binary self-updates.
 
 `cg sync` classifies every managed artifact by comparing three content hashes —
 on disk, manifest-recorded (what `cg` last wrote), and framework (what this
-binary ships):
+binary ships). The hashes ignore line endings, so a CRLF checkout of a file cg
+wrote (see [Line endings](#line-endings)) still counts as cg's:
 
 - **up-to-date** — on-disk content already equals the framework's. Nothing to do.
 - **updatable** — on-disk content equals what `cg` recorded and the framework has
@@ -145,6 +146,34 @@ later cg release adds is installed by sync but does nothing until you add it to
 `settings.json`. A hook cg stops shipping is reported as `removed`, and
 `settings.json` keeps calling it until you take it out. Skills and slash
 commands need no wiring: Claude Code picks them up from their directories.
+
+### Line endings
+
+Git for Windows checks text files out with CRLF line endings by default
+(`core.autocrlf`). cg handles that in two ways:
+
+- **Content comparisons ignore line endings.** A CRLF copy of an unedited file
+  is still recognised as cg's. When `cg sync --apply` updates a section of a
+  CRLF `CLAUDE.md`, the file stays CRLF.
+- **Shell scripts are checked out with LF**, because a script with CRLF line
+  endings doesn't run. `cg init` and `cg sync --apply` keep this block in the
+  workspace's `.gitattributes`. Lines outside it are yours, and your other files
+  keep whatever line endings your git gives them.
+
+  ```gitattributes
+  # cg:gitattributes:start
+  # Managed by cg: shell scripts need LF line endings to run, on every OS.
+  *.sh text eol=lf
+  .cg/git-hooks/** text eol=lf
+  # cg:gitattributes:end
+  ```
+
+  A checkout made before the block existed keeps its CRLF scripts until git
+  checks them out again, so `cg sync --apply` also converts tracked scripts it
+  finds with CRLF (the dry run lists them). Only the line endings change. A
+  script whose content is otherwise the committed one is re-added, because git
+  goes on reporting it as modified otherwise. A script you have edited is left
+  unstaged. Commit the `.gitattributes` change so other checkouts get it.
 
 The optional `/cg-sync` Claude skill reads the report plus the user's
 `user:section` rules to flag *semantic* contradictions (a new framework rule
