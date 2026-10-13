@@ -501,17 +501,20 @@ func TestOwnershipUnderAutocrlf(t *testing.T) {
 	// The store exports the repo's bytes (LF); a CRLF checkout of the
 	// workspace is what puts CRLF on disk.
 	writeNote(t, ws, "a\r\nb\r\nc\r\nd\r\ne\r\n")
-	// Unedited: an upstream change is simply taken.
-	commitFile(t, repo, "fragments/demo.md", "unrelated")
+	// Unedited: an upstream change to the note is simply taken.
+	commitFile(t, repo, noteRel, "a\nb\nc\nd\ne\nf\n")
 	if _, err := runExtCfg(t, cfgHome, ws, "update", "demo"); err != nil {
 		t.Fatal(err)
 	}
 	if p := ledgerFor(t, ws).Pending; len(p) != 0 {
 		t.Fatalf("an unedited CRLF note looked edited: %+v", p)
 	}
+	if got := readFile(t, filepath.Join(ws, noteRel)); got != "a\nb\nc\nd\ne\nf\n" {
+		t.Fatalf("the upstream change wasn't taken: %q", got)
+	}
 
-	writeNote(t, ws, "A\r\nb\r\nc\r\nd\r\ne\r\n")
-	commitFile(t, repo, noteRel, "a\nb\nc\nd\nE\n")
+	writeNote(t, ws, "A\r\nb\r\nc\r\nd\r\ne\r\nf\r\n")
+	commitFile(t, repo, noteRel, "a\nb\nc\nd\nE\nf\n")
 	if _, err := runExtCfg(t, cfgHome, ws, "update", "demo"); err != nil {
 		t.Fatal(err)
 	}
@@ -521,7 +524,7 @@ func TestOwnershipUnderAutocrlf(t *testing.T) {
 	if _, err := runExtCfg(t, cfgHome, ws, "resolve", "demo", noteRel, "--merge"); err != nil {
 		t.Fatalf("merge under autocrlf: %v", err)
 	}
-	if got := strings.ReplaceAll(readFile(t, filepath.Join(ws, noteRel)), "\r\n", "\n"); got != "A\nb\nc\nd\nE\n" {
+	if got := strings.ReplaceAll(readFile(t, filepath.Join(ws, noteRel)), "\r\n", "\n"); got != "A\nb\nc\nd\nE\nf\n" {
 		t.Errorf("merged = %q", got)
 	}
 }
