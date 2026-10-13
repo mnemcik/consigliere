@@ -117,6 +117,10 @@ func TestScriptsCheckedOutWithLF(t *testing.T) {
 	// Sorts first in git's listing, so trimming the output would lose its space.
 	const lead = " lead.sh"
 	write(origin, lead, script, 0o755)
+	// As a pathspec, "[x].sh" matches "x.sh": re-adding it must not stage x.sh.
+	const glob, globbed = "hooks/[x].sh", "hooks/x.sh"
+	write(origin, glob, script, 0o755)
+	write(origin, globbed, script, 0o755)
 	git(origin, "add", "-A")
 	git(origin, "commit", "--quiet", "-m", "before the block")
 
@@ -151,14 +155,15 @@ func TestScriptsCheckedOutWithLF(t *testing.T) {
 	// One script the user has edited, in their CRLF checkout.
 	const edited = ".cg/git-hooks/post-commit.d/demo-x"
 	write(before, edited, "#!/bin/sh\r\necho mine\r\n", 0o755)
+	write(before, globbed, "#!/bin/sh\r\necho mine\r\n", 0o755)
 	// A binary hook whose bytes happen to hold CRLF: not text, never touched.
 	const bin = ".cg/git-hooks/post-commit.d/demo-bin"
 	binData := "\x7fELF\x00\x01\r\n\x00"
 	write(before, bin, binData, 0o755)
 	git(before, "add", "--", bin)
 	pending, err := NormalizeScriptLineEndings(ctx, before, false)
-	if err != nil || len(pending) != 3 {
-		t.Fatalf("dry run = %q, %v; want the three scripts", pending, err)
+	if err != nil || len(pending) != 5 {
+		t.Fatalf("dry run = %q, %v; want the five scripts", pending, err)
 	}
 	if got := read(before, ".claude/hooks/gate.sh"); got == script {
 		t.Fatal("dry run rewrote a script")
@@ -190,7 +195,7 @@ func TestScriptsCheckedOutWithLF(t *testing.T) {
 	}
 	// Only the user's edit is left, unstaged: the untouched script is not
 	// reported as modified, and nothing of the user's is staged for them.
-	if status, err := gitx.Run(ctx, before, "status", "--porcelain", "--", ".cg/git-hooks/post-commit.d/demo-x", ".claude/"); err != nil || status != "M "+edited {
+	if status, err := gitx.Run(ctx, before, "--literal-pathspecs", "status", "--porcelain", "--", edited, ".claude/", glob, globbed); err != nil || status != "M "+edited+"\n M "+globbed {
 		t.Errorf("status after normalising = %q %v, want only the user's unstaged edit", status, err)
 	}
 	if again, err := NormalizeScriptLineEndings(ctx, before, true); err != nil || len(again) != 0 {
