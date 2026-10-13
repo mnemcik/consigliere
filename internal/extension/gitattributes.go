@@ -1,6 +1,7 @@
 package extension
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/mnemcik/consigliere/internal/githooks"
 	"github.com/mnemcik/consigliere/internal/gitx"
+	"github.com/mnemcik/consigliere/internal/manifest"
 )
 
 // Line endings of scripts in a workspace. Git for Windows checks text out with
@@ -23,7 +25,8 @@ const (
 )
 
 // gitattributesBody is cg's block: the hook wrappers and status line, extension
-// git-hook scripts (whatever their extension), and any other shell script.
+// git-hook scripts (whatever their extension), and any other shell script. The
+// git-hooks line is text=auto, not text, so a binary hook there is left alone.
 const gitattributesBody = `# Managed by cg: shell scripts need LF line endings to run, on every OS.
 *.sh text eol=lf
 .cg/git-hooks/** text=auto eol=lf`
@@ -44,8 +47,7 @@ func EnsureGitattributes(root string, apply bool) (bool, error) {
 	content := string(raw)
 	// A CRLF checkout is edited as LF and written back as CRLF; any other file
 	// is edited as it is, so a stray CRLF line of the user's stays as it was.
-	n := strings.Count(content, "\n")
-	crlf := n > 0 && strings.Count(content, "\r\n") == n
+	crlf := manifest.AllCRLF(content)
 	lf := content
 	if crlf {
 		lf = strings.ReplaceAll(content, "\r\n", "\n")
@@ -96,7 +98,7 @@ func NormalizeScriptLineEndings(ctx context.Context, root string, apply bool) ([
 		if err != nil {
 			return changed, err
 		}
-		if !strings.Contains(string(data), "\r\n") {
+		if !strings.Contains(string(data), "\r\n") || binary(data) {
 			continue
 		}
 		changed = append(changed, rel)
@@ -121,6 +123,12 @@ func NormalizeScriptLineEndings(ctx context.Context, root string, apply bool) ([
 		}
 	}
 	return changed, nil
+}
+
+// binary reports whether data looks binary the way git decides it for
+// text=auto: a NUL byte in the first 8000 bytes.
+func binary(data []byte) bool {
+	return bytes.IndexByte(data[:min(len(data), 8000)], 0) >= 0
 }
 
 // indexBlobs returns the index's blob id for each file cg's block covers.

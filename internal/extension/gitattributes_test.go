@@ -148,6 +148,11 @@ func TestScriptsCheckedOutWithLF(t *testing.T) {
 	// One script the user has edited, in their CRLF checkout.
 	const edited = ".cg/git-hooks/post-commit.d/demo-x"
 	write(before, edited, "#!/bin/sh\r\necho mine\r\n", 0o755)
+	// A binary hook whose bytes happen to hold CRLF: not text, never touched.
+	const bin = ".cg/git-hooks/post-commit.d/demo-bin"
+	binData := "\x7fELF\x00\x01\r\n\x00"
+	write(before, bin, binData, 0o755)
+	git(before, "add", "--", bin)
 	pending, err := NormalizeScriptLineEndings(ctx, before, false)
 	if err != nil || len(pending) != 2 {
 		t.Fatalf("dry run = %v, %v; want the two scripts", pending, err)
@@ -171,12 +176,15 @@ func TestScriptsCheckedOutWithLF(t *testing.T) {
 	if got := read(before, "notes/n.md"); got != "a\r\nb\r\n" {
 		t.Errorf("notes/n.md was rewritten: %q", got)
 	}
+	if got := read(before, bin); got != binData {
+		t.Errorf("binary hook was rewritten: %q", got)
+	}
 	if got := read(before, edited); got != "#!/bin/sh\necho mine\n" {
 		t.Errorf("edited script after normalising = %q", got)
 	}
 	// Only the user's edit is left, unstaged: the untouched script is not
 	// reported as modified, and nothing of the user's is staged for them.
-	if status, err := gitx.Run(ctx, before, "status", "--porcelain"); err != nil || status != "M "+edited {
+	if status, err := gitx.Run(ctx, before, "status", "--porcelain", "--", ".cg/git-hooks/post-commit.d/demo-x", ".claude/"); err != nil || status != "M "+edited {
 		t.Errorf("status after normalising = %q %v, want only the user's unstaged edit", status, err)
 	}
 	if again, err := NormalizeScriptLineEndings(ctx, before, true); err != nil || len(again) != 0 {

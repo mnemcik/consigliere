@@ -168,6 +168,8 @@ Git for Windows checks text files out with CRLF line endings by default
   # cg:gitattributes:end
   ```
 
+  The git-hooks line uses `text=auto`, so a binary hook there is left alone.
+
   A checkout made before the block existed keeps its CRLF scripts until git
   checks them out again, so `cg sync --apply` also converts tracked scripts it
   finds with CRLF (the dry run lists them). Only the line endings change. A
