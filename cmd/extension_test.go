@@ -11,6 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+
 	"github.com/mnemcik/consigliere/internal/extension"
 	"github.com/mnemcik/consigliere/internal/gitx"
 	"github.com/mnemcik/consigliere/internal/workspace"
@@ -34,6 +37,14 @@ func runExtCfg(t *testing.T, configHome, workdir string, args ...string) (string
 	extInstallRef = ""
 	extInstallPath = ""
 	extRemovePurge = false
+	extInstallForce = false
+	extPendingJSON = false
+	extResolveKeep, extResolveTake, extResolveMerge = false, false, false
+	// cobra keeps a flag's Changed state across Execute calls, which the
+	// resolve command's mutually-exclusive group reads.
+	for _, c := range []*cobra.Command{extInstallCmd, extResolveCmd, extPendingCmd} {
+		c.Flags().VisitAll(func(f *pflag.Flag) { f.Changed = false })
+	}
 
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
@@ -43,10 +54,10 @@ func runExtCfg(t *testing.T, configHome, workdir string, args ...string) (string
 	return buf.String(), err
 }
 
-// cloneDirFor returns the legacy name-keyed install path of name under a given
-// config home, mirroring internal/extension.CloneDir.
-func cloneDirFor(configHome, name string) string {
-	return filepath.Join(configHome, "consigliere", "extensions", name)
+// legacyCloneDir returns the legacy name-keyed install path of the demo
+// extension under a given config home, mirroring internal/extension.CloneDir.
+func legacyCloneDir(configHome string) string {
+	return filepath.Join(configHome, "consigliere", "extensions", "demo")
 }
 
 // sourceFor returns the store tree the workspace's entry for name reads, under
@@ -384,7 +395,7 @@ func TestExtRemove(t *testing.T) {
 	if _, err := runExtCfg(t, cfgHome, ws, "install", repo); err != nil {
 		t.Fatal(err)
 	}
-	legacy := cloneDirFor(cfgHome, "demo")
+	legacy := legacyCloneDir(cfgHome)
 	if err := os.MkdirAll(legacy, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -632,12 +643,10 @@ func TestInitReinstallsMissingExtensionClone(t *testing.T) {
 	}
 
 	// Simulate a fresh machine: the workspace's .cg.json still lists the
-	// extension, but the whole store and the applied artifacts are gone.
+	// extension, but the whole store is gone. (A copied note the user deleted
+	// is the user's change and is not recreated; see the ownership tests.)
 	tree := sourceFor(t, ws, "full")
 	if err := os.RemoveAll(filepath.Join(cfgHome, "consigliere", "extensions")); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(filepath.Join(ws, "notes", "full-guide.md")); err != nil {
 		t.Fatal(err)
 	}
 

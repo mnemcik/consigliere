@@ -125,11 +125,9 @@ func TestInitReinstallUsesRecordedCommit(t *testing.T) {
 	recorded := entryFor(t, ws).Commit
 
 	commitFile(t, repo, "notes/demo.md", "upstream moved on")
-	// A new machine: no store, and the applied note is gone.
+	// A new machine: no store. The workspace's own files, committed with it,
+	// are as installed.
 	if err := os.RemoveAll(filepath.Join(cfgHome, "consigliere", "extensions")); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(filepath.Join(ws, "notes", "demo.md")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -204,7 +202,7 @@ func TestLegacyEntryReadsCloneUntilUpdated(t *testing.T) {
 		t.Fatal(err)
 	}
 	legacy := entryFor(t, ws)
-	if got, want := extension.SourceRoot(&legacy), cloneDirFor(cfgHome, "demo"); got != want {
+	if got, want := extension.SourceRoot(&legacy), legacyCloneDir(cfgHome); got != want {
 		t.Errorf("legacy entry reads %s, want the legacy clone %s", got, want)
 	}
 

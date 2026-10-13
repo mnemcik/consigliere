@@ -33,6 +33,93 @@ const hooksDirRel = ".claude/hooks"
 // resolver reads them from the clone); they are recorded so the ledger is a
 // complete account of the manifest.
 func Apply(root, cloneDir string, m *Manifest) (*Ledger, error) {
+	return ApplyWith(root, cloneDir, m, ApplyOptions{Force: true})
+}
+
+// ApplyOptions carries what Apply needs to respect files the user owns.
+type ApplyOptions struct {
+	// Old is the ledger of the install being replaced, nil for a first install.
+	Old *Ledger
+	// LegacyBases stands in for Old.Files when Old predates them (see
+	// LegacyBases). LegacyCertain says they come from exactly the commit that
+	// was installed (the store's tree at a recorded commit), rather than from
+	// a legacy clone that may have moved since.
+	LegacyBases   map[string]string
+	LegacyCertain bool
+	// Force overwrites an existing, unrecorded file that differs from the
+	// extension's version instead of refusing.
+	Force bool
+}
+
+func (o *ApplyOptions) base(dest string) fileBase {
+	if o.Old == nil {
+		return fileBase{}
+	}
+	b := fileBase{tracked: containsStr(o.Old.Notes, dest) || containsStr(o.Old.Templates, dest)}
+	if o.Old.Files != nil {
+		b.id = o.Old.Files[dest]
+	} else {
+		b.id, b.uncertain = o.LegacyBases[dest], !o.LegacyCertain
+	}
+	return b
+}
+
+// copyPlan is the decision for one copied file, made before anything is
+// written so a refusal leaves the workspace untouched.
+type copyPlan struct {
+	dest     string
+	data     []byte
+	base     fileBase
+	next     string
+	decision copyDecision
+	template bool
+}
+
+func planCopies(root, cloneDir string, m *Manifest, opts *ApplyOptions) ([]copyPlan, error) {
+	var plans []copyPlan
+	var refused []string
+	add := func(c CopyContribution, template bool) error {
+		data, err := os.ReadFile(filepath.Join(cloneDir, filepath.FromSlash(c.Src))) //nolint:gosec // manifest-declared path inside the source
+		if err != nil {
+			return err
+		}
+		disk, err := fileID(filepath.Join(root, filepath.FromSlash(c.Dest)))
+		if err != nil {
+			return err
+		}
+		p := copyPlan{dest: c.Dest, data: data, base: opts.base(c.Dest), next: ContentID(data), template: template}
+		p.decision = decideCopy(p.base, disk, p.next, opts.Force)
+		if p.decision == copyRefuse {
+			refused = append(refused, c.Dest)
+		}
+		plans = append(plans, p)
+		return nil
+	}
+	for _, n := range m.Contributes.Notes {
+		if err := add(n, false); err != nil {
+			return nil, err
+		}
+	}
+	for _, t := range m.Contributes.Templates {
+		if err := add(t, true); err != nil {
+			return nil, err
+		}
+	}
+	if len(refused) > 0 {
+		return nil, &ConflictError{Paths: refused}
+	}
+	return plans, nil
+}
+
+// ApplyWith is Apply that keeps files the user changed (see ownership.go):
+// such a file is left in place, and recorded as pending when the extension
+// changed it too. It refuses, before writing anything, when an unrecorded file
+// that differs from the extension's version is in the way, unless opts.Force.
+func ApplyWith(root, cloneDir string, m *Manifest, opts ApplyOptions) (*Ledger, error) {
+	plans, err := planCopies(root, cloneDir, m, &opts)
+	if err != nil {
+		return nil, err
+	}
 	snap := newSnapshot()
 	capture := func(rel string) error {
 		return snap.capture(filepath.Join(root, filepath.FromSlash(rel)))
@@ -68,7 +155,7 @@ func Apply(root, cloneDir string, m *Manifest) (*Ledger, error) {
 	}
 
 	l := &Ledger{Name: m.Name, Version: m.Version}
-	if err := applyAll(root, cloneDir, m, l); err != nil {
+	if err := applyAll(root, cloneDir, m, l, plans); err != nil {
 		snap.restore() // workspace returns to its pre-apply state
 		return nil, err
 	}
@@ -77,7 +164,7 @@ func Apply(root, cloneDir string, m *Manifest) (*Ledger, error) {
 
 // applyAll performs the contribution steps, recording each into l. Callers wrap
 // it with a snapshot so a mid-step failure can be rolled back.
-func applyAll(root, cloneDir string, m *Manifest, l *Ledger) error {
+func applyAll(root, cloneDir string, m *Manifest, l *Ledger, plans []copyPlan) error {
 	for _, s := range m.Contributes.ClaudeMDSections {
 		if e := applySection(root, cloneDir, m.Name, s); e != nil {
 			return e
@@ -90,17 +177,33 @@ func applyAll(root, cloneDir string, m *Manifest, l *Ledger) error {
 		}
 		l.Gitignore = append(l.Gitignore, g.ID)
 	}
-	for _, n := range m.Contributes.Notes {
-		if e := copyInto(cloneDir, root, n.Src, n.Dest); e != nil {
-			return e
+	for _, p := range plans {
+		if l.Files == nil {
+			l.Files = map[string]string{}
 		}
-		l.Notes = append(l.Notes, n.Dest)
-	}
-	for _, t := range m.Contributes.Templates {
-		if e := copyInto(cloneDir, root, t.Src, t.Dest); e != nil {
-			return e
+		switch p.decision {
+		case copyWrite:
+			if e := writeFileAtomicMode(filepath.Join(root, filepath.FromSlash(p.dest)), p.data, 0o644); e != nil {
+				return e
+			}
+			l.Files[p.dest] = p.next
+		case copyAdopt:
+			l.Files[p.dest] = p.next
+		case copyKeep:
+			l.Files[p.dest] = p.base.id
+		case copyPending:
+			if p.base.id != "" {
+				l.Files[p.dest] = p.base.id
+			}
+			l.Pending = append(l.Pending, PendingFile{Dest: p.dest, Base: p.base.id, Upstream: p.next, UncertainBase: p.base.uncertain})
+		case copyRefuse:
+			return &ConflictError{Paths: []string{p.dest}} // planCopies already refused
 		}
-		l.Templates = append(l.Templates, t.Dest)
+		if p.template {
+			l.Templates = append(l.Templates, p.dest)
+		} else {
+			l.Notes = append(l.Notes, p.dest)
+		}
 	}
 	for _, h := range m.Contributes.Hooks {
 		wrapperRel, e := applyHook(root, cloneDir, m.Name, h)
@@ -111,7 +214,7 @@ func applyAll(root, cloneDir string, m *Manifest, l *Ledger) error {
 	}
 	for _, g := range m.Contributes.GitHooks {
 		dest := gitHookDestRel(m.Name, g)
-		if e := copyFile(filepath.Join(cloneDir, filepath.FromSlash(g.Script)), filepath.Join(root, filepath.FromSlash(dest)), 0o755); e != nil {
+		if e := copyExecutable(filepath.Join(cloneDir, filepath.FromSlash(g.Script)), filepath.Join(root, filepath.FromSlash(dest))); e != nil {
 			return fmt.Errorf("git hook %q: %w", g.Script, e)
 		}
 		l.GitHooks = append(l.GitHooks, dest)
@@ -136,8 +239,10 @@ func hookDestRel(name, wrapper string) string {
 
 // Reverse undoes everything recorded in l from the workspace at root. It is
 // tolerant: a contribution already gone (file deleted, section absent) is not an
-// error, so Reverse works both for clean removal and rollback of a partial Apply.
-func Reverse(root string, l *Ledger) error {
+// error. A copied note or template is deleted only when its content is still
+// the version cg wrote (l.Files); one the user changed, or one with no record,
+// is left in place and returned in kept.
+func Reverse(root string, l *Ledger) (kept []string, err error) {
 	claudePath := filepath.Join(root, claudeMDName)
 	if len(l.ClaudeMDSections) > 0 {
 		if content, err := os.ReadFile(claudePath); err == nil {
@@ -150,40 +255,46 @@ func Reverse(root string, l *Ledger) error {
 			}
 			if changed {
 				if err := writeFileAtomic(claudePath, content, 0o644); err != nil {
-					return err
+					return kept, err
 				}
 			}
 		} else if !os.IsNotExist(err) {
-			return err
+			return kept, err
 		}
 	}
 	if err := reverseGitignore(root, l); err != nil {
-		return err
+		return kept, err
 	}
-	for _, rel := range l.Notes {
-		if err := removeIfPresent(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
-			return err
+	for _, rel := range append(append([]string(nil), l.Notes...), l.Templates...) {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		disk, err := fileID(path)
+		if err != nil {
+			return kept, err
 		}
-	}
-	for _, rel := range l.Templates {
-		if err := removeIfPresent(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
-			return err
+		switch disk {
+		case "":
+		case l.Files[rel]:
+			if err := removeIfPresent(path); err != nil {
+				return kept, err
+			}
+		default:
+			kept = append(kept, rel)
 		}
 	}
 	for _, h := range l.Hooks {
 		if err := removeIfPresent(filepath.Join(root, filepath.FromSlash(h.Wrapper))); err != nil {
-			return err
+			return kept, err
 		}
 		if err := unregisterHook(root, h.Wrapper); err != nil {
-			return err
+			return kept, err
 		}
 	}
 	for _, rel := range l.GitHooks {
 		if err := removeIfPresent(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
-			return err
+			return kept, err
 		}
 	}
-	return nil
+	return kept, nil
 }
 
 // OrphanLedger returns the contributions present in old but absent from next —
@@ -195,19 +306,20 @@ func OrphanLedger(old, next *Ledger) *Ledger {
 	if old == nil {
 		return nil
 	}
-	orphan := &Ledger{Name: old.Name, Version: old.Version}
+	orphan := &Ledger{Name: old.Name, Version: old.Version, Files: old.Files}
 	for _, id := range old.ClaudeMDSections {
 		if !containsStr(next.ClaudeMDSections, id) {
 			orphan.ClaudeMDSections = append(orphan.ClaudeMDSections, id)
 		}
 	}
+	// A destination that moved between notes and templates is still shipped.
 	for _, p := range old.Notes {
-		if !containsStr(next.Notes, p) {
+		if !containsStr(next.Notes, p) && !containsStr(next.Templates, p) {
 			orphan.Notes = append(orphan.Notes, p)
 		}
 	}
 	for _, p := range old.Templates {
-		if !containsStr(next.Templates, p) {
+		if !containsStr(next.Notes, p) && !containsStr(next.Templates, p) {
 			orphan.Templates = append(orphan.Templates, p)
 		}
 	}
@@ -325,7 +437,7 @@ func reverseGitignore(root string, l *Ledger) error {
 func applyHook(root, cloneDir, name string, h HookContribution) (string, error) {
 	destRel := hookDestRel(name, h.Wrapper)
 	destAbs := filepath.Join(root, filepath.FromSlash(destRel))
-	if err := copyFile(filepath.Join(cloneDir, filepath.FromSlash(h.Wrapper)), destAbs, 0o755); err != nil {
+	if err := copyExecutable(filepath.Join(cloneDir, filepath.FromSlash(h.Wrapper)), destAbs); err != nil {
 		return "", fmt.Errorf("hook %q: %w", h.Wrapper, err)
 	}
 	if err := registerHook(root, h.Event, destRel); err != nil {
@@ -336,23 +448,15 @@ func applyHook(root, cloneDir, name string, h HookContribution) (string, error) 
 	return destRel, nil
 }
 
-// copyInto copies cloneDir/src to root/dest, creating parent dirs.
-func copyInto(cloneDir, root, src, dest string) error {
-	return copyFile(
-		filepath.Join(cloneDir, filepath.FromSlash(src)),
-		filepath.Join(root, filepath.FromSlash(dest)),
-		0o644,
-	)
-}
-
-func copyFile(src, dest string, mode os.FileMode) error {
+// copyExecutable copies a hook or git-hook script, executable.
+func copyExecutable(src, dest string) error {
 	data, err := os.ReadFile(src) //nolint:gosec // src is a manifest-declared path inside the clone
 	if err != nil {
 		return err
 	}
 	// Atomic, so a hook or the gh shim run by a parallel session never executes
 	// a half-written file, and a failed copy leaves the previous file intact.
-	return writeFileAtomicMode(dest, data, mode)
+	return writeFileAtomicMode(dest, data, 0o755)
 }
 
 func removeIfPresent(path string) error {

@@ -76,7 +76,7 @@ func TestCopyFileNeverTruncatesAnOpenFile(t *testing.T) {
 	}
 	defer func() { _ = reader.Close() }()
 
-	if err := copyFile(src, dest, 0o755); err != nil {
+	if err := copyExecutable(src, dest); err != nil {
 		t.Fatal(err)
 	}
 	seen, err := io.ReadAll(reader)
@@ -130,7 +130,7 @@ func TestCopyFileForcesMode(t *testing.T) {
 	dest := filepath.Join(dir, "dest")
 	writeTestFile(t, src, "#!/bin/sh\n", 0o644)
 	writeTestFile(t, dest, "old", 0o644)
-	if err := copyFile(src, dest, 0o755); err != nil {
+	if err := copyExecutable(src, dest); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(dest)

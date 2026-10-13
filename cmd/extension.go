@@ -25,6 +25,7 @@ var extInstallRef string
 var extInstallPath string
 var extListJSON bool
 var extRemovePurge bool
+var extInstallForce bool
 
 func init() {
 	rootCmd.AddCommand(extensionCmd)
@@ -33,6 +34,8 @@ func init() {
 		"tag, branch or commit to install (default: the repo's default branch)")
 	extInstallCmd.Flags().StringVar(&extInstallPath, "path", "",
 		"subdir within the repo holding cg-extension.json (for monorepos; direct repo-url installs only)")
+	extInstallCmd.Flags().BoolVar(&extInstallForce, "force", false,
+		"overwrite existing files the extension ships that aren't recorded as its own")
 	extListCmd.Flags().BoolVar(&extListJSON, "json", false, "output as JSON")
 	extRemoveCmd.Flags().BoolVar(&extRemovePurge, "purge", false,
 		"also delete a legacy name-keyed clone under ~/.config/consigliere/extensions/ (store trees are shared and kept)")
@@ -131,7 +134,12 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := reapply(root, filepath.Join(dest, path), m); err != nil {
+	prev, prevCertain := "", false
+	if old, ok := findExtension(cfg, m.Name); ok {
+		prev, prevCertain = previousSource(old), extension.ValidCommit(old.Commit)
+	}
+	res, err := reapply(root, filepath.Join(dest, path), m, prev, prevCertain, extInstallForce)
+	if err != nil {
 		return err
 	}
 	cfg.UpsertExtension(&workspace.ExtensionRef{
@@ -149,33 +157,92 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	printInstallSummary(cmd, m, dest, source, regAlias, repo, path)
+	printFileOutcomes(cmd.OutOrStdout(), m.Name, res)
 	printGitHookWarnings(cmd.ErrOrStderr(), ensureGitHooks(cmd.Context(), root))
 	return nil
+}
+
+// reapplyResult is what reapply left for the user: copied files it kept
+// because the user changed them.
+type reapplyResult struct {
+	Pending []extension.PendingFile // both sides changed; awaiting `resolve`
+	Kept    []string                // dropped by the new version but edited, so not deleted
+	// KeptUnknown says cg had no record of what it wrote for the kept files,
+	// so it can't tell whether they were edited.
+	KeptUnknown bool
 }
 
 // reapply applies m's contributions into the workspace and persists the ledger,
 // then reverses any contributions a prior install of the same extension shipped
 // that the new manifest drops. It applies the NEW manifest first: Apply
 // self-rolls-back on failure, so a failed reinstall/update leaves the prior
-// install intact rather than half-removed.
-func reapply(root, manifestDir string, m *extension.Manifest) error {
+// install intact rather than half-removed. Copied files the user changed are
+// kept (see extension.ApplyWith). prevSource is the manifest dir of the version
+// being replaced, used as the base for a ledger that predates recorded file
+// blobs, and prevCertain says it is exactly the commit that was installed;
+// force overwrites unrecorded files in the way.
+func reapply(root, manifestDir string, m *extension.Manifest, prevSource string, prevCertain, force bool) (reapplyResult, error) {
+	var res reapplyResult
 	old, err := extension.LoadLedger(root, m.Name)
 	if err != nil {
-		return fmt.Errorf("reading ledger for %q: %w", m.Name, err)
+		return res, fmt.Errorf("reading ledger for %q: %w", m.Name, err)
 	}
-	ledger, err := extension.Apply(root, manifestDir, m)
+	opts := extension.ApplyOptions{Old: old, Force: force}
+	if old != nil && old.Files == nil && prevSource != "" {
+		opts.LegacyBases = extension.LegacyBases(prevSource)
+		opts.LegacyCertain = prevCertain
+	}
+	ledger, err := extension.ApplyWith(root, manifestDir, m, opts)
 	if err != nil {
-		return cgerr.New(cgerr.ExitUsage, "applying contributions for %q: %v", m.Name, err)
+		return res, cgerr.New(cgerr.ExitUsage, "applying contributions for %q: %v", m.Name, err)
+	}
+	if old != nil && old.Files == nil {
+		// The base for reversing dropped files too. Set only after applying:
+		// ApplyWith must see that the old ledger had no recorded files.
+		old.Files = opts.LegacyBases
+		res.KeptUnknown = old.Files == nil
 	}
 	if orphan := extension.OrphanLedger(old, ledger); orphan != nil {
-		if rerr := extension.Reverse(root, orphan); rerr != nil {
-			return fmt.Errorf("removing dropped contributions for %q: %w", m.Name, rerr)
+		kept, rerr := extension.Reverse(root, orphan)
+		if rerr != nil {
+			return res, fmt.Errorf("removing dropped contributions for %q: %w", m.Name, rerr)
 		}
+		res.Kept = kept
 	}
 	if err := ledger.Save(root); err != nil {
-		return fmt.Errorf("writing ledger for %q: %w", m.Name, err)
+		return res, fmt.Errorf("writing ledger for %q: %w", m.Name, err)
 	}
-	return nil
+	res.Pending = ledger.Pending
+	return res, nil
+}
+
+// previousSource is the manifest dir of the version a workspace entry records,
+// or "" when its path is invalid.
+func previousSource(ref *workspace.ExtensionRef) string {
+	path, err := extension.CleanSubdir(ref.Path)
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(extension.SourceRoot(ref), path)
+}
+
+// printFileOutcomes tells the user which copied files reapply left alone.
+func printFileOutcomes(w io.Writer, name string, res reapplyResult) {
+	for _, p := range res.Pending {
+		why := "the extension changed it too"
+		if p.Base == "" || p.UncertainBase {
+			why = "it differs from the extension's version, and cg can't tell exactly what it installed"
+		}
+		_, _ = fmt.Fprintf(w, "  kept your %s: %s; see `cg extension diff %s %s`, then `cg extension resolve %s %s --merge|--keep|--take`\n",
+			p.Dest, why, name, p.Dest, name, p.Dest)
+	}
+	why := "you changed it"
+	if res.KeptUnknown {
+		why = "cg can't tell whether you changed it"
+	}
+	for _, k := range res.Kept {
+		_, _ = fmt.Fprintf(w, "  kept %s: the extension no longer ships it, but %s; delete it yourself if it's not needed\n", k, why)
+	}
 }
 
 // ensureGitHooks reconciles the git-hook dispatchers of the repository
@@ -299,7 +366,14 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		if err != nil {
 			return out, done, err
 		}
-		if err := reapply(root, filepath.Join(tree, path), m); err != nil {
+		// A pinned commit is exactly what was installed, so its tree is the
+		// base for a ledger that predates content ids. A legacy entry's base
+		// is gone with its clone, so there is none.
+		prev := ""
+		if extension.ValidCommit(e.Commit) {
+			prev = filepath.Join(tree, path)
+		}
+		if _, err := reapply(root, filepath.Join(tree, path), m, prev, prev != "", false); err != nil {
 			return out, done, err
 		}
 		e.Commit = commit
@@ -562,8 +636,17 @@ func runExtRemove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("reading ledger for %q: %w", name, err)
 	}
 	if ledger != nil {
-		if rerr := extension.Reverse(root, ledger); rerr != nil {
+		if ledger.Files == nil {
+			if ref, ok := findExtension(cfg, name); ok {
+				ledger.Files = extension.LegacyBases(previousSource(ref))
+			}
+		}
+		kept, rerr := extension.Reverse(root, ledger)
+		if rerr != nil {
 			return fmt.Errorf("reversing contributions for %q: %w", name, rerr)
+		}
+		for _, k := range kept {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  kept %s: you changed it since install; delete it yourself if it's not needed\n", k)
 		}
 		if rmErr := os.Remove(extension.LedgerPath(root, name)); rmErr != nil && !os.IsNotExist(rmErr) {
 			return fmt.Errorf("removing ledger for %q: %w", name, rmErr)
@@ -623,7 +706,7 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 	out := cmd.OutOrStdout()
 	for i := range targets {
 		old := targets[i].Version
-		newVer, commit, err := updateOne(cmd.Context(), root, &targets[i])
+		newVer, commit, err := updateOne(cmd.Context(), out, root, &targets[i])
 		if err != nil {
 			return err
 		}
@@ -657,7 +740,7 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 // siblings, so whole-repo tags don't map to a single extension's version:
 // take the default branch and let the manifest's version field be the source
 // of truth.
-func updateOne(ctx context.Context, root string, ref *workspace.ExtensionRef) (version, commit string, err error) {
+func updateOne(ctx context.Context, out io.Writer, root string, ref *workspace.ExtensionRef) (version, commit string, err error) {
 	path, err := extension.CleanSubdir(ref.Path)
 	if err != nil {
 		return "", "", cgerr.New(cgerr.ExitUsage, "extension %q: %v", ref.Name, err)
@@ -683,9 +766,11 @@ func updateOne(ctx context.Context, root string, ref *workspace.ExtensionRef) (v
 	if err != nil {
 		return "", "", err
 	}
-	if err := reapply(root, manifestDir, m); err != nil {
+	res, err := reapply(root, manifestDir, m, previousSource(ref), extension.ValidCommit(ref.Commit), false)
+	if err != nil {
 		return "", "", err
 	}
+	printFileOutcomes(out, ref.Name, res)
 	return m.Version, commit, nil
 }
 

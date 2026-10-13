@@ -49,6 +49,27 @@ func RunEnv(ctx context.Context, dir string, env []string, args ...string) (stri
 	return strings.TrimSpace(out.String()), nil
 }
 
+// RunRaw runs git in dir and returns its stdout unmodified, for binary or
+// byte-exact output such as `git cat-file blob`. On failure the error wraps
+// git's stderr.
+func RunRaw(ctx context.Context, dir string, args ...string) ([]byte, error) {
+	// #nosec G204 -- see Run: fixed "git" binary, internal args.
+	cmd := exec.CommandContext(ctx, "git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	var out, errb bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	if err := cmd.Run(); err != nil {
+		if stderr := strings.TrimSpace(errb.String()); stderr != "" {
+			return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, stderr)
+		}
+		return nil, fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+	}
+	return out.Bytes(), nil
+}
+
 // ok reports whether `git <args...>` exits zero in dir. It distinguishes a
 // clean non-zero exit (the predicate is false) from git being unavailable.
 func ok(ctx context.Context, dir string, args ...string) bool {

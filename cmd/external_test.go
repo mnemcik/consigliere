@@ -28,7 +28,7 @@ func TestResolveExternalSubcommandFromExtension(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Drop the binary into the (XDG-controlled) clone bin dir.
-	bin := filepath.Join(cloneDirFor(cfgHome, "demo"), "bin", "cg-demo")
+	bin := filepath.Join(legacyCloneDir(cfgHome), "bin", "cg-demo")
 	if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
 		t.Fatal(err)
 	}
