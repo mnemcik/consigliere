@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.28.0](https://github.com/mnemcik/consigliere/compare/v1.27.0...v1.28.0) (2026-10-13)
+
+
+### Features
+
+* **extension:** keep files the user changed; raise conflicts at session start ([#166](https://github.com/mnemcik/consigliere/issues/166)) ([c4f24cc](https://github.com/mnemcik/consigliere/commit/c4f24cc89f035c4698e4fbe8ec68c008b39df609))
+
+
+### Bug Fixes
+
+* make cg and its tests work on Windows, and test it there in CI ([#167](https://github.com/mnemcik/consigliere/issues/167)) ([005689a](https://github.com/mnemcik/consigliere/commit/005689add57caae7288322485d1e50a5f8f6c284))
+* make cg line-ending agnostic in workspaces, and check scripts out with LF ([#172](https://github.com/mnemcik/consigliere/issues/172)) ([dd71655](https://github.com/mnemcik/consigliere/commit/dd716552a09fe141a85d01129b89573951867149))
+
 ## [1.27.0](https://github.com/mnemcik/consigliere/compare/v1.26.0...v1.27.0) (2026-10-12)
 
 
