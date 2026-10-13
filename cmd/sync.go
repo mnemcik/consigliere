@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
@@ -94,6 +95,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("checking hook command paths: %w", herr)
 		}
 		printHookNormalizeDryRun(pending)
+		if err := syncLineEndings(commandContext(cmd), dir, false); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -127,6 +131,35 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("normalizing hook command paths: %w", herr)
 	}
 	printHookNormalizeApplied(normalized)
+	return syncLineEndings(commandContext(cmd), dir, true)
+}
+
+// syncLineEndings keeps cg's block in .gitattributes, which checks shell
+// scripts out with LF, and rewrites any script a checkout made before the block
+// left with CRLF (consigliere#170). With apply false it only reports.
+func syncLineEndings(ctx context.Context, dir string, apply bool) error {
+	attrs, err := extension.EnsureGitattributes(dir, apply)
+	if err != nil {
+		return fmt.Errorf("updating .gitattributes: %w", err)
+	}
+	scripts, err := extension.NormalizeScriptLineEndings(ctx, dir, apply)
+	if err != nil {
+		return fmt.Errorf("fixing script line endings: %w", err)
+	}
+	if !attrs && len(scripts) == 0 {
+		return nil
+	}
+	lead, update, convert := "\nLine endings (run `cg sync --apply` to fix):", "Would update", "Would convert"
+	if apply {
+		lead, update, convert = "\nLine endings:", "Updated", "Converted"
+	}
+	fmt.Println(lead)
+	if attrs {
+		fmt.Printf("  - %s .gitattributes so shell scripts are checked out with LF\n", update)
+	}
+	for _, s := range scripts {
+		fmt.Printf("  - %s %s from CRLF to LF\n", convert, s)
+	}
 	return nil
 }
 
@@ -222,6 +255,10 @@ func applySync(dir string, mf *manifest.Manifest, report syncpkg.Report, framewo
 	if err != nil {
 		return res, fmt.Errorf("reading CLAUDE.md: %w", err)
 	}
+	// Edit as LF, and write back with the line endings the file had: a CRLF
+	// checkout (Git for Windows' default) stays CRLF, with no mixed lines.
+	crlf := strings.Contains(content, "\r\n")
+	content = manifest.LF(content)
 	sectionsChanged := false
 	for _, it := range report.Items {
 		if it.Kind != syncpkg.KindSection {
@@ -256,6 +293,9 @@ func applySync(dir string, mf *manifest.Manifest, report syncpkg.Report, framewo
 		}
 	}
 	if sectionsChanged {
+		if crlf {
+			content = manifest.CRLF(content)
+		}
 		if werr := os.WriteFile(claudePath, []byte(content), 0o644); werr != nil {
 			return res, fmt.Errorf("writing CLAUDE.md: %w", werr)
 		}

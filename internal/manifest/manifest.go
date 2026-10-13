@@ -67,10 +67,24 @@ type Manifest struct {
 // user's and are deliberately never parsed here.
 var sectionStartRe = regexp.MustCompile(`(?m)^<!-- cg:section:start=([a-z0-9-]+) -->[ \t]*$`)
 
-// HashContent returns the SHA-256 (hex) of s.
+// HashContent returns the SHA-256 (hex) of s with CRLF line endings
+// normalised to LF. Git for Windows checks text out with CRLF by default, so
+// the same file reads differently from one checkout to the next; ignoring the
+// line ending keeps an untouched file recognisable as cg's. LF content hashes
+// exactly as before, so recorded hashes stay valid.
 func HashContent(s string) string {
-	sum := sha256.Sum256([]byte(s))
+	sum := sha256.Sum256([]byte(LF(s)))
 	return hex.EncodeToString(sum[:])
+}
+
+// LF returns s with CRLF line endings replaced by LF.
+func LF(s string) string {
+	return strings.ReplaceAll(s, "\r\n", "\n")
+}
+
+// CRLF returns s, which has LF line endings, with CRLF ones instead.
+func CRLF(s string) string {
+	return strings.ReplaceAll(s, "\n", "\r\n")
 }
 
 // cutLine splits s at the first newline, returning the line without it and the
@@ -144,7 +158,10 @@ func HashBody(s string) string {
 // ParseSections extracts every framework `cg:section` block from CLAUDE.md
 // content, returning a map of section id to its inner content (surrounding
 // newlines trimmed). A start marker with no matching end marker is skipped.
+// Content with CRLF line endings is read as LF, and the sections come back
+// with LF.
 func ParseSections(content string) map[string]string {
+	content = LF(content)
 	out := make(map[string]string)
 	for _, m := range sectionStartRe.FindAllStringSubmatchIndex(content, -1) {
 		id := content[m[2]:m[3]]

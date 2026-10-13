@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -80,11 +79,14 @@ func TestSessionPullLatestApprovesPulledScript(t *testing.T) {
 	if !gitx.Available() {
 		t.Skip("git not available")
 	}
-	if runtime.GOOS == "windows" {
-		t.Skip("a CRLF checkout of the script is never approved: https://github.com/mnemcik/consigliere/issues/170")
-	}
 	clearSessionEnv(t)
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	// Check out as Git for Windows does by default, on every OS.
+	global := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(global, []byte("[core]\n\tautocrlf = true\n"), 0o644); err != nil { //nolint:gosec // test config
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
 	ctx := context.Background()
 	script := "#!/bin/sh\nexit 0\n"
 	clone := extension.CloneDir("demo")
@@ -93,6 +95,14 @@ func TestSessionPullLatestApprovesPulledScript(t *testing.T) {
 
 	origin := newGitRepo(t, filepath.Join(t.TempDir(), "origin"), ".", `{"type":"consigliere","extensions":[{"name":"demo","version":"1.0.0","source":"direct","repo":"r"}]}`)
 	mustGit(t, ctx, origin, "branch", "-M", "main")
+	// cg's .gitattributes block, as cg init and cg sync write it: without it a
+	// CRLF checkout (Git for Windows' default) of the script is never approved
+	// (consigliere#170).
+	if _, err := extension.EnsureGitattributes(origin, true); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, ctx, origin, "add", "-A")
+	mustGit(t, ctx, origin, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "cg's block")
 	ws := filepath.Join(filepath.Dir(origin), "ws")
 	mustGit(t, ctx, "", "clone", "--quiet", origin, ws)
 	writeFile(t, origin, ".cg/git-hooks/post-commit.d/demo-x.sh", script)

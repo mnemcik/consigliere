@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -312,6 +311,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 	created = append(created, c...)
 	skipped = append(skipped, s...)
 
+	// .gitattributes: cg's block checks shell scripts out with LF on every OS.
+	if changed, err := extension.EnsureGitattributes(dir, true); err != nil {
+		return fmt.Errorf("writing .gitattributes: %w", err)
+	} else if changed {
+		created = append(created, ".gitattributes (shell scripts checked out with LF)")
+	}
+
 	// Wizard-only post-bootstrap steps: first area + optional git init.
 	if wizardInit && answers.HasFirstArea() {
 		if !validSlug.MatchString(answers.AreaSlug) {
@@ -583,7 +589,7 @@ func installedClaudeFiles(dir string) map[string]manifest.Artifact {
 			continue
 		}
 		got, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(f.dst)))
-		if err != nil || !bytes.Equal(got, want) {
+		if err != nil || manifest.LF(string(got)) != string(want) { // a CRLF checkout is still cg's file
 			continue
 		}
 		out[f.dst] = manifest.Artifact{Hash: manifest.HashContent(string(want))}

@@ -428,3 +428,58 @@ func TestApplySyncRejectsSymlinkedParentDir(t *testing.T) {
 		t.Error("wrote into the symlinked directory's real target")
 	}
 }
+
+// consigliere#168: a CLAUDE.md checked out with CRLF (Git for Windows'
+// default) still has its framework sections: an untouched one is up to date,
+// an updated one is replaced in place rather than appended a second time, and
+// the file keeps CRLF line endings throughout.
+func TestApplySyncCRLFCheckout(t *testing.T) {
+	dir := t.TempDir()
+	crlf := func(s string) string { return strings.ReplaceAll(s, "\n", "\r\n") }
+	claudeV1 := "# CLAUDE.md\n" +
+		"<!-- cg:section:start=same -->\nsame body\nline two\n<!-- cg:section:end=same -->\n" +
+		"<!-- cg:section:start=old -->\nv1 body\n<!-- cg:section:end=old -->\n"
+	claudePath := filepath.Join(dir, "CLAUDE.md")
+	mustWrite(t, claudePath, crlf(claudeV1))
+	if err := os.MkdirAll(filepath.Join(dir, "notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(dir, "notes", "n.md"), crlf("note\nv1\n"))
+	mf := &manifest.Manifest{
+		SchemaVersion:    manifest.SchemaVersion,
+		FrameworkVersion: "1.0.0",
+		Sections: map[string]manifest.Artifact{
+			"same": {Hash: manifest.HashContent("same body\nline two")},
+			"old":  {Hash: manifest.HashContent("v1 body")},
+		},
+		Notes: map[string]manifest.Artifact{"notes/n.md": {Hash: manifest.HashContent("note\nv1\n")}},
+	}
+	frameworkCLAUDE := "# CLAUDE.md\n" +
+		"<!-- cg:section:start=same -->\nsame body\nline two\n<!-- cg:section:end=same -->\n" +
+		"<!-- cg:section:start=old -->\nv2 body\n<!-- cg:section:end=old -->\n"
+	notes := map[string][]byte{"notes/n.md": []byte("note\nv1\n")}
+
+	report, err := buildSyncReport(dir, mf, frameworkCLAUDE, hashesOf(notes), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range report.Items {
+		want := syncpkg.StatusUpToDate
+		if it.ID == "old" {
+			want = syncpkg.StatusUpdatable
+		}
+		if it.Status != want {
+			t.Errorf("%s %s = %s, want %s", it.Kind, it.ID, it.Status, want)
+		}
+	}
+	if _, err := applySync(dir, mf, report, manifest.ParseSections(frameworkCLAUDE), notes, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(claudePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := crlf(strings.Replace(claudeV1, "v1 body", "v2 body", 1)); string(got) != want {
+		t.Errorf("CLAUDE.md =\n%q\nwant\n%q", got, want)
+	}
+}

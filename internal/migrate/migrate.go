@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -135,7 +136,8 @@ func Build(root string, shipped fs.FS) (*Plan, error) {
 			continue // already in frontmatter form
 		}
 		rel := path.Join("templates", t)
-		sum := sha256.Sum256(b)
+		// A CRLF checkout of an untouched template is still the shipped one.
+		sum := sha256.Sum256(bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n")))
 		if !shippedTemplates[hex.EncodeToString(sum[:])] {
 			p.Templates = append(p.Templates, TemplateChange{Path: rel, Action: TemplateCustomised})
 			continue

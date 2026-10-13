@@ -118,7 +118,9 @@ func TestShippedTemplateHashes(t *testing.T) {
 
 func TestBuildTemplates(t *testing.T) {
 	root := t.TempDir()
-	write(t, root, "templates/idea.md", fixture(t, "idea-11356ee.md"))
+	// A CRLF checkout (Git for Windows' default) of an untouched template is
+	// still the shipped one (consigliere#168).
+	write(t, root, "templates/idea.md", strings.ReplaceAll(fixture(t, "idea-11356ee.md"), "\n", "\r\n"))
 	write(t, root, "templates/note.md", fixture(t, "note-d766d8a.md")+"\n- my edit\n")
 
 	plan, err := Build(root, shippedFS)
