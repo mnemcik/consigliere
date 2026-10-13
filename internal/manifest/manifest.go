@@ -82,6 +82,14 @@ func LF(s string) string {
 	return strings.ReplaceAll(s, "\r\n", "\n")
 }
 
+// AllCRLF reports whether every line of s ends in CRLF, as a CRLF checkout
+// writes it. A file with only some CRLF lines is not one: rewriting all of it
+// would turn a stray line into a whole-file change.
+func AllCRLF(s string) bool {
+	n := strings.Count(s, "\n")
+	return n > 0 && strings.Count(s, "\r\n") == n
+}
+
 // CRLF returns s, which has LF line endings, with CRLF ones instead.
 func CRLF(s string) string {
 	return strings.ReplaceAll(s, "\n", "\r\n")

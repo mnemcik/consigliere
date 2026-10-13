@@ -483,3 +483,47 @@ func TestApplySyncCRLFCheckout(t *testing.T) {
 		t.Errorf("CLAUDE.md =\n%q\nwant\n%q", got, want)
 	}
 }
+
+// A stray CRLF line of the user's doesn't turn CLAUDE.md into a CRLF file:
+// only the section that changed is rewritten, and a CRLF note stays CRLF.
+func TestApplySyncMixedLineEndings(t *testing.T) {
+	dir := t.TempDir()
+	claudeV1 := "# CLAUDE.md\nmy pasted line\r\n" +
+		"<!-- cg:section:start=old -->\nv1 body\n<!-- cg:section:end=old -->\n"
+	claudePath := filepath.Join(dir, "CLAUDE.md")
+	mustWrite(t, claudePath, claudeV1)
+	if err := os.MkdirAll(filepath.Join(dir, "notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	notePath := filepath.Join(dir, "notes", "n.md")
+	mustWrite(t, notePath, "---\r\ntags: [x]\r\n---\r\n\r\nnote v1\r\n")
+	mf := &manifest.Manifest{
+		SchemaVersion:    manifest.SchemaVersion,
+		FrameworkVersion: "1.0.0",
+		Sections:         map[string]manifest.Artifact{"old": {Hash: manifest.HashContent("v1 body")}},
+		Notes:            map[string]manifest.Artifact{"notes/n.md": {Hash: manifest.HashBody("note v1\n")}},
+	}
+	frameworkCLAUDE := "# CLAUDE.md\n<!-- cg:section:start=old -->\nv2 body\n<!-- cg:section:end=old -->\n"
+	notes := map[string][]byte{"notes/n.md": []byte("note v2\n")}
+	report, err := buildSyncReport(dir, mf, frameworkCLAUDE, hashesOf(notes), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applySync(dir, mf, report, manifest.ParseSections(frameworkCLAUDE), notes, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(claudePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.Replace(claudeV1, "v1 body", "v2 body", 1); string(got) != want {
+		t.Errorf("CLAUDE.md =\n%q\nwant\n%q", got, want)
+	}
+	note, err := os.ReadFile(notePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "---\r\ntags: [x]\r\n---\r\n\r\nnote v2\r\n"; string(note) != want {
+		t.Errorf("note = %q, want %q", note, want)
+	}
+}

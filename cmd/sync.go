@@ -255,10 +255,13 @@ func applySync(dir string, mf *manifest.Manifest, report syncpkg.Report, framewo
 	if err != nil {
 		return res, fmt.Errorf("reading CLAUDE.md: %w", err)
 	}
-	// Edit as LF, and write back with the line endings the file had: a CRLF
-	// checkout (Git for Windows' default) stays CRLF, with no mixed lines.
-	crlf := strings.Contains(content, "\r\n")
-	content = manifest.LF(content)
+	// A CRLF checkout (Git for Windows' default) is edited as LF and written
+	// back as CRLF, so no line is mixed. Any other file is edited as it is: a
+	// stray CRLF line of the user's stays exactly as it was.
+	crlf := manifest.AllCRLF(content)
+	if crlf {
+		content = manifest.LF(content)
+	}
 	sectionsChanged := false
 	for _, it := range report.Items {
 		if it.Kind != syncpkg.KindSection {
@@ -335,6 +338,9 @@ func applySync(dir string, mf *manifest.Manifest, report syncpkg.Report, framewo
 					sep = ""
 				}
 				out = []byte(fm + sep + newBody)
+			}
+			if manifest.AllCRLF(string(existing)) { // a CRLF checkout stays CRLF
+				out = []byte(manifest.CRLF(manifest.LF(string(out))))
 			}
 		}
 		if werr := os.WriteFile(notePath, out, 0o644); werr != nil { //nolint:gosec // notePath is confirmed inside dir above

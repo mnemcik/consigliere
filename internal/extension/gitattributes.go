@@ -26,7 +26,7 @@ const (
 // git-hook scripts (whatever their extension), and any other shell script.
 const gitattributesBody = `# Managed by cg: shell scripts need LF line endings to run, on every OS.
 *.sh text eol=lf
-.cg/git-hooks/** text eol=lf`
+.cg/git-hooks/** text=auto eol=lf`
 
 // scriptPathspecs are the files gitattributesBody covers, as git pathspecs.
 var scriptPathspecs = []string{"*.sh", ".cg/git-hooks/"}
@@ -42,8 +42,14 @@ func EnsureGitattributes(root string, apply bool) (bool, error) {
 		return false, err
 	}
 	content := string(raw)
-	crlf := strings.Contains(content, "\r\n")
-	lf := strings.ReplaceAll(content, "\r\n", "\n")
+	// A CRLF checkout is edited as LF and written back as CRLF; any other file
+	// is edited as it is, so a stray CRLF line of the user's stays as it was.
+	n := strings.Count(content, "\n")
+	crlf := n > 0 && strings.Count(content, "\r\n") == n
+	lf := content
+	if crlf {
+		lf = strings.ReplaceAll(content, "\r\n", "\n")
+	}
 	updated := upsertBlock(lf, gitattributesStart, gitattributesEnd, gitattributesBody, indexLine)
 	if lf == "" {
 		updated = strings.TrimPrefix(updated, "\n")

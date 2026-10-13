@@ -164,7 +164,7 @@ Git for Windows checks text files out with CRLF line endings by default
   # cg:gitattributes:start
   # Managed by cg: shell scripts need LF line endings to run, on every OS.
   *.sh text eol=lf
-  .cg/git-hooks/** text eol=lf
+  .cg/git-hooks/** text=auto eol=lf
   # cg:gitattributes:end
   ```
 
@@ -174,6 +174,8 @@ Git for Windows checks text files out with CRLF line endings by default
   script whose content is otherwise the committed one is re-added, because git
   goes on reporting it as modified otherwise. A script you have edited is left
   unstaged. Commit the `.gitattributes` change so other checkouts get it.
+  In `.gitattributes` a later matching line wins, so a line of yours below the
+  block that sets other line endings for scripts overrides it.
 
 The optional `/cg-sync` Claude skill reads the report plus the user's
 `user:section` rules to flag *semantic* contradictions (a new framework rule

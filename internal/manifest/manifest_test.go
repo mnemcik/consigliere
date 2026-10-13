@@ -341,3 +341,11 @@ func TestCRLFContentHashesAndParsesAsLF(t *testing.T) {
 		t.Errorf("section of a CRLF CLAUDE.md = %q, want %q", got, "body\nmore")
 	}
 }
+
+func TestAllCRLF(t *testing.T) {
+	for s, want := range map[string]bool{"": false, "a": false, "a\r\nb\r\n": true, "a\r\nb": true, "a\r\nb\n": false, "a\n": false} {
+		if got := AllCRLF(s); got != want {
+			t.Errorf("AllCRLF(%q) = %v, want %v", s, got, want)
+		}
+	}
+}

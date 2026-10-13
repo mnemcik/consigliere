@@ -54,7 +54,7 @@ func TestEnsureGitattributes(t *testing.T) {
 	}
 	got := read()
 	if !strings.HasPrefix(got, "*.png binary\n\n"+gitattributesStart) || !strings.HasSuffix(got, gitattributesEnd+"\n*.md diff=markdown\n") ||
-		strings.Count(got, gitattributesStart) != 1 || !strings.Contains(got, ".cg/git-hooks/** text eol=lf") {
+		strings.Count(got, gitattributesStart) != 1 || !strings.Contains(got, ".cg/git-hooks/** text=auto eol=lf") {
 		t.Errorf("updated:\n%s", got)
 	}
 
