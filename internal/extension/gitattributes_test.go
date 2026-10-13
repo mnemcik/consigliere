@@ -122,6 +122,10 @@ func TestScriptsCheckedOutWithLF(t *testing.T) {
 	write(origin, glob, script, 0o755)
 	write(origin, globbed, script, 0o755)
 	git(origin, "add", "-A")
+	// A script committed with CRLF, which autocrlf would have converted on add.
+	const committedCRLF = ".claude/hooks/crlf.sh"
+	write(origin, committedCRLF, strings.ReplaceAll(script, "\n", "\r\n"), 0o755)
+	git(origin, "-c", "core.autocrlf=false", "add", "--", committedCRLF)
 	git(origin, "commit", "--quiet", "-m", "before the block")
 
 	// A clone made before the block: everything is CRLF.
@@ -134,7 +138,7 @@ func TestScriptsCheckedOutWithLF(t *testing.T) {
 	if _, err := EnsureGitattributes(origin, true); err != nil {
 		t.Fatal(err)
 	}
-	git(origin, "add", "-A")
+	git(origin, "add", "--", ".gitattributes")
 	git(origin, "commit", "--quiet", "-m", "add cg's block")
 
 	// A clone made after: scripts LF, other files still CRLF.
@@ -162,8 +166,8 @@ func TestScriptsCheckedOutWithLF(t *testing.T) {
 	write(before, bin, binData, 0o755)
 	git(before, "add", "--", bin)
 	pending, err := NormalizeScriptLineEndings(ctx, before, false)
-	if err != nil || len(pending) != 5 {
-		t.Fatalf("dry run = %q, %v; want the five scripts", pending, err)
+	if err != nil || len(pending) != 6 {
+		t.Fatalf("dry run = %q, %v; want the six scripts", pending, err)
 	}
 	if got := read(before, ".claude/hooks/gate.sh"); got == script {
 		t.Fatal("dry run rewrote a script")
@@ -193,9 +197,11 @@ func TestScriptsCheckedOutWithLF(t *testing.T) {
 	if got := read(before, edited); got != "#!/bin/sh\necho mine\n" {
 		t.Errorf("edited script after normalising = %q", got)
 	}
-	// Only the user's edit is left, unstaged: the untouched script is not
-	// reported as modified, and nothing of the user's is staged for them.
-	if status, err := gitx.Run(ctx, before, "--literal-pathspecs", "status", "--porcelain", "--", edited, ".claude/", glob, globbed); err != nil || status != "M "+edited+"\n M "+globbed {
+	// Only the user's edits are left, unstaged: an untouched script is not
+	// reported as modified, and nothing of the user's is staged for them. The
+	// script committed with CRLF is staged with LF, ready to commit.
+	if status, err := gitx.Run(ctx, before, "--literal-pathspecs", "status", "--porcelain", "--", edited, ".claude/", glob, globbed); err != nil ||
+		status != "M "+edited+"\nM  "+committedCRLF+"\n M "+globbed {
 		t.Errorf("status after normalising = %q %v, want only the user's unstaged edit", status, err)
 	}
 	if again, err := NormalizeScriptLineEndings(ctx, before, true); err != nil || len(again) != 0 {

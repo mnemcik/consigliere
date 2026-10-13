@@ -111,13 +111,14 @@ func NormalizeScriptLineEndings(ctx context.Context, root string, apply bool) ([
 		if err := writeFileAtomicMode(path, []byte(lf), info.Mode().Perm()); err != nil {
 			return changed, err
 		}
-		if id, err := githooks.BlobID(ctx, root, path); err == nil && id != "" && id == staged[rel] {
+		if matchesIndex(ctx, root, path, lf, staged[rel]) {
 			refresh = append(refresh, rel)
 		}
 	}
 	// Git goes on reporting a file it checked out with other attributes as
 	// modified, though its content matches the index, until it is added again.
 	// Adding a script whose content is the index's changes nothing but that; one
+	// committed with CRLF is staged with LF, as git add --renormalize would; one
 	// the user has edited is left unstaged.
 	if len(refresh) > 0 {
 		if _, err := gitx.Run(ctx, root, append([]string{"--literal-pathspecs", "add", "--"}, refresh...)...); err != nil {
@@ -125,6 +126,19 @@ func NormalizeScriptLineEndings(ctx context.Context, root string, apply bool) ([
 		}
 	}
 	return changed, nil
+}
+
+// matchesIndex reports whether lf, the LF content now at path, is the index's
+// blob staged, either exactly or once that blob's CRLF line endings are LF.
+func matchesIndex(ctx context.Context, root, path, lf, staged string) bool {
+	if staged == "" {
+		return false
+	}
+	if id, err := githooks.BlobID(ctx, root, path); err == nil && id == staged {
+		return true
+	}
+	blob, err := gitx.RunRaw(ctx, root, "cat-file", "blob", staged)
+	return err == nil && manifest.LF(string(blob)) == lf
 }
 
 // binary reports whether data looks binary the way git decides it for

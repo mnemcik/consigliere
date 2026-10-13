@@ -174,8 +174,9 @@ Git for Windows checks text files out with CRLF line endings by default
   checks them out again, so `cg sync --apply` also converts tracked scripts it
   finds with CRLF (the dry run lists them). Only the line endings change. A
   script whose content is otherwise the committed one is re-added, because git
-  goes on reporting it as modified otherwise. A script you have edited is left
-  unstaged. Commit the `.gitattributes` change so other checkouts get it.
+  goes on reporting it as modified otherwise. A script that was committed with
+  CRLF is staged with LF, as `git add --renormalize` would. A script you have
+  edited is left unstaged. Commit the `.gitattributes` change so other checkouts get it.
   An extension installed before cg 1.27 that has not been updated since
   approves its git hooks from its old CRLF clone, so after the conversion
   `cg sync` and every session start warn that those hooks will not run.
