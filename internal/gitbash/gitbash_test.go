@@ -180,7 +180,7 @@ func jsonString(s string) string {
 }
 
 func TestSettingsFiles(t *testing.T) {
-	root, home := filepath.Join("w"), filepath.Join("h")
+	root, home := "w", "h"
 	want := []string{
 		filepath.Join(root, ".claude", "settings.local.json"),
 		filepath.Join(root, ".claude", "settings.json"),

@@ -20,9 +20,9 @@ const EnvVar = "CLAUDE_CODE_GIT_BASH_PATH"
 // Find returns the path of Git Bash and whether one was found. Off Windows it
 // returns bash from PATH. On Windows it never takes bash from PATH, which can be
 // WSL's bash.exe: that reads Windows paths differently and doesn't see the
-// Windows environment. EnvVar is read from the environment, then from the "env"
-// block of Claude Code's settings files, where Claude Code's docs say to set it:
-// the workspace's (root, when not "") and the user's.
+// Windows environment. EnvVar is read the way Claude Code reads it: from the
+// "env" block of its settings files first, where its docs say to set it (the
+// workspace's, when root is not "", then the user's), then from the environment.
 func Find(root string) (string, bool) {
 	home, _ := os.UserHomeDir()
 	return find(runtime.GOOS, os.Getenv, settingsFiles(root, home), exec.LookPath, fileExists)
