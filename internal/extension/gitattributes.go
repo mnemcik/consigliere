@@ -120,7 +120,7 @@ func NormalizeScriptLineEndings(ctx context.Context, root string, apply bool) ([
 	// Adding a script whose content is the index's changes nothing but that; one
 	// the user has edited is left unstaged.
 	if len(refresh) > 0 {
-		if _, err := gitx.Run(ctx, root, append([]string{"add", "--"}, refresh...)...); err != nil {
+		if _, err := gitx.Run(ctx, root, append([]string{"--literal-pathspecs", "add", "--"}, refresh...)...); err != nil {
 			return changed, err
 		}
 	}
