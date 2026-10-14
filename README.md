@@ -154,7 +154,7 @@ STATUS: In Progress
 $ cg status
 Consigliere workspace (v1.0.0)
 
-Projects: 11 total, 11 active
+Projects: 11 total, 9 active, 2 standing
 Areas:    10
 Ideas:    4
 Notes:    12
@@ -191,6 +191,8 @@ Each project is a folder with a standard structure:
 | `decisions.md` | ⚖️ Append-only log with status tracking |
 | `todo.md` | ✅ What's next |
 | `log.md` | 📓 What happened — session summaries, newest first |
+
+A project's README carries `## Goals` when it terminates, or `## Standard to Maintain` when it is a recurring duty with no finish line. Standing projects sit in their own `## Standing Commitments` table in `projects/TODO.md`, are never offered as the next thing to work on, and `cg status` counts them apart from the active ones.
 
 ### 💡 Ideas
 

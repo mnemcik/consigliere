@@ -18,6 +18,8 @@ What problem does this project solve? Why does it matter now?
 
 What does success look like? List 2-5 concrete outcomes.
 
+<!-- A recurring duty with no finish line? Replace this section with `## Standard to Maintain`: what "in good shape" looks like. See notes/project-structure.md. -->
+
 - Goal 1
 - Goal 2
 
