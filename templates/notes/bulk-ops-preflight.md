@@ -39,9 +39,9 @@ Only then run the full batch.
 
 ## Re-runnable content edits — test the post-state first
 
-A multi-file splice (a `sed -i` sweep, a scripted find-and-replace, a loop of text edits) is usually written so it can be re-run safely. **An exactly-once match check does not make it safe.** Before a content-matching edit, check whether the result is already present, not just that the target matches once.
+A multi-file splice (a `sed -i` sweep, a scripted find-and-replace, a loop of text edits) is usually written so it can be re-run safely. **An exactly-once match check does not make it safe** when the target text is contained in its own replacement. For such an edit, check whether the result is already present, not just that the target matches once.
 
-The trap is an edit whose target text is contained in its own replacement:
+The exposed shape:
 
 - inserting a section **above** an existing heading, where that heading is the anchor;
 - appending rows to a table that you also matched on to find it;
@@ -51,10 +51,10 @@ After the first run, the target still occurs exactly once, now inside the text j
 
 The order that works:
 
-1. **Is the replacement already present?** Then the edit is already applied. Report the no-op and stop. Do not look at the target.
+1. **Is the whole replacement block already present?** Then the edit is already applied. Report the no-op and stop. Do not look at the target. Test for the full, distinctive block, not a short token that may appear elsewhere.
 2. **Otherwise**, assert that the target occurs exactly once, then replace it.
 
-Doing these two checks in the other order is what fails.
+Checking only the target count is what fails. A plain substitution whose target does not survive in its replacement (`s/old-name/new-name/`) is not exposed: after one run the target is gone, so the count check is enough, and a post-state check could wrongly skip a file where the new text already occurs for another reason.
 
 **Prefer stable delimiters to body text.** Replacing everything between two fixed markers (such as the `cg:section` sentinels in `CLAUDE.md`) is idempotent by construction, because the match never depends on the content being replaced. A one-off `sed -i` or string replace has no such structure, so it needs the explicit check above.
 
