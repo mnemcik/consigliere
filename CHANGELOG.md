@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.29.0](https://github.com/mnemcik/consigliere/compare/v1.28.1...v1.29.0) (2026-10-14)
+
+
+### Features
+
+* **extension:** list extension notes in the notes index ([#175](https://github.com/mnemcik/consigliere/issues/175)) ([99714a7](https://github.com/mnemcik/consigliere/commit/99714a7c741239eb85bb8997898e26c038f990fd))
+
 ## [1.28.1](https://github.com/mnemcik/consigliere/compare/v1.28.0...v1.28.1) (2026-10-13)
 
 
