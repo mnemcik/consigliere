@@ -14,7 +14,7 @@ Thank you for considering contributing to Consigliere.
   golangci-lint --version
   ```
 
-  On Windows, run it in Git Bash. `brew install golangci-lint` installs the latest release, which may not match. See the [install docs](https://golangci-lint.run/welcome/install/) for other options.
+  This installs into `$(go env GOPATH)/bin`, which must be on your `PATH`. On Windows, run it in Git Bash. `brew install golangci-lint` installs the latest release, which may not match. See the [install docs](https://golangci-lint.run/welcome/install/) for other options.
 
 ### Setup
 
