@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/mnemcik/consigliere/internal/extension"
 	"github.com/mnemcik/consigliere/internal/manifest"
 	"github.com/mnemcik/consigliere/internal/session"
+	"github.com/mnemcik/consigliere/internal/workspace"
 )
 
 func chdir(t *testing.T, dir string) {
@@ -352,4 +354,86 @@ func TestInitGitignoreExcludesSessionContext(t *testing.T) {
 		}
 	}
 	t.Errorf(".gitignore does not ignore %s:\n%s", want, data)
+}
+
+// TestInitForcePreservesConfiguredSettings: re-init rewrites .cg.json, but
+// must keep what the workspace configured (custom index paths, worktree,
+// session, push-policy and share settings) and default only what is missing.
+func TestInitForcePreservesConfiguredSettings(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer chdir(t, origDir)
+	chdir(t, dir)
+	forceInit = false
+	if err := runInit(nil, nil); err != nil {
+		t.Fatalf("init failed: %v", err)
+	}
+
+	custom := "{\r\n" +
+		`  "type": "consigliere", "version": "0.0.1",` + "\r\n" +
+		`  "indexes": {"projects": "work/PROJECTS.md", "notes": "kb/NOTES.md"},` + "\r\n" +
+		`  "worktree": {"root": "../wt", "branchPrefix": "s/", "landingBranch": "trunk", "landingStrategy": "local"},` + "\r\n" +
+		`  "session": {"activeWindowMin": 7, "pruneDays": 3, "gateTemplate": "my/gate.md", "badgeFormat": "{project}", "statuslineUpstream": "bash ~/mine.sh"},` + "\r\n" +
+		`  "pushPolicy": {"source": "my/policy.json"},` + "\r\n" +
+		`  "registries": {"work": "https://example.com/index.json"},` + "\r\n" +
+		`  "share": {"owner": "Me", "denylist": ["acme"], "audiences": {"team": {"repo": "git@example.com:s.git", "projects": {"p": {}}}}}` + "\r\n" +
+		"}\r\n"
+	if err := os.WriteFile(filepath.Join(dir, ".cg.json"), []byte(custom), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	forceInit = true
+	defer func() { forceInit = false }()
+	if err := runInit(nil, nil); err != nil {
+		t.Fatalf("re-init failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, ".cg.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got workspace.Config
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != Version {
+		t.Errorf("version = %q, want %q", got.Version, Version)
+	}
+	wantIdx := map[string]string{
+		"projects": "work/PROJECTS.md",
+		"notes":    "kb/NOTES.md",
+		"areas":    "areas/INDEX.md",
+		"ideas":    "ideas/BACKLOG.md",
+		"insights": "insights/DRAFTS.md",
+	}
+	if !reflect.DeepEqual(got.Indexes, wantIdx) {
+		t.Errorf("indexes = %v, want %v", got.Indexes, wantIdx)
+	}
+	wantWT := workspace.WorktreeConfig{Root: "../wt", BranchPrefix: "s/", LandingBranch: "trunk", LandingStrategy: "local"}
+	if got.Worktree == nil || *got.Worktree != wantWT {
+		t.Errorf("worktree = %+v, want %+v", got.Worktree, wantWT)
+	}
+	wantSess := workspace.SessionConfig{ActiveWindowMin: 7, PruneDays: 3, GateTemplate: "my/gate.md", BadgeFormat: "{project}", StatuslineUpstream: "bash ~/mine.sh"}
+	if got.Session == nil || *got.Session != wantSess {
+		t.Errorf("session = %+v, want %+v", got.Session, wantSess)
+	}
+	if got.PushPolicy == nil || got.PushPolicy.Source != "my/policy.json" {
+		t.Errorf("pushPolicy = %+v, want source my/policy.json", got.PushPolicy)
+	}
+	if got.Registries["work"] != "https://example.com/index.json" || got.Registries[extension.BuiltinRegistryAlias] != extension.DefaultRegistryURL {
+		t.Errorf("registries = %v, want work kept and %q added", got.Registries, extension.BuiltinRegistryAlias)
+	}
+	if got.Share == nil || got.Share.Owner != "Me" || len(got.Share.Denylist) != 1 || got.Share.Audiences["team"].Repo != "git@example.com:s.git" {
+		t.Errorf("share = %+v, want it carried over", got.Share)
+	}
+}
+
+// TestInitForceDefaultsMissingSettings: a sparse prior .cg.json gets the
+// defaults for everything it leaves out, exactly as a fresh init would.
+func TestInitForceDefaultsMissingSettings(t *testing.T) {
+	got := initConfig(&workspace.Config{Type: workspace.TypeConsigliere, Version: "0.0.1", Indexes: map[string]string{"areas": ""}}, t.TempDir())
+	fresh := initConfig(nil, t.TempDir())
+	if !reflect.DeepEqual(got, fresh) {
+		t.Errorf("sparse re-init = %+v, want fresh defaults %+v", got, fresh)
+	}
 }

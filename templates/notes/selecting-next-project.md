@@ -8,11 +8,11 @@
 
 ## Summary
 
-When the user asks "what should I work on next?" / "pick a project" (open-ended, as opposed to naming a specific project), use this ranked procedure instead of guessing. Covers the selection ranking and active-work detection via `cg active`.
+When the user asks "what should I work on next?" / "pick a project" (open-ended, as opposed to naming a specific project), use this ranked procedure instead of guessing. Covers the selection ranking (Active Projects only — standing projects are never picked) and active-work detection via `cg active`.
 
 ## Selection procedure
 
-1. **Read `projects/TODO.md` top-to-bottom.** Priority sections (High → Medium → Low) are ordered, and **row order within each priority bucket is the rank** — the topmost project in its bucket is the one to pick up first.
+1. **Read the project tables of `projects/TODO.md` top to bottom, except `## Standing Commitments`.** Priority sections (High → Medium → Low) are ordered, and **row order within each priority bucket is the rank** — the topmost project in its bucket is the one to pick up first. **Never pick a standing project**: one listed under `## Standing Commitments`, or one whose README carries `## Standard to Maintain` wherever its row sits. Standing projects are recurring duties with no finish line, reviewed on their own cadence, never pickable work.
 2. **Skip these status groups** unless the user says otherwise: `Done` (already closed) and `On hold` (deliberately paused).
 3. **Run `cg active --slugs`** and skip any project whose slug appears — it already has a live session somewhere, and picking it up here would double-book and risk worktree/index conflicts. If the only top candidates are active, offer the next non-active project down the list, OR tell the user which session is already on it (`cg active` without flags shows the `mtime` / `session` columns) and ask whether to pick a different one.
 4. **Confirm the pick with the user before starting work** — don't just start. A one-line "top non-active High-priority project is X, want me to start there?" is the right shape.
@@ -48,4 +48,4 @@ A listed live session that the user says is not running is a claim that was neve
 ## Related
 
 - `CLAUDE.md` → **Selecting the Next Project** (inline trigger + pointer)
-- [`project-structure.md`](project-structure.md) — how to read a project once picked
+- [`project-structure.md`](project-structure.md) — how to read a project once picked, and the `## Goals` vs `## Standard to Maintain` discriminator
