@@ -2,6 +2,7 @@ package share
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -463,5 +464,24 @@ func TestPublishKeepsStoredCRLFUnderAutocrlf(t *testing.T) {
 	defer plan.Close()
 	if plan.Changed {
 		t.Errorf("an unchanged CRLF file must stay unchanged under core.autocrlf: %+v", plan.Projects)
+	}
+}
+
+// Many case-only renames at once are unstaged in chunks, each under Windows'
+// command-line limit.
+func TestPublishManyCaseOnlyRenames(t *testing.T) {
+	f := newPublishFixture(t)
+	if !caseInsensitiveTempDir(t) {
+		t.Skip("the temp filesystem is case-sensitive; a case-only rename is an ordinary rename there")
+	}
+	first, renamed := f.exports(t), f.exports(t)
+	for i := range 450 {
+		first["pilot"].Files[fmt.Sprintf("pilot/Notes/file-%03d.md", i)] = "x\n"
+		renamed["pilot"].Files[fmt.Sprintf("pilot/notes/file-%03d.md", i)] = "x\n"
+	}
+	f.publish(t, first)
+	plan := f.publish(t, renamed)
+	if c := plan.Projects["pilot"]; len(c.Added) != 450 || len(c.Removed) != 450 {
+		t.Errorf("want 450 renamed files, got %d added, %d removed", len(c.Added), len(c.Removed))
 	}
 }

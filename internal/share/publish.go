@@ -346,7 +346,8 @@ func (p *PublishPlan) stage(ctx context.Context) error {
 // file whatever its case, so `add` would update the old entry and keep the old
 // name. Dropped, the file is added under its new name. Only these entries are
 // dropped: the rest keep their index entries, and with them git's check that
-// leaves a file already stored with CRLF alone under core.autocrlf.
+// leaves a file already stored with CRLF alone under core.autocrlf. A renamed
+// file is a new path, so like any added file it gets no such exemption.
 func unstageCaseRenames(ctx context.Context, dir string, files map[string]string) error {
 	folded := make(map[string]bool, len(files))
 	for f := range files {
@@ -365,10 +366,17 @@ func unstageCaseRenames(ctx context.Context, dir string, files map[string]string
 	if len(stale) == 0 {
 		return nil
 	}
-	// --literal-pathspecs: a file name is a path, never a glob.
-	args := append([]string{"--literal-pathspecs", "rm", "-q", "--cached", "--"}, stale...)
-	_, err = gitx.Run(ctx, dir, args...)
-	return err
+	// --literal-pathspecs: a file name is a path, never a glob. Chunked, so a
+	// folder of many renamed files stays under Windows' command-line limit.
+	for len(stale) > 0 {
+		n := min(len(stale), 200)
+		args := append([]string{"--literal-pathspecs", "rm", "-q", "--cached", "--"}, stale[:n]...)
+		if _, err := gitx.Run(ctx, dir, args...); err != nil {
+			return err
+		}
+		stale = stale[n:]
+	}
+	return nil
 }
 
 // diff fills Projects, Removed and Changed from the staged tree.
