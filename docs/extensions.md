@@ -299,7 +299,14 @@ their own heading, so removal is exact and extensions never share a block:
   the note's manifest entry. Without it the row is the link alone.
 - **A note the index already links to**, anywhere outside this block, gets no
   row, so a row you placed by hand stays the only one. With every note linked,
-  the block is removed.
+  the block is removed. A link counts when it is a markdown inline link
+  (`[text](path)`) or a reference definition (`[label]: path`) whose path,
+  resolved from the index's directory, is the note. Wikilinks don't count.
+- **Broken markers** (a start with no end, or a block that appears twice) make
+  install, update and remove stop with an error naming the index, rather than
+  guess where the block ends. Fix or delete the markers and run it again.
+- **Line endings:** an index whose every line ends in CRLF is written back as
+  CRLF. Any other index is edited as it is.
 - The block is cg's: update rewrites it and remove deletes it, so put your own
   rows outside it. The ledger records it under `indexRows`.
 

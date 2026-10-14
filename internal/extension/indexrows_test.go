@@ -240,3 +240,96 @@ func TestIndexLink(t *testing.T) {
 		t.Errorf("row with a space = %q", got)
 	}
 }
+
+// Broken markers are refused, not guessed at: a start with no end must not
+// gain a second block on apply or take the user's lines with it on remove.
+func TestIndexRowsRefuseBrokenMarkers(t *testing.T) {
+	m := notesManifest(CopyContribution{Src: "notes/a.md", Dest: "notes/demo-a.md"})
+	clone := makeClone(t, m)
+	l := &Ledger{Name: "demo", IndexRows: []LedgerIndexRow{{File: "notes/INDEX.md", Marker: "ext:demo:index"}}}
+	for name, content := range map[string]string{
+		"no end":    indexBase + "<!-- ext:demo:index:start -->\n- [old](old.md)\n## My section\n- [mine](mine.md)\n",
+		"no start":  indexBase + "- [old](old.md)\n<!-- ext:demo:index:end -->\n## My section\n",
+		"end first": indexBase + "<!-- ext:demo:index:end -->\nmine\n<!-- ext:demo:index:start -->\n",
+		"twice": indexBase + "<!-- ext:demo:index:start -->\na\n<!-- ext:demo:index:end -->\nmine\n" +
+			"<!-- ext:demo:index:start -->\nb\n<!-- ext:demo:index:end -->\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := indexWorkspace(t, content)
+			if _, err := ApplyWith(root, clone, m, ApplyOptions{NotesIndex: DefaultNotesIndex}); err == nil {
+				t.Error("apply accepted broken markers")
+			}
+			if _, err := Reverse(root, l); err == nil {
+				t.Error("reverse accepted broken markers")
+			}
+			if got := readIndex(t, root); got != content {
+				t.Errorf("index changed:\n%q", got)
+			}
+		})
+	}
+}
+
+// A file with only some CRLF lines is edited as it is.
+func TestIndexRowsKeepMixedLineEndings(t *testing.T) {
+	const mixed = "# Idx\r\n\r\nline2\nline3\r\n"
+	root := indexWorkspace(t, mixed)
+	m := notesManifest(CopyContribution{Src: "notes/a.md", Dest: "notes/demo-a.md"})
+	clone := makeClone(t, m)
+	l, err := ApplyWith(root, clone, m, ApplyOptions{NotesIndex: DefaultNotesIndex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := readIndex(t, root); !strings.HasPrefix(got, mixed) {
+		t.Errorf("user's lines changed:\n%q", got)
+	}
+	if _, err := Reverse(root, l); err != nil {
+		t.Fatal(err)
+	}
+	if got := readIndex(t, root); got != mixed {
+		t.Errorf("index after reverse:\n%q", got)
+	}
+}
+
+func TestIndexRowsRecogniseOtherLinkForms(t *testing.T) {
+	m := notesManifest(
+		CopyContribution{Src: "notes/a.md", Dest: "./notes/demo-a.md"},
+		CopyContribution{Src: "notes/b.md", Dest: "notes/demo-b.md"},
+		CopyContribution{Src: "notes/c.md", Dest: "notes/demo-c.md"},
+		CopyContribution{Src: "notes/d.md", Dest: "notes/demo-d.md"},
+	)
+	clone := makeClone(t, m)
+	hand := indexBase + "- [A](../notes/demo-a.md)\n- [B][b]\n- [C](demo%2Dc.md)\n\n[b]: demo-b.md \"B\"\n"
+	root := indexWorkspace(t, hand)
+	if _, err := ApplyWith(root, clone, m, ApplyOptions{NotesIndex: DefaultNotesIndex}); err != nil {
+		t.Fatal(err)
+	}
+	got := readIndex(t, root)
+	if strings.Count(got, "](") != strings.Count(hand, "](")+1 || !strings.Contains(got, "- [demo-d](demo-d.md)") {
+		t.Errorf("index:\n%s", got)
+	}
+}
+
+func TestIndexRowsIgnoreANonFileIndex(t *testing.T) {
+	m := notesManifest(CopyContribution{Src: "notes/a.md", Dest: "notes/demo-a.md"})
+	clone := makeClone(t, m)
+	root := t.TempDir()
+	l, err := ApplyWith(root, clone, m, ApplyOptions{NotesIndex: "notes"})
+	if err != nil {
+		t.Fatalf("install with a directory as the index: %v", err)
+	}
+	if len(l.IndexRows) != 0 {
+		t.Errorf("rows recorded: %+v", l.IndexRows)
+	}
+}
+
+func TestIndexRowsIntoAnEmptyIndex(t *testing.T) {
+	root := indexWorkspace(t, "")
+	m := notesManifest(CopyContribution{Src: "notes/a.md", Dest: "notes/demo-a.md"})
+	clone := makeClone(t, m)
+	if _, err := ApplyWith(root, clone, m, ApplyOptions{NotesIndex: DefaultNotesIndex}); err != nil {
+		t.Fatal(err)
+	}
+	if got := readIndex(t, root); !strings.HasPrefix(got, "<!-- ext:demo:index:start -->") {
+		t.Errorf("index:\n%q", got)
+	}
+}

@@ -2,6 +2,7 @@ package extension
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -42,39 +43,43 @@ func indexMarkers(marker string) (start, end string) {
 
 // applyIndexRows writes the index block for m's notes into the index at
 // indexRel, or removes it when no note needs a row. It does nothing when
-// indexRel is empty or the index doesn't exist. It returns the row to record,
-// or nil when no block was written.
+// indexRel is empty or the index isn't a regular file. It returns the row to
+// record, or nil when no block was written.
 func applyIndexRows(root, indexRel string, m *Manifest, plans []copyPlan) (*LedgerIndexRow, error) {
 	if indexRel == "" {
 		return nil, nil
 	}
 	indexPath := filepath.Join(root, filepath.FromSlash(indexRel))
-	raw, err := os.ReadFile(indexPath) //nolint:gosec // workspace-relative index path from .cg.json, cleaned by the caller
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
+	content, ok, err := loadIndex(indexPath)
+	if err != nil || !ok {
 		return nil, err
 	}
-	content := string(raw)
+	// A CRLF checkout is edited as LF and written back as CRLF; any other file
+	// is edited as it is, so a stray CRLF line of the user's stays as it was.
 	crlf := manifest.AllCRLF(content)
-	lf := manifest.LF(content)
+	lf := content
+	if crlf {
+		lf = manifest.LF(content)
+	}
 
 	marker := indexMarker(m.Name)
 	start, end := indexMarkers(marker)
+	if err := checkBlock(lf, start, end); err != nil {
+		return nil, fmt.Errorf("%s: %w", indexRel, err)
+	}
 	others, _ := removeBlock(lf, start, end, indexLine)
-	linked := linkTargets(others)
+	linked := linkTargets(others, path.Dir(indexRel))
 
 	var rows []string
 	for _, p := range plans {
 		if p.template {
 			continue
 		}
-		link := indexLink(indexRel, p.dest)
-		if linked[link] {
+		dest := path.Clean(p.dest)
+		if linked[dest] {
 			continue
 		}
-		rows = append(rows, indexRow(link, noteTitle(p.data, p.dest), noteIndexText(m, p.dest)))
+		rows = append(rows, indexRow(indexLink(indexRel, dest), noteTitle(p.data, dest), noteIndexText(m, p.dest)))
 	}
 
 	var updated string
@@ -84,6 +89,9 @@ func applyIndexRows(root, indexRel string, m *Manifest, plans []copyPlan) (*Ledg
 	} else {
 		body := fmt.Sprintf("## From the %s extension\n\n%s", m.Name, strings.Join(rows, "\n"))
 		updated = upsertBlock(lf, start, end, body, indexLine)
+		if strings.TrimSpace(lf) == "" {
+			updated = strings.TrimLeft(updated, "\r\n")
+		}
 		row = &LedgerIndexRow{File: indexRel, Marker: marker}
 	}
 	if updated == lf {
@@ -96,33 +104,85 @@ func applyIndexRows(root, indexRel string, m *Manifest, plans []copyPlan) (*Ledg
 }
 
 // reverseIndexRows removes the index blocks recorded in l. A block or index
-// already gone is not an error.
+// already gone is not an error; a block whose markers are broken is, rather
+// than a guess at where it ends.
 func reverseIndexRows(root string, l *Ledger) error {
 	for _, r := range l.IndexRows {
 		rel, err := CleanSubdir(r.File)
 		if err != nil || rel == "" {
 			continue // not a path cg would have written
 		}
-		p := filepath.Join(root, filepath.FromSlash(rel))
-		raw, err := os.ReadFile(p) //nolint:gosec // cleaned workspace-relative path from the ledger
+		p := filepath.Join(root, rel)
+		content, ok, err := loadIndex(p)
 		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
 			return err
 		}
-		content := string(raw)
-		start, end := indexMarkers(r.Marker)
-		next, ok := removeBlock(manifest.LF(content), start, end, indexLine)
 		if !ok {
 			continue
 		}
-		if manifest.AllCRLF(content) {
+		crlf := manifest.AllCRLF(content)
+		lf := content
+		if crlf {
+			lf = manifest.LF(content)
+		}
+		start, end := indexMarkers(r.Marker)
+		if err := checkBlock(lf, start, end); err != nil {
+			return fmt.Errorf("%s: %w", r.File, err)
+		}
+		next, found := removeBlock(lf, start, end, indexLine)
+		if !found {
+			continue
+		}
+		if crlf {
 			next = manifest.CRLF(next)
 		}
 		if err := writeFileAtomic(p, []byte(next), 0o644); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// loadIndex reads the index at p. ok is false when there is no regular file
+// there, which is not an error: such a workspace just has no notes index.
+func loadIndex(p string) (content string, ok bool, err error) {
+	info, err := os.Stat(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	if !info.Mode().IsRegular() {
+		return "", false, nil
+	}
+	raw, err := os.ReadFile(p) //nolint:gosec // cleaned workspace-relative index path
+	if err != nil {
+		return "", false, err
+	}
+	return string(raw), true, nil
+}
+
+// indexIsFile reports whether the index at indexRel is a regular file, so
+// ApplyWith snapshots only an index it may write.
+func indexIsFile(root, indexRel string) bool {
+	_, ok, _ := loadIndex(filepath.Join(root, filepath.FromSlash(indexRel)))
+	return ok
+}
+
+// checkBlock refuses a block whose markers don't pair up: a start with no end
+// after it, or a marker that appears twice. Editing such a file could append
+// a second block or remove the user's own lines between stray markers.
+func checkBlock(content, start, end string) error {
+	si, ei := indexLine(content, start), indexLine(content, end)
+	switch {
+	case si < 0 && ei < 0:
+		return nil
+	case si < 0 || ei < 0 || ei < si:
+		return fmt.Errorf("the %s block's markers are broken; fix or delete them, then retry", strings.TrimSuffix(strings.TrimPrefix(start, "<!-- "), ":start -->"))
+	}
+	if indexLine(content[si+len(start):], start) >= 0 || indexLine(content[ei+len(end):], end) >= 0 {
+		return fmt.Errorf("the %s block appears twice; delete one copy, then retry", strings.TrimSuffix(strings.TrimPrefix(start, "<!-- "), ":start -->"))
 	}
 	return nil
 }
@@ -167,23 +227,28 @@ func indexLink(indexRel, dest string) string {
 	return up + strings.TrimPrefix(dest, dir+"/")
 }
 
-// linkRe matches the target of a markdown inline link: ](target) or
-// ](<target>), up to a title, fragment or the closing parenthesis.
-var linkRe = regexp.MustCompile(`\]\(\s*(?:<([^>]*)>|([^)\s]*))`)
+// linkRe matches the target of a markdown inline link, ](target) or
+// ](<target>), and of a reference definition, [label]: target, up to a title,
+// fragment or the closing parenthesis.
+var linkRe = regexp.MustCompile(`\]\(\s*(?:<([^>]*)>|([^)\s]*))|(?m)^ {0,3}\[[^\]]+\]:\s*(?:<([^>]*)>|(\S+))`)
 
-// linkTargets returns the link targets in content, cleaned for comparison with
-// indexLink: no fragment, no leading "./".
-func linkTargets(content string) map[string]bool {
+// linkTargets returns the workspace-relative paths that content, an index in
+// the workspace directory dir, links to: resolved against dir, with no
+// fragment or query.
+func linkTargets(content, dir string) map[string]bool {
 	out := map[string]bool{}
 	for _, m := range linkRe.FindAllStringSubmatch(content, -1) {
-		t := m[1] + m[2]
-		if i := strings.IndexByte(t, '#'); i >= 0 {
+		t := m[1] + m[2] + m[3] + m[4]
+		if i := strings.IndexAny(t, "#?"); i >= 0 {
 			t = t[:i]
 		}
-		if t == "" {
+		if t == "" || strings.Contains(t, "://") || strings.HasPrefix(t, "/") {
 			continue
 		}
-		out[path.Clean(strings.ReplaceAll(t, "%20", " "))] = true
+		if u, err := url.PathUnescape(t); err == nil {
+			t = u
+		}
+		out[path.Join(dir, t)] = true
 	}
 	return out
 }

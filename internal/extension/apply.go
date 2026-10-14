@@ -136,6 +136,9 @@ func ApplyWith(root, cloneDir string, m *Manifest, opts ApplyOptions) (*Ledger, 
 	if err := capture(gitignoreName); err != nil {
 		return nil, err
 	}
+	if opts.NotesIndex != "" && !indexIsFile(root, opts.NotesIndex) {
+		opts.NotesIndex = "" // no index to list the notes in
+	}
 	if opts.NotesIndex != "" {
 		if err := capture(opts.NotesIndex); err != nil {
 			return nil, err
