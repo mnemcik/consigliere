@@ -253,7 +253,8 @@ to its share repo. For each audience:
 6. **Consent.**
    - The first publish of a project to an audience, a publish that **adds
      files** to a project the audience already has (a new include such as
-     `log.md`; the summary lists the new file names), or one that replaces
+     `log.md`, or a renamed file, even one renamed only in letter case; the
+     summary lists the new file names), or one that replaces
      content cg did not write, must be confirmed **at an interactive
      terminal** by typing the audience name. Review the staged copy first.
      `--yes` is refused for these. When Claude drives the session, run it yourself in a

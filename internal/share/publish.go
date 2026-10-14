@@ -317,6 +317,15 @@ func (p *PublishPlan) stage(ctx context.Context) error {
 	if err := writeTree(p.Dir, files); err != nil {
 		return err
 	}
+	// Rebuild the index from the new tree rather than update it. On a
+	// case-insensitive filesystem (macOS and Windows by default) git matches
+	// an index entry to a file whatever its letter case, so after a case-only
+	// rename (Case.md to case.md) `add` would keep the old name. An empty
+	// index takes every name as written. The commit still compares against
+	// HEAD, so unchanged files stay unchanged.
+	if _, err := gitx.Run(ctx, p.Dir, "rm", "-r", "-q", "--cached", "--ignore-unmatch", "."); err != nil {
+		return err
+	}
 	// --force: a user's global gitignore must not silently drop a published
 	// file while the manifest still lists it.
 	if _, err := gitx.Run(ctx, p.Dir, "add", "-A", "--force"); err != nil {
