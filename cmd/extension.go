@@ -187,6 +187,11 @@ func reapply(root, manifestDir string, m *extension.Manifest, prevSource string,
 	if err != nil {
 		return res, fmt.Errorf("reading ledger for %q: %w", m.Name, err)
 	}
+	// A broken block in the old index would fail its reversal after the new
+	// files are written; refuse while nothing has changed.
+	if err := extension.CheckIndexRows(root, old); err != nil {
+		return res, cgerr.New(cgerr.ExitUsage, "notes index for %q: %v", m.Name, err)
+	}
 	opts := extension.ApplyOptions{Old: old, Force: force, NotesIndex: notesIndexRel(root)}
 	if old != nil && old.Files == nil && prevSource != "" {
 		opts.LegacyBases = extension.LegacyBases(prevSource)

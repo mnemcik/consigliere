@@ -100,7 +100,9 @@ func removeBlock(content, start, end string, find func(string, string) int) (str
 	}
 	blockEnd := si + ei + len(end)
 	// Absorb a single trailing newline after the end marker.
-	if blockEnd < len(content) && content[blockEnd] == '\n' {
+	if strings.HasPrefix(content[blockEnd:], "\r\n") {
+		blockEnd += 2
+	} else if blockEnd < len(content) && content[blockEnd] == '\n' {
 		blockEnd++
 	}
 	// Absorb the one blank line upsertBlock put before the block, leaving any

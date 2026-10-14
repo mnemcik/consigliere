@@ -372,3 +372,24 @@ func TestIndexRowEscapesLinkCharacters(t *testing.T) {
 		t.Error("an escaped link is not recognised as the note")
 	}
 }
+
+func TestCheckIndexRows(t *testing.T) {
+	broken := indexBase + "<!-- ext:demo:index:start -->\n- [old](old.md)\n"
+	root := indexWorkspace(t, broken)
+	l := &Ledger{Name: "demo", IndexRows: []LedgerIndexRow{{File: "notes/INDEX.md", Marker: "ext:demo:index"}}}
+	if err := CheckIndexRows(root, l); err == nil {
+		t.Error("broken block in the old index not reported")
+	}
+	if err := CheckIndexRows(indexWorkspace(t, indexBase), l); err != nil {
+		t.Errorf("no block reported: %v", err)
+	}
+	if err := CheckIndexRows(root, nil); err != nil {
+		t.Errorf("nil ledger: %v", err)
+	}
+}
+
+func TestLinkTargetsSkipFootnotes(t *testing.T) {
+	if got := linkTargets("[^1]: text\n[ref]: a.md\n", "notes"); got["notes/text"] || !got["notes/a.md"] {
+		t.Errorf("targets = %v", got)
+	}
+}

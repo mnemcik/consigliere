@@ -156,6 +156,37 @@ func reverseIndexRows(root string, l *Ledger) error {
 	return nil
 }
 
+// CheckIndexRows reports a recorded index block whose markers are broken.
+// Update runs it on the old ledger before applying anything, so a block that
+// would fail to reverse stops the update before any file is written.
+func CheckIndexRows(root string, l *Ledger) error {
+	if l == nil {
+		return nil
+	}
+	for _, r := range l.IndexRows {
+		rel, err := CleanSubdir(r.File)
+		if err != nil || rel == "" {
+			continue
+		}
+		content, ok, err := loadIndex(filepath.Join(root, rel))
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		lf := content
+		if manifest.AllCRLF(content) {
+			lf = manifest.LF(content)
+		}
+		start, end := indexMarkers(r.Marker)
+		if err := checkBlock(lf, start, end); err != nil {
+			return fmt.Errorf("%s: %w", r.File, err)
+		}
+	}
+	return nil
+}
+
 // loadIndex reads the index at p. ok is false when there is no regular file
 // there, which is not an error: such a workspace just has no notes index.
 func loadIndex(p string) (content string, ok bool, err error) {
@@ -246,9 +277,9 @@ func indexLink(indexRel, dest string) string {
 }
 
 // linkRe matches the target of a markdown inline link, ](target) or
-// ](<target>), and of a reference definition, [label]: target, up to a title,
-// fragment or the closing parenthesis.
-var linkRe = regexp.MustCompile(`\]\(\s*(?:<([^>]*)>|([^)\s]*))|(?m)^ {0,3}\[[^\]]+\]:\s*(?:<([^>]*)>|(\S+))`)
+// ](<target>), and of a reference definition, [label]: target (not a
+// footnote, [^1]: text), up to a title, fragment or the closing parenthesis.
+var linkRe = regexp.MustCompile(`\]\(\s*(?:<([^>]*)>|([^)\s]*))|(?m)^ {0,3}\[[^\]^][^\]]*\]:\s*(?:<([^>]*)>|(\S+))`)
 
 // linkTargets returns the workspace-relative paths that content, an index in
 // the workspace directory dir, links to: resolved against dir, with no

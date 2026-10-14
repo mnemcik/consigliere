@@ -126,3 +126,10 @@ func TestIndexLineEdgeCases(t *testing.T) {
 		}
 	}
 }
+
+func TestRemoveBlockAbsorbsACRLFAfterTheEnd(t *testing.T) {
+	got, ok := removeBlock("a\n\nSTART\r\nrow\r\nEND\r\nb\r\n", "START", "END", indexLine)
+	if !ok || got != "a\nb\r\n" {
+		t.Errorf("removeBlock = %q, %v", got, ok)
+	}
+}
