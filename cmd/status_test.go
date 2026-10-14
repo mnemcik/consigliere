@@ -130,3 +130,32 @@ func TestProjectsSummaryEmptyOrMissing(t *testing.T) {
 		t.Errorf("fresh index: got %q", got)
 	}
 }
+
+func TestHasStandingHeading(t *testing.T) {
+	tests := []struct {
+		name, body string
+		want       bool
+	}{
+		{"plain", "# P\n\n## Standard to Maintain\n", true},
+		{"crlf", "# P\r\n\r\n## Standard to Maintain\r\n", true},
+		{"up to three spaces of indent", "   ## Standard to Maintain\n", true},
+		{"after a closed fence", "```\ncode\n```\n## Standard to Maintain\n", true},
+		{"goals only", "# P\n\n## Goals\n", false},
+		{"indented code block", "    ## Standard to Maintain\n", false},
+		{"inside a fence", "```md\n## Standard to Maintain\n```\n", false},
+		{"inside a tilde fence", "~~~\n## Standard to Maintain\n~~~\n", false},
+		{"three backticks do not close four", "````md\n```\n## Standard to Maintain\n````\n", false},
+		{"a different heading", "## Standard to Maintain later\n", false},
+	}
+	dir := t.TempDir()
+	for i, tt := range tests {
+		rel := filepath.Join("p", strings.Repeat("x", i+1), "README.md")
+		writeStatusFile(t, dir, rel, tt.body)
+		if got := hasStandingHeading(filepath.Join(dir, rel)); got != tt.want {
+			t.Errorf("%s: got %v, want %v", tt.name, got, tt.want)
+		}
+	}
+	if hasStandingHeading(filepath.Join(dir, "missing.md")) {
+		t.Error("missing file: got true")
+	}
+}

@@ -284,7 +284,7 @@ When the user asks to review insights (phrases like "review my insights", "go th
 <!-- cg:section:start=selecting-next-project -->
 ## Selecting the Next Project to Work On
 
-When the user asks "what should I work on next?" / "pick a project" (open-ended, not naming a specific project), use the ranked procedure — don't guess. In short: read the `## Active Projects` table of `projects/TODO.md` top-to-bottom (priority then rank; never the `## Standing Commitments` table), skip Done/On-hold, skip projects already live in another session per `cg active --slugs`, then confirm the pick before starting. Rank within a priority bucket is **user-owned** — suggest re-ranking but never silently reorder rows.
+When the user asks "what should I work on next?" / "pick a project" (open-ended, not naming a specific project), use the ranked procedure — don't guess. In short: read `projects/TODO.md` top-to-bottom (priority then rank), skip standing projects (the `## Standing Commitments` table, or a README with `## Standard to Maintain`), skip Done/On-hold, skip projects already live in another session per `cg active --slugs`, then confirm the pick before starting. Rank within a priority bucket is **user-owned** — suggest re-ranking but never silently reorder rows.
 
 For the full selection procedure, the `cg active` flags/liveness windows, and when else to consult active-work detection, load [`notes/selecting-next-project.md`](notes/selecting-next-project.md).
 <!-- cg:section:end=selecting-next-project -->

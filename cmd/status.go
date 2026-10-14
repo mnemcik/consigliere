@@ -131,22 +131,25 @@ func hasStandingHeading(path string) bool {
 	}
 	defer func() { _ = f.Close() }()
 
-	fence := ""
+	fence := "" // the opening fence run while inside a fenced block
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+		raw := strings.TrimRight(scanner.Text(), " \t\r")
+		indent := len(raw) - len(strings.TrimLeft(raw, " "))
+		line := strings.TrimSpace(raw)
 		if fence != "" {
-			if strings.HasPrefix(line, fence) {
+			// A fence closes only on a run of the same character at least
+			// as long as the one that opened it.
+			if indent < 4 && strings.HasPrefix(line, fence) && strings.Trim(line, fence[:1]) == "" {
 				fence = ""
 			}
 			continue
 		}
-		if strings.HasPrefix(line, "```") {
-			fence = "```"
-			continue
+		if indent >= 4 {
+			continue // an indented code block, not a heading
 		}
-		if strings.HasPrefix(line, "~~~") {
-			fence = "~~~"
+		if run := fenceRun(line); run != "" {
+			fence = run
 			continue
 		}
 		if strings.EqualFold(line, standingHeading) {
@@ -154,4 +157,16 @@ func hasStandingHeading(path string) bool {
 		}
 	}
 	return false
+}
+
+// fenceRun returns the backtick or tilde run that opens a fenced code block
+// on line, or "" when line opens none.
+func fenceRun(line string) string {
+	for _, c := range []string{"`", "~"} {
+		n := len(line) - len(strings.TrimLeft(line, c))
+		if n >= 3 {
+			return strings.Repeat(c, n)
+		}
+	}
+	return ""
 }
