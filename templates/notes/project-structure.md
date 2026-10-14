@@ -8,7 +8,7 @@
 
 ## Summary
 
-Each project lives in its own folder under `projects/`, named for the project slug, and contains four standard files. This note holds the full mechanics: the file-purpose tables, the rules for working with project files, the new-project workflow, and the per-session update checklist. The one-line overview and the two load-bearing rules (read `README.md` first; keep files current) stay inline in `CLAUDE.md`.
+Each project lives in its own folder under `projects/`, named for the project slug, and contains four standard files. This note holds the full mechanics: the file-purpose tables, the rules for working with project files, projects with no finish line, the new-project workflow, and the per-session update checklist. The one-line overview and the two load-bearing rules (read `README.md` first; keep files current) stay inline in `CLAUDE.md`.
 
 ## Standard Files
 
@@ -39,12 +39,27 @@ Every project folder contains these files:
 6. **Move external links to `references.md`** rather than accumulating them in README.md. Create the file on first use.
 7. **Project-specific files** can be added freely. Reference them from README.md with relative links.
 
+## Projects With No Finish Line — `## Standard to Maintain`
+
+Some projects are recurring duties: a weekly review, a standing monitoring pass, an ongoing membership. They generate work indefinitely and can never be `done`. **The discriminator is a README heading, not the status.** A project README carries **exactly one** of:
+
+- **`## Goals`** — the project terminates. Chase it toward its goals, and treat having no open task as stalled.
+- **`## Standard to Maintain`** — the project is a standing duty. The section answers *what does "in good shape" look like?* **Never chase it for an outcome; having no open task is normal for it, not stalled.**
+
+A README with neither heading has not been classified yet. That is a gap to fix, not a third kind of project.
+
+**Why a heading and not a status value.** `status` is a lifecycle axis: where the work sits right now (`defining` → `in-progress` → `done` | `on-hold`). Whether a project has a finish line is a permanent property, not a position in that lifecycle. Folding it into `status` would lose the ability to say a standing duty is paused for a month (`on-hold`) or has been dropped (`done`). Standing projects keep the normal status vocabulary.
+
+**Where they sit in the index.** In `projects/TODO.md`, standing projects go in the `## Standing Commitments` table, below `## Active Projects`, with the same columns. When picking what to work on next, only the Active Projects table is read (see [`selecting-next-project.md`](selecting-next-project.md)): a recurring duty is not pickable work. Standing projects are still reviewed on their own cadence; that is their point. An index created before this table existed may lack it; add the heading and an empty table the first time a standing project needs a row. `cg status` counts a project as standing when its row is in that table or its README carries `## Standard to Maintain`, and reports standing projects apart from the active count.
+
+**The guard.** If you can write a real finish line, it is a normal project. `## Standard to Maintain` is not a way to avoid defining goals, and it is not for long-running work that does eventually end.
+
 ## Creating a New Project
 
 1. Create the folder: `projects/{slug}/`
 2. Copy the 4 standard templates (`README.md`, `decisions.md`, `todo.md`, `log.md`) from `templates/project/` into the folder
-3. Fill in README.md with project details
-4. Add the project to `projects/TODO.md`
+3. Fill in README.md with project details. Keep `## Goals` if the project terminates; replace it with `## Standard to Maintain` if it is a recurring duty with no finish line (see above)
+4. Add the project to `projects/TODO.md`: the `## Active Projects` table, or `## Standing Commitments` for a project whose README carries `## Standard to Maintain`
 5. Create an initial entry in `log.md` recording when and why the project was started
 
 ## Keeping Project Files Up to Date
