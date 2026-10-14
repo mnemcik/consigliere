@@ -333,3 +333,42 @@ func TestIndexRowsIntoAnEmptyIndex(t *testing.T) {
 		t.Errorf("index:\n%q", got)
 	}
 }
+
+// A note the user kept is described as it is on disk, and one the user
+// deleted gets no row.
+func TestIndexRowsDescribeTheUsersNote(t *testing.T) {
+	m := notesManifest(
+		CopyContribution{Src: "notes/a.md", Dest: "notes/demo-a.md"},
+		CopyContribution{Src: "notes/b.md", Dest: "notes/demo-b.md"},
+	)
+	clone := makeClone(t, m)
+	writeSrc(t, clone, "notes/a.md", "# Upstream A\n")
+	writeSrc(t, clone, "notes/b.md", "# Upstream B\n")
+	root := indexWorkspace(t, indexBase)
+	l, err := ApplyWith(root, clone, m, ApplyOptions{NotesIndex: DefaultNotesIndex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "notes", "demo-a.md"), []byte("# Mine A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, "notes", "demo-b.md")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ApplyWith(root, clone, m, ApplyOptions{Old: l, NotesIndex: DefaultNotesIndex}); err != nil {
+		t.Fatal(err)
+	}
+	got := readIndex(t, root)
+	if !strings.Contains(got, "- [Mine A](demo-a.md)") || strings.Contains(got, "demo-b.md") {
+		t.Errorf("index:\n%s", got)
+	}
+}
+
+func TestIndexRowEscapesLinkCharacters(t *testing.T) {
+	if got := indexRow("C#-guide?.md", "T", ""); got != "- [T](C%23-guide%3F.md)" {
+		t.Errorf("row = %q", got)
+	}
+	if !linkTargets("- [T](C%23-guide%3F.md)\n", "notes")["notes/C#-guide?.md"] {
+		t.Error("an escaped link is not recognised as the note")
+	}
+}

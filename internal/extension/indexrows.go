@@ -79,7 +79,20 @@ func applyIndexRows(root, indexRel string, m *Manifest, plans []copyPlan) (*Ledg
 		if linked[dest] {
 			continue
 		}
-		rows = append(rows, indexRow(indexLink(indexRel, dest), noteTitle(p.data, dest), noteIndexText(m, p.dest)))
+		data := p.data
+		if p.decision == copyKeep || p.decision == copyPending {
+			// The user's file stays, so the row describes it; a note the
+			// user deleted gets no row.
+			disk, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(dest))) //nolint:gosec // manifest dest, validated inside the workspace
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return nil, err
+			}
+			data = disk
+		}
+		rows = append(rows, indexRow(indexLink(indexRel, dest), noteTitle(data, dest), noteIndexText(m, p.dest)))
 	}
 
 	var updated string
@@ -197,7 +210,12 @@ func noteIndexText(m *Manifest, dest string) string {
 	return ""
 }
 
+// linkEscaper encodes the characters that would end a link's path: "#" and
+// "?" start a fragment or query, and "%" starts an escape.
+var linkEscaper = strings.NewReplacer("%", "%25", "#", "%23", "?", "%3F")
+
 func indexRow(link, title, text string) string {
+	link = linkEscaper.Replace(link)
 	if strings.ContainsAny(link, " ()") {
 		link = "<" + link + ">"
 	}
