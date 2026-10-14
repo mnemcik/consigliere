@@ -307,6 +307,9 @@ their own heading, so removal is exact and extensions never share a block:
   guess where the block ends. Fix or delete the markers and run it again.
 - **Line endings:** an index whose every line ends in CRLF is written back as
   CRLF. Any other index is edited as it is.
+- **A note you changed** is listed as it is on disk, and one you deleted gets
+  no row. `cg extension resolve` doesn't touch the index, so after it the row
+  catches up on the next update or reinstall.
 - The block is cg's: update rewrites it and remove deletes it, so put your own
   rows outside it. The ledger records it under `indexRows`.
 
