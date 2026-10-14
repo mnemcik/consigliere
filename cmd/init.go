@@ -142,50 +142,15 @@ func runInit(cmd *cobra.Command, args []string) error {
 		skipped = append(skipped, s...)
 	}
 
-	// Create .cg.json. On re-init (--force) preserve the installed extensions
-	// list so the rewrite doesn't drop it; re-cloned workspaces re-install them
-	// below.
+	// Create .cg.json. On re-init (--force) the workspace's own settings are
+	// carried over (see initConfig); re-cloned workspaces re-install the
+	// recorded extensions below.
 	var priorExtensions []workspace.ExtensionRef
-	var priorSession *workspace.SessionConfig
 	if cfg != nil {
 		priorExtensions = cfg.Extensions
-		priorSession = cfg.Session
 	}
 	homeDir, _ := os.UserHomeDir()
-	// Seed the public registry under the built-in "cg" alias so `cg extension
-	// install cg/<name>` works out of the box. On re-init preserve any
-	// user-configured registries, only adding "cg" if it's missing.
-	registries := map[string]string{}
-	if cfg != nil {
-		for alias, src := range cfg.Registries {
-			registries[alias] = src
-		}
-	}
-	if _, ok := registries[extension.BuiltinRegistryAlias]; !ok {
-		registries[extension.BuiltinRegistryAlias] = extension.DefaultRegistryURL
-	}
-	cgJSON := workspace.Config{
-		Type:    workspace.TypeConsigliere,
-		Version: Version,
-		Indexes: map[string]string{
-			dirProjects: indexProjectsPath,
-			dirAreas:    "areas/INDEX.md",
-			dirIdeas:    "ideas/BACKLOG.md",
-			dirNotes:    "notes/INDEX.md",
-			dirInsights: "insights/DRAFTS.md",
-		},
-		// Point the session-start gate at the editable template shipped under
-		// .claude/cg/ so customizing the wording needs no binary rebuild.
-		// statuslineUpstream is seeded from the user's prior statusLine command
-		// so the badge layers on top of their existing status line rather than
-		// replacing it with a bare badge.
-		Session: &workspace.SessionConfig{
-			GateTemplate:       gateTemplateRel,
-			StatuslineUpstream: detectStatuslineUpstream(priorSession, homeDir),
-		},
-		Extensions: priorExtensions,
-		Registries: registries,
-	}
+	cgJSON := initConfig(cfg, homeDir)
 	data, _ := json.MarshalIndent(cgJSON, "", "  ")
 	data = append(data, '\n')
 	if err := os.WriteFile(filepath.Join(dir, workspace.ConfigFile), data, 0o644); err != nil {
@@ -437,6 +402,62 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// initConfig builds the .cg.json that `cg init` writes. prior is the existing
+// config on re-init (--force), nil on a fresh init. Type and version are
+// always rewritten; every setting the workspace configured is kept, and only
+// missing ones get the defaults: index paths per key, the session gate
+// template, and the built-in "cg" registry alias.
+func initConfig(prior *workspace.Config, homeDir string) workspace.Config {
+	var c workspace.Config
+	if prior != nil {
+		c = *prior
+	}
+	c.Type = workspace.TypeConsigliere
+	c.Version = Version
+
+	indexes := map[string]string{
+		dirProjects: indexProjectsPath,
+		dirAreas:    "areas/INDEX.md",
+		dirIdeas:    "ideas/BACKLOG.md",
+		dirNotes:    "notes/INDEX.md",
+		dirInsights: "insights/DRAFTS.md",
+	}
+	for key, path := range c.Indexes {
+		if path != "" {
+			indexes[key] = path
+		}
+	}
+	c.Indexes = indexes
+
+	// Point the session-start gate at the editable template shipped under
+	// .claude/cg/ so customizing the wording needs no binary rebuild.
+	// statuslineUpstream is seeded from the user's prior statusLine command
+	// so the badge layers on top of their existing status line rather than
+	// replacing it with a bare badge.
+	var session workspace.SessionConfig
+	if c.Session != nil {
+		session = *c.Session
+	}
+	if session.GateTemplate == "" {
+		session.GateTemplate = gateTemplateRel
+	}
+	session.StatuslineUpstream = detectStatuslineUpstream(c.Session, homeDir)
+	c.Session = &session
+
+	// Seed the public registry under the built-in "cg" alias so `cg extension
+	// install cg/<name>` works out of the box. On re-init preserve any
+	// user-configured registries, only adding "cg" if it's missing.
+	registries := map[string]string{}
+	for alias, src := range c.Registries {
+		registries[alias] = src
+	}
+	if _, ok := registries[extension.BuiltinRegistryAlias]; !ok {
+		registries[extension.BuiltinRegistryAlias] = extension.DefaultRegistryURL
+	}
+	c.Registries = registries
+	return c
 }
 
 // detectStatuslineUpstream returns the statuslineUpstream command to record in a
