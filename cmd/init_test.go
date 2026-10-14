@@ -372,7 +372,7 @@ func TestInitForcePreservesConfiguredSettings(t *testing.T) {
 	custom := "{\r\n" +
 		`  "type": "consigliere", "version": "0.0.1",` + "\r\n" +
 		`  "indexes": {"projects": "work/PROJECTS.md", "notes": "kb/NOTES.md"},` + "\r\n" +
-		`  "worktree": {"root": "../wt", "branchPrefix": "s/", "landingStrategy": "local"},` + "\r\n" +
+		`  "worktree": {"root": "../wt", "branchPrefix": "s/", "landingBranch": "trunk", "landingStrategy": "local"},` + "\r\n" +
 		`  "session": {"activeWindowMin": 7, "pruneDays": 3, "gateTemplate": "my/gate.md", "badgeFormat": "{project}", "statuslineUpstream": "bash ~/mine.sh"},` + "\r\n" +
 		`  "pushPolicy": {"source": "my/policy.json"},` + "\r\n" +
 		`  "registries": {"work": "https://example.com/index.json"},` + "\r\n" +
@@ -409,7 +409,7 @@ func TestInitForcePreservesConfiguredSettings(t *testing.T) {
 	if !reflect.DeepEqual(got.Indexes, wantIdx) {
 		t.Errorf("indexes = %v, want %v", got.Indexes, wantIdx)
 	}
-	wantWT := workspace.WorktreeConfig{Root: "../wt", BranchPrefix: "s/", LandingStrategy: "local"}
+	wantWT := workspace.WorktreeConfig{Root: "../wt", BranchPrefix: "s/", LandingBranch: "trunk", LandingStrategy: "local"}
 	if got.Worktree == nil || *got.Worktree != wantWT {
 		t.Errorf("worktree = %+v, want %+v", got.Worktree, wantWT)
 	}

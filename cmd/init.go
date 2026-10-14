@@ -151,6 +151,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	homeDir, _ := os.UserHomeDir()
 	cgJSON := initConfig(cfg, homeDir)
+	// Written before reinstallMissingExtensions below: re-installed extensions
+	// read the configured notes index from the file on disk (notesIndexRel).
 	data, _ := json.MarshalIndent(cgJSON, "", "  ")
 	data = append(data, '\n')
 	if err := os.WriteFile(filepath.Join(dir, workspace.ConfigFile), data, 0o644); err != nil {
