@@ -20,10 +20,15 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # Pinned, not `latest`: a new golangci-lint release can add or change
+      # checks and fail Lint on every PR at once (it did on 2026-09-24).
+      # Dependabot bumps the action (@v9) but not this input, so bump it by
+      # hand, in both steps below and in CONTRIBUTING.md, and fix any new
+      # findings in the same PR.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.14.0
 
       # The _windows.go files only compile for Windows, so lint them there too.
       - name: golangci-lint (Windows build)
@@ -31,7 +36,7 @@ jobs:
         env:
           GOOS: windows
         with:
-          version: latest
+          version: v2.14.0
 
   test:
     name: Test

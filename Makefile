@@ -18,6 +18,7 @@ test: ## Run tests
 test-short: ## Run tests (short mode, no race detector)
 	go test -short ./...
 
+# Uses the golangci-lint on PATH. CI pins v2.14.0; see CONTRIBUTING.md to install it.
 lint: ## Run golangci-lint
 	golangci-lint run ./...
 

@@ -7,7 +7,14 @@ Thank you for considering contributing to Consigliere.
 ### Prerequisites
 
 - Go 1.25+ (`go version`) — matches `go.mod`
-- golangci-lint (`brew install golangci-lint` or see [install docs](https://golangci-lint.run/welcome/install/))
+- golangci-lint **v2.14.0**, the version CI pins (in `.github/workflows/ci.yml`). Another version can report different findings. Install that version with:
+
+  ```bash
+  curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.14.0
+  golangci-lint --version
+  ```
+
+  This installs into `$(go env GOPATH)/bin`, which must be on your `PATH`. On Windows, run it in Git Bash. `brew install golangci-lint` installs the latest release, which may not match. See the [install docs](https://golangci-lint.run/welcome/install/) for other options.
 
 ### Setup
 

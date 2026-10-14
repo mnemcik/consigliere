@@ -29,6 +29,9 @@ type project struct {
 	Status string
 	Areas  string
 	Folder string
+	// Section is the text of the nearest `## ` heading above the row's
+	// table (e.g. "Active Projects"), or "" when the table has none.
+	Section string
 }
 
 func runMatch(cmd *cobra.Command, args []string) error {
@@ -163,9 +166,13 @@ func runMatch(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// parseProjectIndex reads a markdown table from the project index file
+// parseProjectIndex reads the project rows from every markdown table in the
+// project index file. Each table's own header and separator rows are skipped,
+// so an index with several tables (e.g. `## Active Projects` followed by
+// `## Standing Commitments`) yields only real project rows, each tagged with
+// the `## ` section it sits under.
 func parseProjectIndex(path string) ([]project, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // read-only; the index path comes from the workspace's own .cg.json
 	if err != nil {
 		return nil, err
 	}
@@ -175,13 +182,20 @@ func parseProjectIndex(path string) ([]project, error) {
 	scanner := bufio.NewScanner(f)
 
 	// Table row pattern: | # | Name | Status | Areas | Folder |
-	// We look for rows with at least 5 pipe-separated fields after the header
+	// We look for rows with at least 5 pipe-separated fields after the header.
+	// A markdown table cannot contain a non-table line, so any other line
+	// ends the current table and the next one starts with its own header.
 	headerFound := false
 	separatorFound := false
+	section := ""
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if !strings.HasPrefix(line, "|") {
+			headerFound, separatorFound = false, false
+			if strings.HasPrefix(line, "## ") {
+				section = strings.TrimSpace(strings.TrimPrefix(line, "## "))
+			}
 			continue
 		}
 
@@ -200,11 +214,7 @@ func parseProjectIndex(path string) ([]project, error) {
 		if !separatorFound {
 			if strings.Contains(cells[0], "---") {
 				separatorFound = true
-				continue
 			}
-		}
-
-		if !separatorFound {
 			continue
 		}
 
@@ -219,10 +229,11 @@ func parseProjectIndex(path string) ([]project, error) {
 		folder = extractFolderSlug(folder)
 
 		projects = append(projects, project{
-			Name:   name,
-			Status: status,
-			Areas:  areas,
-			Folder: folder,
+			Name:    name,
+			Status:  status,
+			Areas:   areas,
+			Folder:  folder,
+			Section: section,
 		})
 	}
 

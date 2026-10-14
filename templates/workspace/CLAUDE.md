@@ -119,9 +119,9 @@ For the full area rules (multi-area items, creating a new area, the `Last review
 
 Each project lives in its own folder under `projects/`, named for the project slug (e.g., `projects/my-project/`). Every folder has four standard files — `README.md` (current state; authoritative), `decisions.md` (append-only decisions log), `todo.md` (next actions), `log.md` (chronological activity, newest first). Optional: `references.md` (external links) and freeform project-specific files.
 
-**Always read `README.md` first** when starting work on a project — it holds the current state. **Keep every project file current** during any session that touches the project; stale project files mislead future sessions.
+**Always read `README.md` first** when starting work on a project — it holds the current state. **Keep every project file current** during any session that touches the project; stale project files mislead future sessions. A README carries `## Goals` (the project terminates) or `## Standard to Maintain` (a recurring duty with no finish line: never chase it for an outcome, and no open task is normal for it, not stalled).
 
-For the file-purpose tables, the rules for working with project files, the Creating-a-New-Project workflow, and the per-session update checklist, load [`notes/project-structure.md`](notes/project-structure.md).
+For the file-purpose tables, the rules for working with project files, projects with no finish line, the Creating-a-New-Project workflow, and the per-session update checklist, load [`notes/project-structure.md`](notes/project-structure.md).
 <!-- cg:section:end=project-structure -->
 
 <!-- cg:section:start=information-propagation -->
@@ -249,7 +249,7 @@ For the per-finding validation checklist, when to push back instead of applying,
 
 For any command that iterates over many entities (bulk permission changes, mass invitations, multi-repo edits, remote-URL rewrites, multi-file rename/`sed` sweeps, `--paginate` API mutations, `for X in $(...)` loops), state **target set + exclusion set + single-sample dry-run + quoting/arity check, then wait for approval** before running the full batch. Threshold: more than ~5 entities, or any set you can't visually enumerate before the command runs.
 
-For the per-step pre-flight, the default exclusion set, the shell-splitting tells, and the reversibility carve-out, load [`notes/bulk-ops-preflight.md`](notes/bulk-ops-preflight.md).
+For the per-step pre-flight, the default exclusion set, the shell-splitting tells, the post-state-first check for re-runnable splices, and the reversibility carve-out, load [`notes/bulk-ops-preflight.md`](notes/bulk-ops-preflight.md).
 <!-- cg:section:end=bulk-ops-preflight -->
 
 <!-- cg:section:start=sharing-projects -->
@@ -284,7 +284,7 @@ When the user asks to review insights (phrases like "review my insights", "go th
 <!-- cg:section:start=selecting-next-project -->
 ## Selecting the Next Project to Work On
 
-When the user asks "what should I work on next?" / "pick a project" (open-ended, not naming a specific project), use the ranked procedure — don't guess. In short: read `projects/TODO.md` top-to-bottom (priority then rank), skip Done/On-hold, skip projects already live in another session per `cg active --slugs`, then confirm the pick before starting. Rank within a priority bucket is **user-owned** — suggest re-ranking but never silently reorder rows.
+When the user asks "what should I work on next?" / "pick a project" (open-ended, not naming a specific project), use the ranked procedure — don't guess. In short: read `projects/TODO.md` top-to-bottom (priority then rank), skip standing projects (the `## Standing Commitments` table, or a README with `## Standard to Maintain`), skip Done/On-hold, skip projects already live in another session per `cg active --slugs`, then confirm the pick before starting. Rank within a priority bucket is **user-owned** — suggest re-ranking but never silently reorder rows.
 
 For the full selection procedure, the `cg active` flags/liveness windows, and when else to consult active-work detection, load [`notes/selecting-next-project.md`](notes/selecting-next-project.md).
 <!-- cg:section:end=selecting-next-project -->
