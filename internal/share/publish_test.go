@@ -442,3 +442,26 @@ func TestPublishCaseOnlyRename(t *testing.T) {
 		t.Errorf("republishing the renamed export must be a no-op: %+v", plan.Projects)
 	}
 }
+
+// Restaging must keep git's check that leaves a CRLF file already stored with
+// CRLF alone, so a republish under core.autocrlf (Git for Windows' default)
+// does not rewrite its line endings.
+func TestPublishKeepsStoredCRLFUnderAutocrlf(t *testing.T) {
+	f := newPublishFixture(t)
+	globalGitConfig(t, "[core]\n\tautocrlf = false\n")
+	first := f.exports(t)
+	first["pilot"].Files["pilot/crlf.md"] = "a\r\nb\r\n"
+	f.publish(t, first)
+
+	globalGitConfig(t, "[core]\n\tautocrlf = true\n")
+	again := f.exports(t)
+	again["pilot"].Files["pilot/crlf.md"] = "a\r\nb\r\n"
+	plan, err := PreparePublish(f.ctx, f.opts(t, again))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plan.Close()
+	if plan.Changed {
+		t.Errorf("an unchanged CRLF file must stay unchanged under core.autocrlf: %+v", plan.Projects)
+	}
+}

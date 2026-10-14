@@ -317,13 +317,7 @@ func (p *PublishPlan) stage(ctx context.Context) error {
 	if err := writeTree(p.Dir, files); err != nil {
 		return err
 	}
-	// Rebuild the index from the new tree rather than update it. On a
-	// case-insensitive filesystem (macOS and Windows by default) git matches
-	// an index entry to a file whatever its letter case, so after a case-only
-	// rename (Case.md to case.md) `add` would keep the old name. An empty
-	// index takes every name as written. The commit still compares against
-	// HEAD, so unchanged files stay unchanged.
-	if _, err := gitx.Run(ctx, p.Dir, "rm", "-r", "-q", "--cached", "--ignore-unmatch", "."); err != nil {
+	if err := unstageCaseRenames(ctx, p.Dir, files); err != nil {
 		return err
 	}
 	// --force: a user's global gitignore must not silently drop a published
@@ -344,6 +338,37 @@ func (p *PublishPlan) stage(ctx context.Context) error {
 		}
 	}
 	return p.diff(ctx, &manifest)
+}
+
+// unstageCaseRenames drops each index entry whose path is rendered again in
+// different letter case only (Case.md, now case.md). On a case-insensitive
+// filesystem (macOS and Windows by default) git matches an index entry to a
+// file whatever its case, so `add` would update the old entry and keep the old
+// name. Dropped, the file is added under its new name. Only these entries are
+// dropped: the rest keep their index entries, and with them git's check that
+// leaves a file already stored with CRLF alone under core.autocrlf.
+func unstageCaseRenames(ctx context.Context, dir string, files map[string]string) error {
+	folded := make(map[string]bool, len(files))
+	for f := range files {
+		folded[strings.ToLower(f)] = true
+	}
+	indexed, err := lsFiles(ctx, dir)
+	if err != nil {
+		return err
+	}
+	var stale []string
+	for _, f := range indexed {
+		if _, exact := files[f]; !exact && folded[strings.ToLower(f)] {
+			stale = append(stale, f)
+		}
+	}
+	if len(stale) == 0 {
+		return nil
+	}
+	// --literal-pathspecs: a file name is a path, never a glob.
+	args := append([]string{"--literal-pathspecs", "rm", "-q", "--cached", "--"}, stale...)
+	_, err = gitx.Run(ctx, dir, args...)
+	return err
 }
 
 // diff fills Projects, Removed and Changed from the staged tree.
