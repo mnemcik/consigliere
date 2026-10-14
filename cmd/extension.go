@@ -187,7 +187,7 @@ func reapply(root, manifestDir string, m *extension.Manifest, prevSource string,
 	if err != nil {
 		return res, fmt.Errorf("reading ledger for %q: %w", m.Name, err)
 	}
-	opts := extension.ApplyOptions{Old: old, Force: force}
+	opts := extension.ApplyOptions{Old: old, Force: force, NotesIndex: notesIndexRel(root)}
 	if old != nil && old.Files == nil && prevSource != "" {
 		opts.LegacyBases = extension.LegacyBases(prevSource)
 		opts.LegacyCertain = prevCertain
@@ -214,6 +214,23 @@ func reapply(root, manifestDir string, m *extension.Manifest, prevSource string,
 	}
 	res.Pending = ledger.Pending
 	return res, nil
+}
+
+// notesIndexRel is the workspace's notes index, as .cg.json names it, or the
+// default one. A path that leaves the workspace gives "", so no rows are
+// written.
+func notesIndexRel(root string) string {
+	rel := extension.DefaultNotesIndex
+	if cfg, err := workspace.Detect(root); err == nil && cfg != nil {
+		if p, ok := cfg.Indexes[dirNotes]; ok {
+			rel = p
+		}
+	}
+	clean, err := extension.CleanSubdir(rel)
+	if err != nil {
+		return ""
+	}
+	return filepath.ToSlash(clean) // the ledger records slash paths
 }
 
 // previousSource is the manifest dir of the version a workspace entry records,

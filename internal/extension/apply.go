@@ -49,6 +49,9 @@ type ApplyOptions struct {
 	// Force overwrites an existing, unrecorded file that differs from the
 	// extension's version instead of refusing.
 	Force bool
+	// NotesIndex is the workspace-relative notes index the notes' rows go in
+	// (see indexrows.go). Empty writes no rows.
+	NotesIndex string
 }
 
 func (o *ApplyOptions) base(dest string) fileBase {
@@ -133,6 +136,11 @@ func ApplyWith(root, cloneDir string, m *Manifest, opts ApplyOptions) (*Ledger, 
 	if err := capture(gitignoreName); err != nil {
 		return nil, err
 	}
+	if opts.NotesIndex != "" {
+		if err := capture(opts.NotesIndex); err != nil {
+			return nil, err
+		}
+	}
 	for _, n := range m.Contributes.Notes {
 		if err := capture(n.Dest); err != nil {
 			return nil, err
@@ -155,7 +163,7 @@ func ApplyWith(root, cloneDir string, m *Manifest, opts ApplyOptions) (*Ledger, 
 	}
 
 	l := &Ledger{Name: m.Name, Version: m.Version}
-	if err := applyAll(root, cloneDir, m, l, plans); err != nil {
+	if err := applyAll(root, cloneDir, m, l, plans, opts.NotesIndex); err != nil {
 		snap.restore() // workspace returns to its pre-apply state
 		return nil, err
 	}
@@ -164,7 +172,7 @@ func ApplyWith(root, cloneDir string, m *Manifest, opts ApplyOptions) (*Ledger, 
 
 // applyAll performs the contribution steps, recording each into l. Callers wrap
 // it with a snapshot so a mid-step failure can be rolled back.
-func applyAll(root, cloneDir string, m *Manifest, l *Ledger, plans []copyPlan) error {
+func applyAll(root, cloneDir string, m *Manifest, l *Ledger, plans []copyPlan, notesIndex string) error {
 	for _, s := range m.Contributes.ClaudeMDSections {
 		if e := applySection(root, cloneDir, m.Name, s); e != nil {
 			return e
@@ -204,6 +212,13 @@ func applyAll(root, cloneDir string, m *Manifest, l *Ledger, plans []copyPlan) e
 		} else {
 			l.Notes = append(l.Notes, p.dest)
 		}
+	}
+	row, err := applyIndexRows(root, notesIndex, m, plans)
+	if err != nil {
+		return fmt.Errorf("notes index: %w", err)
+	}
+	if row != nil {
+		l.IndexRows = append(l.IndexRows, *row)
 	}
 	for _, h := range m.Contributes.Hooks {
 		wrapperRel, e := applyHook(root, cloneDir, m.Name, h)
@@ -263,6 +278,9 @@ func Reverse(root string, l *Ledger) (kept []string, err error) {
 		}
 	}
 	if err := reverseGitignore(root, l); err != nil {
+		return kept, err
+	}
+	if err := reverseIndexRows(root, l); err != nil {
 		return kept, err
 	}
 	for _, rel := range append(append([]string(nil), l.Notes...), l.Templates...) {
@@ -338,9 +356,16 @@ func OrphanLedger(old, next *Ledger) *Ledger {
 			orphan.Gitignore = append(orphan.Gitignore, id)
 		}
 	}
+	// A block in an index the new install wrote none to: the extension no
+	// longer ships notes, or .cg.json now names a different index.
+	for _, r := range old.IndexRows {
+		if !indexRowsContain(next.IndexRows, r) {
+			orphan.IndexRows = append(orphan.IndexRows, r)
+		}
+	}
 	if len(orphan.ClaudeMDSections) == 0 && len(orphan.Notes) == 0 &&
 		len(orphan.Templates) == 0 && len(orphan.Hooks) == 0 && len(orphan.GitHooks) == 0 &&
-		len(orphan.Gitignore) == 0 {
+		len(orphan.Gitignore) == 0 && len(orphan.IndexRows) == 0 {
 		return nil
 	}
 	return orphan
@@ -349,6 +374,15 @@ func OrphanLedger(old, next *Ledger) *Ledger {
 func containsStr(s []string, want string) bool {
 	for _, v := range s {
 		if v == want {
+			return true
+		}
+	}
+	return false
+}
+
+func indexRowsContain(rs []LedgerIndexRow, want LedgerIndexRow) bool {
+	for _, r := range rs {
+		if r == want {
 			return true
 		}
 	}

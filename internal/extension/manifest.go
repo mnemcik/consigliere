@@ -66,10 +66,12 @@ type SectionContribution struct {
 }
 
 // CopyContribution copies Src (extension-relative) to Dest (workspace-relative).
-// Used for both notes and templates.
+// Used for both notes and templates. Index, for a note only, is the one-line
+// description on its row in the workspace notes index.
 type CopyContribution struct {
-	Src  string `json:"src"`
-	Dest string `json:"dest"`
+	Src   string `json:"src"`
+	Dest  string `json:"dest"`
+	Index string `json:"index,omitempty"`
 }
 
 // HookContribution installs the bash Wrapper into .claude/hooks/, registers it
@@ -157,6 +159,9 @@ func (m *Manifest) Validate() error {
 		if err := copyPathsInside(c); err != nil {
 			return fmt.Errorf("notes[%d]: %w", i, err)
 		}
+		if strings.ContainsAny(c.Index, "\r\n") {
+			return fmt.Errorf("notes[%d]: index must be a single line", i)
+		}
 	}
 	for i, h := range m.Contributes.Hooks {
 		if h.Event == "" || h.Wrapper == "" || h.Command == "" {
@@ -180,6 +185,9 @@ func (m *Manifest) Validate() error {
 		}
 		if err := copyPathsInside(c); err != nil {
 			return fmt.Errorf("templates[%d]: %w", i, err)
+		}
+		if c.Index != "" {
+			return fmt.Errorf("templates[%d]: index is only for notes", i)
 		}
 	}
 	gitHookDests := map[string]int{}

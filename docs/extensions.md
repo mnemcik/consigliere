@@ -135,7 +135,8 @@ forbids cross-extension dependencies (declare none).
       { "id": "credentials-1password", "path": "fragments/credentials.md" }
     ],
     "notes": [
-      { "src": "notes/credentials-policy.md", "dest": "notes/credentials-policy.md" }
+      { "src": "notes/credentials-policy.md", "dest": "notes/credentials-policy.md",
+        "index": "how to handle credentials through 1Password" }
     ],
     "hooks": [
       { "event": "SessionStart", "wrapper": "hooks/credentials-gate.sh", "command": "cg-1password gate" }
@@ -176,11 +177,11 @@ forbids cross-extension dependencies (declare none).
    fragments — and an extension can never clobber a framework section.
    Re-install/update replaces the section body in place; remove deletes the block.
 
-2. **`notes`** — `[{ src, dest }]`. Copies `src` (relative to the extension repo)
-   to `dest` (workspace-relative, conventionally under `notes/`). If a
-   `notes/INDEX.md` exists, a pointer row is added under an
-   `<!-- ext:<name> -->`-marked region so removal is exact. A copied note is
-   the user's to edit: see [Files you change](#files-you-change).
+2. **`notes`** — `[{ src, dest, index? }]`. Copies `src` (relative to the
+   extension repo) to `dest` (workspace-relative, conventionally under
+   `notes/`). A copied note is the user's to edit: see
+   [Files you change](#files-you-change). The notes are also listed in the
+   workspace notes index: see [Notes index rows](#notes-index-rows).
 
 3. **`hooks`** — `[{ event, wrapper, command }]`. Installs the bash wrapper at
    `wrapper` into `.claude/hooks/`, registers it for `event` in
@@ -196,7 +197,7 @@ forbids cross-extension dependencies (declare none).
 
 5. **`templates`** — `[{ src, dest }]`. Copies template files into the
    workspace `templates/` tree (same copy semantics as notes, including
-   [Files you change](#files-you-change), without the INDEX pointer).
+   [Files you change](#files-you-change), without the index rows).
 
 6. **`git-hooks`** — `[{ hook, script }]`. Copies the executable `script` to
    `.cg/git-hooks/<hook>.d/<name>-<base>` in the workspace, where it is
@@ -266,13 +267,43 @@ forbids cross-extension dependencies (declare none).
 | `cg extension install … --ref <tag\|branch\|commit>` | Install at that ref. Default: the default branch. |
 | `cg extension install <repo-url> --path <subdir>` | Install a co-located extension whose manifest lives in `<subdir>` of a monorepo. Direct installs only; registry entries carry their own `path`. See [Co-located extensions](#co-located-extensions-monorepo). |
 | `cg extension list [--json]` | List installed extensions for the current workspace: name, version, source, installed-at. |
-| `cg extension remove <name> [--purge]` | Reverse every contribution recorded in the workspace ledger (delete the `ext:<name>:section` block, copied notes/templates that are still as cg wrote them, hook wrapper + settings entry, git-hook scripts and any dispatcher left with nothing to run, INDEX rows), drop the `.cg.json` entry, delete the ledger. The store's trees are shared, so they stay; `--purge` deletes only a legacy name-keyed clone. |
+| `cg extension remove <name> [--purge]` | Reverse every contribution recorded in the workspace ledger (delete the `ext:<name>:section` block, copied notes/templates that are still as cg wrote them, hook wrapper + settings entry, git-hook scripts and any dispatcher left with nothing to run, the notes index block), drop the `.cg.json` entry, delete the ledger. The store's trees are shared, so they stay; `--purge` deletes only a legacy name-keyed clone. |
 | `cg extension update [<name>]` | Move a **single-repo** extension to its latest tag (or its default branch when untagged), record the new commit, then re-apply contributions (replace-in-place). A **co-located** (subdir) extension instead tracks the default branch and versions from its manifest — see [Co-located extensions](#co-located-extensions-monorepo). No `<name>` updates all installed extensions. Copied notes and templates you changed are kept: see [Files you change](#files-you-change). |
 | `cg extension pending [--json]` | List copied files that both you and the extension changed, which update left as yours. |
 | `cg extension diff <name> <file>` | For a pending file, show the extension's change and yours, each against what cg installed, and whether a three-way merge is clean. |
 | `cg extension resolve <name> <file> --merge\|--keep\|--take` | Settle a pending file: merge the extension's change into yours (refused unless the merge is clean), keep yours, or take the extension's. Each makes the extension's version the new baseline. |
 
 **Every workspace file is written atomically.** Install, update, remove and rollback write each file (copied notes, templates, hook wrappers, git-hook scripts, `CLAUDE.md`, `.gitignore`, `settings.json`, the ledger, `.cg.json`) to a temp file in the same directory and rename it into place. A hook or shim run by a parallel session therefore sees the old file or the new one, never a half-written one. A failed write leaves the previous file intact. Copied files get a fixed mode (`0644`, or `0755` for hook and git-hook scripts); `CLAUDE.md`, `.gitignore`, `settings.json`, the ledger and `.cg.json` keep the mode they have, and a new one gets `0644` regardless of the umask. A file without its owner write bit is refused rather than replaced. This checks the mode bits, not access rights, so it also refuses root, and it doesn't catch a writable-looking file owned by someone else. A symlink is followed, so its target is replaced and the link survives. Hard links to a replaced file keep the old content.
+
+### Notes index rows
+
+When the workspace has a notes index, install lists the extension's notes in
+it. The index is the file `.cg.json` names under `indexes.notes`, or
+`notes/INDEX.md` when it names none. With no index file, nothing is written
+and none is created.
+
+The rows go in one block per extension, appended at the end of the index under
+their own heading, so removal is exact and extensions never share a block:
+
+```markdown
+<!-- ext:1password:index:start -->
+## From the 1password extension
+
+- [Credentials & Secrets — 1Password in the Loop](credentials-policy.md) — how to handle credentials through 1Password
+<!-- ext:1password:index:end -->
+```
+
+- **Link text** is the note's frontmatter `title`, else its first `# ` heading,
+  else its file name.
+- **Description**, after the dash, is the optional one-line `index` field of
+  the note's manifest entry. Without it the row is the link alone.
+- **A note the index already links to**, anywhere outside this block, gets no
+  row, so a row you placed by hand stays the only one. With every note linked,
+  the block is removed.
+- The block is cg's: update rewrites it and remove deletes it, so put your own
+  rows outside it. The ledger records it under `indexRows`.
+
+Templates get no rows.
 
 ### Files you change
 
@@ -382,7 +413,7 @@ diff. Not user-edited.
   "hooks": [{ "event": "SessionStart", "wrapper": ".claude/hooks/credentials-gate.sh" }],
   "templates": ["templates/credential-request.md"],
   "subcommands": [{ "namespace": "secret", "binary": "cg-1password" }],
-  "indexRows": [{ "file": "notes/INDEX.md", "marker": "ext:1password" }],
+  "indexRows": [{ "file": "notes/INDEX.md", "marker": "ext:1password:index" }],
   "gitHooks": [".cg/git-hooks/post-commit.d/1password-check.sh"],
   "gitignore": ["1password-cache"],
   // the git blob id of each copied file as cg last wrote it (see Files you change)

@@ -64,6 +64,18 @@ func TestValidateRejects(t *testing.T) {
 			"invalid id",
 		},
 		{
+			"multi-line note index",
+			Manifest{Manifest: 1, Name: "a", Version: "1.0.0", Description: "d",
+				Contributes: Contributions{Notes: []CopyContribution{{Src: "n.md", Dest: "notes/n.md", Index: "one\ntwo"}}}},
+			"single line",
+		},
+		{
+			"template index",
+			Manifest{Manifest: 1, Name: "a", Version: "1.0.0", Description: "d",
+				Contributes: Contributions{Templates: []CopyContribution{{Src: "t.md", Dest: "templates/t.md", Index: "x"}}}},
+			"only for notes",
+		},
+		{
 			"bad gitignore id",
 			Manifest{Manifest: 1, Name: "a", Version: "1.0.0", Description: "d",
 				Contributes: Contributions{Gitignore: []SectionContribution{{ID: "Bad ID", Path: "p"}}}},
