@@ -249,7 +249,7 @@ For the per-finding validation checklist, when to push back instead of applying,
 
 For any command that iterates over many entities (bulk permission changes, mass invitations, multi-repo edits, remote-URL rewrites, multi-file rename/`sed` sweeps, `--paginate` API mutations, `for X in $(...)` loops), state **target set + exclusion set + single-sample dry-run + quoting/arity check, then wait for approval** before running the full batch. Threshold: more than ~5 entities, or any set you can't visually enumerate before the command runs.
 
-For the per-step pre-flight, the default exclusion set, the shell-splitting tells, and the reversibility carve-out, load [`notes/bulk-ops-preflight.md`](notes/bulk-ops-preflight.md).
+For the per-step pre-flight, the default exclusion set, the shell-splitting tells, the post-state-first check for re-runnable splices, and the reversibility carve-out, load [`notes/bulk-ops-preflight.md`](notes/bulk-ops-preflight.md).
 <!-- cg:section:end=bulk-ops-preflight -->
 
 <!-- cg:section:start=sharing-projects -->
