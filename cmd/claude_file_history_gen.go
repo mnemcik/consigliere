@@ -16,6 +16,7 @@ var claudeFileHistory = map[string][]string{
 		"0a90b399c4bad36a910dd7db62430711a1a956ad7b33dee06b21ad597b86b435",
 	},
 	"skills/wrap/SKILL.md": {
+		"0e010d8d5d5f66ad2ff6ee69093a4ed11f48cbe6feb4c8c7e7a4ccf0f2041778",
 		"168d1dca521f1c34cabd54fa2ef974778de5682d3f7da979bf3815f95b6f069a",
 		"3db3643ca0ff9c8ef90d857c7171a575e96f437d6be7174fe6f146a43f08c0cc",
 		"703ea036944ca37040ce9eb224ff3a1de2eb88aadd72cbd929156d9ea880e7b4",
