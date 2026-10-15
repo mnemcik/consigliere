@@ -34,7 +34,7 @@ Every project folder contains these files:
 1. **Always read `README.md` first** when starting work on a project. It has the current state.
 2. **Keep `README.md` concise.** It should answer "what is this project and where does it stand" — nothing more. No decision history, no session logs, no link collections.
 3. **Record every decision in `decisions.md`**, not in README.md. Use the structured format with status. When a decision is superseded, update the old entry's status to `superseded` and add a `Superseded by: DEC-XXX` line — do not delete old decisions.
-4. **Update `todo.md`** whenever new actions are identified or completed. This is the first place to look for "what's next" on a project.
+4. **Update `todo.md`** whenever new actions are identified or completed. This is the first place to look for "what's next" on a project. When a task is done, close **every** open item that describes it — search the project folder for its key terms, since the same task is often recorded more than once — and before adding an item, check that none already covers it.
 5. **Log session activity in `log.md`** at the end of any session that produced meaningful progress, findings, or outcomes for the project. Keep entries brief — bullet points, not essays.
 6. **Move external links to `references.md`** rather than accumulating them in README.md. Create the file on first use.
 7. **Project-specific files** can be added freely. Reference them from README.md with relative links.
@@ -68,7 +68,7 @@ Claude MUST keep project files current during every session that touches a proje
 
 - **README.md**: Update status, scope, stakeholders, or dependencies if any changed during the session.
 - **decisions.md**: Append any decisions made. Mark superseded decisions.
-- **todo.md**: Check off completed items. Add new items discovered during the session.
+- **todo.md**: Check off completed items — every copy of each, including checklists in side files. Add new items discovered during the session, unless an existing item already covers them.
 - **log.md**: Add a dated entry summarizing what was done or learned.
 - **references.md**: Add any new external links encountered.
 
