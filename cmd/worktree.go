@@ -153,8 +153,8 @@ direct-to-main (default): pushes HEAD → origin/<landingBranch>; on a non-ff
 rejection it rebases onto the landing branch and retries. A rebase conflict
 leaves the rebase in progress and exits 3. Prints the landed SHA on success.
 If the remote becomes unreachable after the push succeeded, the land still
-succeeds but warns "push succeeded; could not verify" with the command that
-confirms it.
+exits 0 but warns "push succeeded; could not verify" on stderr with the command
+that confirms it, and prints a second stdout line, "unverified", after the SHA.
 
 pr: pushes the session branch and opens a pull request via 'gh'; prints the PR
 URL.
@@ -209,12 +209,24 @@ func runWorktreeLand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	writeLandResult(cmd.OutOrStdout(), res)
+	return nil
+}
+
+// writeLandResult prints what a land produced on stdout: the PR URL for the
+// pr strategy, else the landed SHA. A push that succeeded but could not be
+// verified adds a second line, "unverified", so a script can tell it from a
+// verified land without reading the warning on stderr; the SHA stays the
+// first line.
+func writeLandResult(w io.Writer, res worktree.LandResult) {
 	out := res.SHA
 	if res.Strategy == workspace.StrategyPR {
 		out = res.PRURL
 	}
-	_, _ = fmt.Fprintln(cmd.OutOrStdout(), out)
-	return nil
+	_, _ = fmt.Fprintln(w, out)
+	if res.Unverified {
+		_, _ = fmt.Fprintln(w, "unverified")
+	}
 }
 
 var worktreeRemoveCmd = &cobra.Command{

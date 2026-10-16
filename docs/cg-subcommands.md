@@ -79,6 +79,18 @@ the local `origin/<landingBranch>`, so `merge-base` alone passes without asking
 the remote. Any other verification failure exits **5** and also says the
 push succeeded.
 
+An unverified land is visible on stdout too, so a script does not have to
+read the warning: the landed SHA is still the first line, and a second line
+reads `unverified`. A verified land prints the SHA alone.
+
+```bash
+out=$(cg worktree land) || exit $?
+sha=$(printf '%s\n' "$out" | head -n 1)
+case $out in
+  *unverified*) echo "pushed $sha, not yet confirmed on the remote" ;;
+esac
+```
+
 ## Remote-free workspaces (`local` strategy)
 
 A workspace with no `origin` remote lands sessions onto its local landing
