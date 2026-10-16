@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mnemcik/consigliere/internal/extension"
+	"github.com/mnemcik/consigliere/internal/gitx"
 	"github.com/mnemcik/consigliere/internal/manifest"
 	"github.com/mnemcik/consigliere/internal/wizard"
 	"github.com/mnemcik/consigliere/internal/workspace"
@@ -328,10 +328,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 		case statErr == nil:
 			skipped = append(skipped, ".git/ (already a git repo)")
 		case errors.Is(statErr, os.ErrNotExist):
-			gitCmd := exec.CommandContext(cmd.Context(), "git", "init")
-			gitCmd.Dir = dir
-			if out, err := gitCmd.CombinedOutput(); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: git init failed: %v\n%s\n", err, out)
+			if _, err := gitx.Run(cmd.Context(), dir, "init"); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: git init failed: %v\n", err)
 			} else {
 				created = append(created, ".git/ (git init)")
 			}

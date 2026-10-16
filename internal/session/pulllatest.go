@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -42,8 +43,7 @@ func PullLatest(ctx context.Context, dir, landingBranch string) PullResult {
 	fetchCtx, cancel := context.WithTimeout(ctx, pullFetchTimeout)
 	defer cancel()
 	if err := gitx.Fetch(fetchCtx, root, "origin", landingBranch); err != nil {
-		return PullResult{SystemMessage: fmt.Sprintf(
-			"Auto-pull: `git fetch` failed (%v). Run `git -C %s fetch origin` manually.", err, root)}
+		return PullResult{SystemMessage: fetchFailureMessage(err, fetchCtx.Err(), root)}
 	}
 
 	remoteRef := "origin/" + landingBranch
@@ -70,6 +70,24 @@ func PullLatest(ctx context.Context, dir, landingBranch string) PullResult {
 	default:
 		return PullResult{SystemMessage: fmt.Sprintf(
 			"WARNING: %s in %s has diverged from %s — auto-pull skipped. Resolve manually.", landingBranch, root, remoteRef)}
+	}
+}
+
+// fetchFailureMessage words a failed auto-pull fetch by its cause, so the
+// session gate says whether the network or the credential needs attention.
+// ctxErr is the fetch context's error: a fetch killed by pullFetchTimeout has
+// no stderr to classify, and a remote that never answers is the usual reason.
+func fetchFailureMessage(err, ctxErr error, root string) string {
+	manual := fmt.Sprintf("`git -C %s fetch origin`", root)
+	switch {
+	case errors.Is(err, gitx.ErrRemoteUnreachable):
+		return fmt.Sprintf("Auto-pull skipped: origin is unreachable (%v). Run %s once the network is back.", err, manual)
+	case errors.Is(err, gitx.ErrRemoteAuth):
+		return fmt.Sprintf("Auto-pull skipped: origin did not accept git's credentials (%v). Run %s once the credential is fixed.", err, manual)
+	case errors.Is(ctxErr, context.DeadlineExceeded):
+		return fmt.Sprintf("Auto-pull skipped: `git fetch` did not finish within %s, so origin is slow or unreachable. Run %s manually.", pullFetchTimeout, manual)
+	default:
+		return fmt.Sprintf("Auto-pull: `git fetch` failed (%v). Run %s manually.", err, manual)
 	}
 }
 

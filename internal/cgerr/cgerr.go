@@ -18,6 +18,10 @@ const (
 	// ExitLandingBlocked: a local land could not move the landing branch
 	// because the checkout that holds it cannot fast-forward.
 	ExitLandingBlocked = 6
+	// ExitRemote: a git operation against the remote failed because the remote
+	// could not be reached or did not accept the credentials (gitx classifies
+	// both). Retrying once the network or the credential is fixed is the cure.
+	ExitRemote = 7
 )
 
 // CodedError wraps an error with a process exit code.

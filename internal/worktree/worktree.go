@@ -77,7 +77,17 @@ func (o Options) fetchLanding(ctx context.Context) error {
 	if err := requireOrigin(ctx, o.Root, "a remote strategy"); err != nil {
 		return err
 	}
-	return gitx.Fetch(ctx, o.Root, "origin", o.LandingBranch)
+	return remoteFailure(gitx.Fetch(ctx, o.Root, "origin", o.LandingBranch))
+}
+
+// remoteFailure gives a remote failure gitx classified (unreachable, or the
+// credentials refused) the ExitRemote code, so it does not exit 1 as if it were
+// a usage error. Any other error, and nil, is returned unchanged.
+func remoteFailure(err error) error {
+	if gitx.IsRemote(err) {
+		return cgerr.Wrap(cgerr.ExitRemote, err)
+	}
+	return err
 }
 
 // EffectiveStrategy resolves the landing strategy for the repository at root.

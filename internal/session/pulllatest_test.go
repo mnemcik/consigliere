@@ -2,6 +2,8 @@ package session
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -90,5 +92,27 @@ func TestPullLatestDiverged(t *testing.T) {
 	res := PullLatest(ctx, ws, "main")
 	if !strings.Contains(res.SystemMessage, "diverged") {
 		t.Errorf("expected a diverged warning, got %q", res.SystemMessage)
+	}
+}
+
+func TestFetchFailureMessageByClass(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		ctxErr error
+		want   string
+	}{
+		{"unreachable", fmt.Errorf("git fetch: %w", gitx.ErrRemoteUnreachable), nil, "origin is unreachable"},
+		{"auth", fmt.Errorf("git fetch: %w", gitx.ErrRemoteAuth), nil, "did not accept git's credentials"},
+		{"timeout", errors.New("git fetch: signal: killed"), context.DeadlineExceeded, "did not finish within 25s"},
+		{"other", errors.New("git fetch: fatal: couldn't find remote ref main"), nil, "Auto-pull: `git fetch` failed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := fetchFailureMessage(tt.err, tt.ctxErr, "/ws")
+			if !strings.Contains(got, tt.want) || !strings.Contains(got, "git -C /ws fetch origin") {
+				t.Errorf("message = %q, want it to contain %q and the manual command", got, tt.want)
+			}
+		})
 	}
 }

@@ -51,9 +51,46 @@ these. Defined in `internal/cgerr`:
 | 4 | `ExitPushFail` | push to the remote (or, under `local`, the move of the landing branch) failed after retries |
 | 5 | `ExitAssertFail` | a post-operation assertion failed |
 | 6 | `ExitLandingBlocked` | `local` land only: the checkout holding the landing branch cannot fast-forward (a file in the way, or a rebase in progress) |
+| 7 | `ExitRemote` | a fetch or push against `origin` failed because the remote could not be reached or did not accept the credentials (`cg worktree create`, `remove`, `land`). From `land` the push was never accepted or git reported it as failed: usually nothing landed, but a connection that drops mid-push can leave the remote updated, and re-running is safe either way |
 
 `cg worktree create` exits **2** when the target branch/worktree has unlanded
 commits (unless `--force`).
+
+### Remote failures
+
+Git invocations go through `internal/gitx`, which classifies the stderr of a
+failed remote command (`fetch`, `pull`, `push`, `clone`, `ls-remote`): `gitx.ErrRemoteUnreachable` (name resolution, a refused,
+timed-out, closed or reset connection) and `gitx.ErrRemoteAuth` (ssh
+`Permission denied (…)`, host key verification, HTTPS authentication or a
+401/403). Callers test the class with `errors.Is`. A classified error ends with
+a line naming the class and what to check; the text names no tool or vendor.
+The match leans on ssh and libcurl messages, which are not translated; git's
+own messages are, so those commands run with `LC_ALL=C`. Local commands are
+not classified. Any other failure, and one with no stderr, is unclassified and
+keeps its previous exit code (git's own, usually 128).
+
+When the verification fetch after a successful `direct-to-main` push finds the
+remote unreachable, or gets no answer within 20 seconds (the attempt is then
+killed), `cg worktree land` retries it twice, then exits **0** with
+the landed SHA and a warning, `push succeeded; could not verify`, naming
+`git fetch origin <landingBranch> && git merge-base --is-ancestor <sha> origin/<landingBranch>`,
+with the landed SHA filled in, to confirm once the remote is back (from any
+directory of the repository; the session worktree may be gone by then). The fetch is needed: the push already moved
+the local `origin/<landingBranch>`, so `merge-base` alone passes without asking
+the remote. Any other verification failure exits **5** and also says the
+push succeeded.
+
+An unverified land is visible on stdout too, so a script does not have to
+read the warning: the landed SHA is still the first line, and a second line
+reads `unverified`. A verified land prints the SHA alone.
+
+```bash
+out=$(cg worktree land) || exit $?
+sha=$(printf '%s\n' "$out" | head -n 1)
+case $out in
+  *unverified*) echo "pushed $sha, not yet confirmed on the remote" ;;
+esac
+```
 
 ## Remote-free workspaces (`local` strategy)
 
