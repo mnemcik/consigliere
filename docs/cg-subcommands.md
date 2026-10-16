@@ -70,7 +70,8 @@ not classified. Any other failure, and one with no stderr, is unclassified and
 keeps its previous exit code (git's own, usually 128).
 
 When the verification fetch after a successful `direct-to-main` push finds the
-remote unreachable, `cg worktree land` retries it twice, then exits **0** with
+remote unreachable, or gets no answer within 20 seconds (the attempt is then
+killed), `cg worktree land` retries it twice, then exits **0** with
 the landed SHA and a warning, `push succeeded; could not verify`, naming
 `git fetch origin <landingBranch> && git merge-base --is-ancestor HEAD origin/<landingBranch>`
 to confirm once the remote is back. The fetch is needed: the push already moved

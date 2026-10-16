@@ -260,12 +260,19 @@ const verifyRetries = 2
 
 var verifyRetryDelay = 3 * time.Second
 
+// verifyAttemptTimeout bounds each verification fetch. On a network that drops
+// packets silently, git waits out the OS connect timeout (over a minute), so
+// without a bound the retries would hold a land that already succeeded for
+// minutes. A variable so tests can shorten it.
+var verifyAttemptTimeout = 20 * time.Second
+
 // fetchToVerify runs the verification fetch, retrying only an unreachable
 // remote: a transient network drop right after a push is the common case,
-// while any other failure would fail the same way again.
+// while any other failure would fail the same way again. An attempt that gets
+// no answer within verifyAttemptTimeout is killed and counts as unreachable.
 func fetchToVerify(ctx context.Context, dir, landingBranch string, logf func(string, ...any)) error {
 	for attempt := 0; ; attempt++ {
-		err := verifyFetch(ctx, dir, "origin", landingBranch)
+		err := verifyAttempt(ctx, dir, landingBranch)
 		if err == nil || !errors.Is(err, gitx.ErrRemoteUnreachable) || attempt == verifyRetries {
 			return err
 		}
@@ -276,6 +283,19 @@ func fetchToVerify(ctx context.Context, dir, landingBranch string, logf func(str
 		case <-time.After(verifyRetryDelay):
 		}
 	}
+}
+
+// verifyAttempt is one verification fetch under its own deadline. When that
+// deadline, and not the caller's ctx, ended it, the error is classified
+// ErrRemoteUnreachable: the remote did not answer in time.
+func verifyAttempt(ctx context.Context, dir, landingBranch string) error {
+	attemptCtx, cancel := context.WithTimeout(ctx, verifyAttemptTimeout)
+	defer cancel()
+	err := verifyFetch(attemptCtx, dir, "origin", landingBranch)
+	if err != nil && ctx.Err() == nil && errors.Is(attemptCtx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("%w\n%w: no answer within %s", err, gitx.ErrRemoteUnreachable, verifyAttemptTimeout)
+	}
+	return err
 }
 
 // syncLandingCheckout brings the local landing branch up to the commit just

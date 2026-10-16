@@ -200,3 +200,52 @@ func TestCreateUnreachableOriginExitsRemote(t *testing.T) {
 		t.Errorf("not classified unreachable: %v", err)
 	}
 }
+
+// A verification fetch that never answers (a network that drops packets
+// silently) is cut off per attempt and treated as unreachable: it is retried,
+// then the land degrades to the unverified warning instead of hanging.
+func TestLandVerificationFetchTimesOutPerAttempt(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	var log bytes.Buffer
+	wt, err := Create(ctx, "verify5", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	mustGit(t, ctx, wt, "commit", "--allow-empty", "-m", "feature work")
+	calls := 0
+	savedFetch, savedDelay, savedTimeout := verifyFetch, verifyRetryDelay, verifyAttemptTimeout
+	verifyFetch = func(ctx context.Context, _, _ string, _ ...string) error {
+		calls++
+		select { // blocks like a fetch whose packets vanish; killed by its ctx
+		case <-ctx.Done():
+		case <-time.After(30 * time.Second):
+		}
+		return errors.New("git fetch origin main --quiet: signal: killed")
+	}
+	verifyRetryDelay, verifyAttemptTimeout = time.Millisecond, 20*time.Millisecond
+	t.Cleanup(func() { verifyFetch, verifyRetryDelay, verifyAttemptTimeout = savedFetch, savedDelay, savedTimeout })
+
+	type landed struct {
+		res LandResult
+		err error
+	}
+	done := make(chan landed, 1)
+	go func() {
+		res, err := Land(ctx, landOpts(wt), &log)
+		done <- landed{res, err}
+	}()
+	select {
+	case got := <-done:
+		if got.err != nil {
+			t.Fatalf("Land: %v\nlog: %s", got.err, log.String())
+		}
+		if !got.res.Unverified {
+			t.Errorf("result = %+v, want Unverified", got.res)
+		}
+		if calls != verifyRetries+1 {
+			t.Errorf("verification fetch ran %d times, want %d", calls, verifyRetries+1)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Land still waiting on a verification fetch that never answers")
+	}
+}
