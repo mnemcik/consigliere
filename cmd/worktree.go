@@ -92,7 +92,9 @@ Prints the worktree path to stdout on success so callers can:
     path=$(cg worktree create my-slug) && cd "$path"
 
 Exits 2 when the target branch or worktree has unlanded commits; re-run with
---force to proceed as-is.`,
+--force to proceed as-is. Exits 7 when origin cannot be reached or refuses the
+credentials: create fetches the landing branch first (not under the local
+strategy, which has nothing to fetch).`,
 	Args: cobra.ExactArgs(1),
 	RunE: runWorktreeCreate,
 }
@@ -251,7 +253,11 @@ A successful unforced removal is therefore positive evidence that the
 worktree was both landed and clean. "Landed" alone is not sufficient
 grounds to remove a worktree, and this command does not treat it as such.
 
-Will not run from inside the worktree being removed.`,
+Will not run from inside the worktree being removed.
+
+Exits 7 when origin cannot be reached or refuses the credentials: remove
+fetches the landing branch to judge what is landed, with or without --force
+(not under the local strategy, which has nothing to fetch).`,
 	Args: cobra.ExactArgs(1),
 	RunE: runWorktreeRemove,
 }
