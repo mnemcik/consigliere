@@ -72,8 +72,10 @@ keeps its previous exit code (git's own, usually 128).
 When the verification fetch after a successful `direct-to-main` push finds the
 remote unreachable, `cg worktree land` retries it twice, then exits **0** with
 the landed SHA and a warning, `push succeeded; could not verify`, naming
-`git merge-base --is-ancestor HEAD origin/<landingBranch>` to confirm once the
-remote is back. Any other verification failure exits **5** and also says the
+`git fetch origin <landingBranch> && git merge-base --is-ancestor HEAD origin/<landingBranch>`
+to confirm once the remote is back. The fetch is needed: the push already moved
+the local `origin/<landingBranch>`, so `merge-base` alone passes without asking
+the remote. Any other verification failure exits **5** and also says the
 push succeeded.
 
 ## Remote-free workspaces (`local` strategy)

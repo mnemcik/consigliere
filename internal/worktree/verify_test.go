@@ -52,7 +52,7 @@ func TestLandUnreachableVerificationReportsPushSucceeded(t *testing.T) {
 		t.Errorf("verification fetch ran %d times, want %d (1 + %d retries)", *calls, verifyRetries+1, verifyRetries)
 	}
 	out := log.String()
-	for _, s := range []string{"push succeeded; could not verify", "git merge-base --is-ancestor HEAD origin/main"} {
+	for _, s := range []string{"push succeeded; could not verify", "git fetch origin main && git merge-base --is-ancestor HEAD origin/main"} {
 		if !strings.Contains(out, s) {
 			t.Errorf("log does not say %q:\n%s", s, out)
 		}
