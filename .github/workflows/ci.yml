@@ -31,7 +31,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.14.0
+          version: v2.15.0
 
       # The _windows.go files only compile for Windows, so lint them there too.
       - name: golangci-lint (Windows build)
@@ -39,7 +39,7 @@ jobs:
         env:
           GOOS: windows
         with:
-          version: v2.14.0
+          version: v2.15.0
 
   test:
     name: Test
