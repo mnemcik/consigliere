@@ -16,16 +16,18 @@ import (
 	"time"
 )
 
-// waitDelay bounds how long a git command's I/O is waited on once its context
-// has ended and git was killed. A process git started, such as ssh stuck
-// connecting, keeps git's stdout and stderr open after git itself is gone;
-// without the bound, a cancelled or timed-out command would wait for it. A
+// waitDelay bounds how long a git command's I/O is waited on once git is gone,
+// whether its context ended and it was killed or it exited normally: Go starts
+// the WaitDelay timer on either. A process git started, such as ssh stuck
+// connecting or a hook's backgrounded job, can keep git's stdout and stderr
+// open after git itself is gone; without the bound, Wait would wait for it. A
 // variable so tests can shorten it.
 var waitDelay = 5 * time.Second
 
 // command builds the exec.Cmd for `git <args...>` in dir. exec.CommandContext
 // kills git when ctx ends, and WaitDelay stops Wait from blocking on the pipes
-// a lingering child of git still holds.
+// a lingering child of git still holds, after a kill or a normal exit alike;
+// run decides what the result means.
 func command(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	// #nosec G204 -- "git" is a fixed binary; args originate internally (never
 	// from a shell string), and this is the single controlled choke point for
@@ -42,8 +44,9 @@ func command(ctx context.Context, dir string, args ...string) *exec.Cmd {
 // a process it started, such as a hook's backgrounded job, still held its
 // stdout or stderr when WaitDelay ran out: git succeeded, and what it wrote
 // before exiting has had all of WaitDelay to be read, so that counts as
-// success. A git killed
-// because its context ended reports an ExitError instead, never this.
+// success. A git killed because its context ended reports an ExitError; one
+// that exited 0 just before a cancellation can still yield ErrWaitDelay, and
+// counting that as success is right too, since git did succeed.
 func run(cmd *exec.Cmd) error {
 	if err := cmd.Run(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		return err
