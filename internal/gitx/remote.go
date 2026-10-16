@@ -131,13 +131,14 @@ func runError(args []string, err error, stderr string) error {
 
 // touchesRemote reports whether a git command line talks to a remote, so its
 // messages need LC_ALL=C and its failures are classified. Leading global
-// options (-c k=v, -C dir, --git-dir dir, --flag=value, --flag) are skipped to
-// find the subcommand.
+// options (-c k=v, -C dir, --git-dir dir, --attr-source tree, --flag=value,
+// --flag) are skipped to find the subcommand.
 func touchesRemote(args []string) bool {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
-		case a == "-c" || a == "-C" || a == "--git-dir" || a == "--work-tree" || a == "--namespace":
+		case a == "-c" || a == "-C" || a == "--git-dir" || a == "--work-tree" || a == "--namespace" ||
+			a == "--attr-source":
 			i++ // skip the option's value
 		case strings.HasPrefix(a, "-"):
 		default:

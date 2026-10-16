@@ -141,6 +141,9 @@ func TestTouchesRemote(t *testing.T) {
 		{[]string{"--git-dir", "push", "log"}, false},
 		{[]string{"--git-dir=/x/.git", "push", "origin"}, true},
 		{[]string{"--literal-pathspecs", "status"}, false},
+		{[]string{"--attr-source", "fetch", "status"}, false}, // "fetch" is --attr-source's value
+		{[]string{"--attr-source", "HEAD", "push", "origin"}, true},
+		{[]string{"--attr-source=HEAD", "push", "origin"}, true},
 		{[]string{"merge", "--ff-only", "origin/main"}, false},
 		{[]string{"rev-parse", "HEAD"}, false},
 		{nil, false},
