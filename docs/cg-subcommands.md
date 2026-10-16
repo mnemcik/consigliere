@@ -73,8 +73,9 @@ When the verification fetch after a successful `direct-to-main` push finds the
 remote unreachable, or gets no answer within 20 seconds (the attempt is then
 killed), `cg worktree land` retries it twice, then exits **0** with
 the landed SHA and a warning, `push succeeded; could not verify`, naming
-`git fetch origin <landingBranch> && git merge-base --is-ancestor HEAD origin/<landingBranch>`
-to confirm once the remote is back. The fetch is needed: the push already moved
+`git fetch origin <landingBranch> && git merge-base --is-ancestor <sha> origin/<landingBranch>`,
+with the landed SHA filled in, to confirm once the remote is back (from any
+directory of the repository; the session worktree may be gone by then). The fetch is needed: the push already moved
 the local `origin/<landingBranch>`, so `merge-base` alone passes without asking
 the remote. Any other verification failure exits **5** and also says the
 push succeeded.

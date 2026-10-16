@@ -55,7 +55,7 @@ func TestLandUnreachableVerificationReportsPushSucceeded(t *testing.T) {
 		t.Errorf("verification fetch ran %d times, want %d (1 + %d retries)", *calls, verifyRetries+1, verifyRetries)
 	}
 	out := log.String()
-	for _, s := range []string{"push succeeded; could not verify", "git fetch origin main && git merge-base --is-ancestor HEAD origin/main"} {
+	for _, s := range []string{"push succeeded; could not verify", "git fetch origin main && git merge-base --is-ancestor " + want + " origin/main"} {
 		if !strings.Contains(out, s) {
 			t.Errorf("log does not say %q:\n%s", s, out)
 		}
@@ -107,6 +107,7 @@ func TestLandOtherVerificationFailureNamesPush(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	mustGit(t, ctx, wt, "commit", "--allow-empty", "-m", "feature work")
+	want := headSHA(t, ctx, wt)
 	calls := stubVerifyFetch(t, errors.New("git fetch origin main --quiet: exit status 128: fatal: couldn't find remote ref main"))
 
 	_, err = Land(ctx, landOpts(wt), &log)
@@ -116,6 +117,11 @@ func TestLandOtherVerificationFailureNamesPush(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "push succeeded; could not verify") {
 		t.Errorf("error does not say the push succeeded: %v", err)
+	}
+	// The hint names the landed commit, not HEAD: it is run later, often
+	// after the worktree is gone.
+	if !strings.Contains(err.Error(), "git merge-base --is-ancestor "+want+" origin/main") {
+		t.Errorf("confirm hint does not name the landed SHA %s: %v", want, err)
 	}
 	if *calls != 1 {
 		t.Errorf("unclassified failure retried: %d fetches", *calls)

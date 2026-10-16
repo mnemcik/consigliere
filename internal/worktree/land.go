@@ -218,13 +218,21 @@ func landDirect(ctx context.Context, dir, branch, landingBranch string, maxRetri
 		return LandResult{}, cgerr.New(cgerr.ExitPushFail, "push did not complete")
 	}
 
+	// The commit just pushed, resolved while ctx is still live: the hints below
+	// name it rather than HEAD, because they are run later, often from another
+	// directory once the worktree is removed.
+	landed, err := gitx.RevParse(ctx, dir, "HEAD")
+	if err != nil {
+		return LandResult{}, err
+	}
+
 	// Defense-in-depth: confirm HEAD actually landed on the remote branch. The
 	// push has already succeeded, so a failure here must not read as a failed
 	// land: it means only that the remote could not be re-read.
 	if err := fetchToVerify(ctx, dir, landingBranch, logf); err != nil {
 		// The fetch is part of the check: the push already moved the local
 		// tracking ref, so merge-base alone would pass without the remote.
-		confirm := fmt.Sprintf("once the remote is reachable, confirm with `git fetch origin %s && git merge-base --is-ancestor HEAD %s`", landingBranch, landingRef)
+		confirm := fmt.Sprintf("once the remote is reachable, confirm with `git fetch origin %s && git merge-base --is-ancestor %s %s`", landingBranch, landed, landingRef)
 		// A cancelled land (Ctrl-C during a retry) takes this path too: it
 		// still says the push succeeded, and git cannot run on a dead ctx.
 		if !errors.Is(err, gitx.ErrRemoteUnreachable) || ctx.Err() != nil {
@@ -233,22 +241,14 @@ func landDirect(ctx context.Context, dir, branch, landingBranch string, maxRetri
 		}
 		// git push exited 0, so the remote accepted the ref update; only the
 		// read-back is missing. Report success with a warning, not a failure.
-		landed, rerr := gitx.RevParse(ctx, dir, "HEAD")
-		if rerr != nil {
-			return LandResult{}, rerr
-		}
 		logf("warning: push succeeded; could not verify — the remote was still unreachable after %d retries: %v\n  %s\n",
 			verifyRetries, err, confirm)
 		syncLandingCheckout(ctx, dir, landingBranch, logf)
 		return LandResult{Strategy: workspace.StrategyDirectToMain, SHA: landed, Unverified: true}, nil
 	}
-	if !gitx.IsAncestor(ctx, dir, "HEAD", landingRef) {
+	if !gitx.IsAncestor(ctx, dir, landed, landingRef) {
 		return LandResult{}, cgerr.New(cgerr.ExitAssertFail,
 			"post-push assertion failed: HEAD is NOT on %s", landingRef)
-	}
-	landed, err := gitx.RevParse(ctx, dir, "HEAD")
-	if err != nil {
-		return LandResult{}, err
 	}
 	logf("assertion passed: %s is on %s\n", landed, landingRef)
 	syncLandingCheckout(ctx, dir, landingBranch, logf)
