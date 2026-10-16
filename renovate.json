@@ -1,0 +1,24 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Renovate updates only the golangci-lint version pinned in CI. Dependabot (.github/dependabot.yml) keeps Go modules and action tags.",
+  "enabledManagers": ["github-actions"],
+  "dependencyDashboard": true,
+  "semanticCommits": "enabled",
+  "packageRules": [
+    {
+      "description": "Disable everything the github-actions manager finds; action tags stay with Dependabot.",
+      "matchManagers": ["github-actions"],
+      "enabled": false
+    },
+    {
+      "description": "The golangci-lint version input of golangci/golangci-lint-action, in both Lint steps of ci.yml.",
+      "matchManagers": ["github-actions"],
+      "matchDepTypes": ["uses-with"],
+      "matchDepNames": ["golangci/golangci-lint"],
+      "enabled": true,
+      "semanticCommitType": "ci",
+      "semanticCommitScope": "lint",
+      "commitMessageTopic": "golangci-lint"
+    }
+  ]
+}
