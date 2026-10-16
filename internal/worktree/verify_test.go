@@ -353,3 +353,60 @@ func TestLandPRPushRemoteFailureExitsRemote(t *testing.T) {
 		t.Fatalf("err = %v, want ExitRemote\nlog: %s", err, log.String())
 	}
 }
+
+// A land that cannot read back the commit it just pushed (the land cancelled
+// right after the push) still says the push succeeded, with the assertion exit
+// code rather than a bare git error.
+func TestLandUnreadableLandedCommitNamesPush(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	var log bytes.Buffer
+	wt, err := Create(ctx, "verify6", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	mustGit(t, ctx, wt, "commit", "--allow-empty", "-m", "feature work")
+	saved := resolveLanded
+	resolveLanded = func(context.Context, string, string) (string, error) {
+		return "", errors.New("git rev-parse HEAD: signal: killed")
+	}
+	t.Cleanup(func() { resolveLanded = saved })
+
+	_, err = Land(ctx, landOpts(wt), &log)
+	var coded *cgerr.CodedError
+	if !errors.As(err, &coded) || coded.Code != cgerr.ExitAssertFail {
+		t.Fatalf("err = %v, want ExitAssertFail", err)
+	}
+	if !strings.Contains(err.Error(), "push succeeded; could not read the landed commit") {
+		t.Errorf("error does not say the push succeeded: %v", err)
+	}
+}
+
+// When the remote, re-read, does not have the pushed commit, the assertion
+// names that commit: HEAD means nothing once the worktree is gone.
+func TestLandAssertionNamesLandedSHA(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	var log bytes.Buffer
+	wt, err := Create(ctx, "verify7", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	before := headSHA(t, ctx, wt)
+	mustGit(t, ctx, wt, "commit", "--allow-empty", "-m", "feature work")
+	want := headSHA(t, ctx, wt)
+	saved := verifyFetch
+	// The re-read finds origin/main where it was before the push.
+	verifyFetch = func(ctx context.Context, dir, _ string, _ ...string) error {
+		_, err := gitx.Run(ctx, dir, "update-ref", "refs/remotes/origin/main", before)
+		return err
+	}
+	t.Cleanup(func() { verifyFetch = saved })
+
+	_, err = Land(ctx, landOpts(wt), &log)
+	var coded *cgerr.CodedError
+	if !errors.As(err, &coded) || coded.Code != cgerr.ExitAssertFail {
+		t.Fatalf("err = %v, want ExitAssertFail", err)
+	}
+	if !strings.Contains(err.Error(), want+" is NOT on origin/main") {
+		t.Errorf("assertion does not name the landed SHA %s: %v", want, err)
+	}
+}

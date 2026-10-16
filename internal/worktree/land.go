@@ -221,9 +221,10 @@ func landDirect(ctx context.Context, dir, branch, landingBranch string, maxRetri
 	// The commit just pushed, resolved while ctx is still live: the hints below
 	// name it rather than HEAD, because they are run later, often from another
 	// directory once the worktree is removed.
-	landed, err := gitx.RevParse(ctx, dir, "HEAD")
+	landed, err := resolveLanded(ctx, dir, "HEAD")
 	if err != nil {
-		return LandResult{}, err
+		return LandResult{}, cgerr.Wrap(cgerr.ExitAssertFail,
+			fmt.Errorf("push succeeded; could not read the landed commit: %w", err))
 	}
 
 	// Defense-in-depth: confirm HEAD actually landed on the remote branch. The
@@ -248,12 +249,16 @@ func landDirect(ctx context.Context, dir, branch, landingBranch string, maxRetri
 	}
 	if !gitx.IsAncestor(ctx, dir, landed, landingRef) {
 		return LandResult{}, cgerr.New(cgerr.ExitAssertFail,
-			"post-push assertion failed: HEAD is NOT on %s", landingRef)
+			"post-push assertion failed: %s is NOT on %s", landed, landingRef)
 	}
 	logf("assertion passed: %s is on %s\n", landed, landingRef)
 	syncLandingCheckout(ctx, dir, landingBranch, logf)
 	return LandResult{Strategy: workspace.StrategyDirectToMain, SHA: landed}, nil
 }
+
+// resolveLanded reads the commit a push just landed. A variable so tests can
+// make it fail after a push that succeeded.
+var resolveLanded = gitx.RevParse
 
 // verifyFetch is the post-push verification fetch. A variable so tests can make
 // the remote unreachable after a push that succeeded.
