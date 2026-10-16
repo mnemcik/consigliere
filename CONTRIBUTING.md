@@ -7,10 +7,11 @@ Thank you for considering contributing to Consigliere.
 ### Prerequisites
 
 - Go 1.25+ (`go version`) — matches `go.mod`
-- golangci-lint **v2.14.0**, the version CI pins (in `.github/workflows/ci.yml`). Another version can report different findings. Install that version with:
+- golangci-lint at the version CI pins (the `version:` of the golangci-lint steps in `.github/workflows/ci.yml`). Another version can report different findings. Install that version with:
 
   ```bash
-  curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.14.0
+  v=$(sed -n 's/^ *version: \(v[0-9][0-9.]*\)$/\1/p' "$(git rev-parse --show-toplevel)/.github/workflows/ci.yml" | head -n 1)
+  curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b "$(go env GOPATH)/bin" "${v:?could not read the golangci-lint version from ci.yml}"
   golangci-lint --version
   ```
 
