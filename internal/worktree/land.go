@@ -564,6 +564,9 @@ func landPR(ctx context.Context, dir, branch, landingBranch string, logf func(st
 	// Publish the session branch so the PR has a head to track.
 	logf("pushing %s → origin/%s\n", branch, branch)
 	if err := gitx.Push(ctx, dir, "origin", "HEAD:refs/heads/"+branch); err != nil {
+		if gitx.IsRemote(err) {
+			return LandResult{}, remoteFailure(fmt.Errorf("pushing session branch: %w", err))
+		}
 		return LandResult{}, cgerr.New(cgerr.ExitPushFail, "pushing session branch: %w", err)
 	}
 	// Open (or surface the existing) PR. `gh pr create` prints the URL; if a PR

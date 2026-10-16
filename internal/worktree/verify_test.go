@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -310,5 +312,38 @@ func TestLandPushFailedKeepsLastError(t *testing.T) {
 	}
 	if msg := err.Error(); !strings.Contains(msg, "push failed after") || !strings.Contains(msg, "git push origin") {
 		t.Errorf("error lost the last push error: %v", err)
+	}
+}
+
+// The pr strategy's push of the session branch exits ExitRemote, like the
+// direct-to-main push, when the remote is unreachable.
+func TestLandPRPushRemoteFailureExitsRemote(t *testing.T) {
+	clearProxyEnv(t)
+	ctx, root := setupWorkspace(t)
+	// landPR wants gh on PATH before it pushes; the push fails first, so this
+	// stand-in never runs.
+	bin := t.TempDir()
+	name, body := "gh", "#!/bin/sh\nexit 1\n"
+	if runtime.GOOS == "windows" {
+		name, body = "gh.bat", "@exit /b 1\r\n"
+	}
+	if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0o755); err != nil { //nolint:gosec // an executable test stub
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	var log bytes.Buffer
+	wt, err := Create(ctx, "prpush", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	mustGit(t, ctx, wt, "commit", "--allow-empty", "-m", "feature work")
+	mustGit(t, ctx, root, "remote", "set-url", "--push", "origin", "http://127.0.0.1:1/repo.git")
+
+	opts := landOpts(wt)
+	opts.Strategy = "pr"
+	_, err = Land(ctx, opts, &log)
+	var coded *cgerr.CodedError
+	if !errors.As(err, &coded) || coded.Code != cgerr.ExitRemote {
+		t.Fatalf("err = %v, want ExitRemote\nlog: %s", err, log.String())
 	}
 }
