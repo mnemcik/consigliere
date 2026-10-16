@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -247,5 +248,67 @@ func TestLandVerificationFetchTimesOutPerAttempt(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("Land still waiting on a verification fetch that never answers")
+	}
+}
+
+// clearProxyEnv keeps a proxy from the environment from answering in place of
+// a dead local port.
+func clearProxyEnv(t *testing.T) {
+	t.Helper()
+	for _, k := range []string{"http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"} {
+		t.Setenv(k, "")
+	}
+	t.Setenv("no_proxy", "*")
+	t.Setenv("NO_PROXY", "*")
+}
+
+// A push that fails because the remote is unreachable (or refuses the
+// credentials) is not a non-fast-forward: it is not retried, and the land exits
+// ExitRemote with the classified error.
+func TestLandPushRemoteFailureIsNotRetried(t *testing.T) {
+	clearProxyEnv(t)
+	ctx, root := setupWorkspace(t)
+	var log bytes.Buffer
+	wt, err := Create(ctx, "pushfail1", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	mustGit(t, ctx, wt, "commit", "--allow-empty", "-m", "feature work")
+	// Fetches still reach origin; only the push goes to a port nothing serves.
+	mustGit(t, ctx, root, "remote", "set-url", "--push", "origin", "http://127.0.0.1:1/repo.git")
+	log.Reset()
+
+	_, err = Land(ctx, landOpts(wt), &log)
+	var coded *cgerr.CodedError
+	if !errors.As(err, &coded) || coded.Code != cgerr.ExitRemote {
+		t.Fatalf("err = %v, want ExitRemote\nlog: %s", err, log.String())
+	}
+	if !errors.Is(err, gitx.ErrRemoteUnreachable) {
+		t.Errorf("not classified unreachable: %v", err)
+	}
+	if out := log.String(); strings.Contains(out, "non-ff") || strings.Contains(out, "attempt 2") {
+		t.Errorf("remote failure was retried as a non-fast-forward:\n%s", out)
+	}
+}
+
+// When every push fails for an unclassified reason, the final "push failed"
+// error still carries git's last error.
+func TestLandPushFailedKeepsLastError(t *testing.T) {
+	ctx, root := setupWorkspace(t)
+	var log bytes.Buffer
+	wt, err := Create(ctx, "pushfail2", defaultOpts(root), &log)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	mustGit(t, ctx, wt, "commit", "--allow-empty", "-m", "feature work")
+	mustGit(t, ctx, root, "remote", "set-url", "--push", "origin", filepath.Join(t.TempDir(), "missing.git"))
+
+	_, err = Land(ctx, landOpts(wt), &log)
+	var coded *cgerr.CodedError
+	if !errors.As(err, &coded) || coded.Code != cgerr.ExitPushFail {
+		t.Fatalf("err = %v, want ExitPushFail\nlog: %s", err, log.String())
+	}
+	if msg := err.Error(); !strings.Contains(msg, "push failed after") || !strings.Contains(msg, "git push origin") {
+		t.Errorf("error lost the last push error: %v", err)
 	}
 }

@@ -185,14 +185,20 @@ func landDirect(ctx context.Context, dir, branch, landingBranch string, maxRetri
 	pushed := false
 	for attempt := 1; attempt <= maxRetries+1; attempt++ {
 		logf("attempt %d: pushing %s → %s\n", attempt, branch, landingRef)
-		if err := gitx.Push(ctx, dir, "origin", refspec); err == nil {
+		err := gitx.Push(ctx, dir, "origin", refspec)
+		if err == nil {
 			logf("push succeeded\n")
 			pushed = true
 			break
 		}
+		// An unreachable remote or refused credentials is not a non-ff
+		// rejection: a rebase cannot fix it, so stop and say what to check.
+		if gitx.IsRemote(err) {
+			return LandResult{}, remoteFailure(fmt.Errorf("push to %s failed: %w", landingRef, err))
+		}
 		if attempt >= maxRetries+1 {
-			return LandResult{}, cgerr.New(cgerr.ExitPushFail,
-				"push failed after %d retries", maxRetries)
+			return LandResult{}, cgerr.Wrap(cgerr.ExitPushFail,
+				fmt.Errorf("push failed after %d retries: %w", maxRetries, err))
 		}
 		logf("push rejected (non-ff); fetching and rebasing onto %s\n", landingRef)
 		if err := gitx.Fetch(ctx, dir, "origin", landingBranch); err != nil {
