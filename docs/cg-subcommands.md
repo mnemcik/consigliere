@@ -51,7 +51,7 @@ these. Defined in `internal/cgerr`:
 | 4 | `ExitPushFail` | push to the remote (or, under `local`, the move of the landing branch) failed after retries |
 | 5 | `ExitAssertFail` | a post-operation assertion failed |
 | 6 | `ExitLandingBlocked` | `local` land only: the checkout holding the landing branch cannot fast-forward (a file in the way, or a rebase in progress) |
-| 7 | `ExitRemote` | a fetch against `origin` failed because the remote could not be reached or did not accept the credentials (`cg worktree create`, `remove`, `land`) |
+| 7 | `ExitRemote` | a fetch or push against `origin` failed because the remote could not be reached or did not accept the credentials (`cg worktree create`, `remove`, `land`). From `land` the push was never accepted or git reported it as failed: usually nothing landed, but a connection that drops mid-push can leave the remote updated, and re-running is safe either way |
 
 `cg worktree create` exits **2** when the target branch/worktree has unlanded
 commits (unless `--force`).
