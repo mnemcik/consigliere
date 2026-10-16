@@ -67,8 +67,10 @@ Update if any of these changed during the session:
 **Do NOT update README.md just to say "session happened."** Only update if substantive project metadata changed.
 
 #### todo.md
-- Check off items that were completed during this session
-- Add new action items that were discovered or discussed
+- **Check off items that were completed during this session — every copy of them.** The same task is often written down more than once, by different sessions or in a side file such as a design note with its own checklist. Ticking only the copy the session worked from leaves the others open, and the next session reads a finished task as an open gap. Before ticking, search the project folder for the item's key terms (a setting name, an ID, a decision reference) and close each open checkbox that describes the same task, pointing to the evidence (the decision or log entry). If it's unclear whether two items are the same task, leave both open and mention it in the summary.
+- **Close items this session finished without working from them.** For each decision recorded or fact verified in this session, search the open checkboxes for it. A decision that makes a task done or moot closes that task too.
+- **Add new action items that were discovered or discussed — after checking for an existing one.** If an open item already covers the task, update it instead of adding a second.
+- **Don't add session-dated sections** ("Start here next session — <date>", "Closable next session") that restate existing items. Reorder the list, or point to the existing items.
 - Reorder if priorities shifted
 
 This is often the most important file to update — it's the "what's next" for the project.
@@ -327,7 +329,7 @@ Present a brief summary to the user. Sections shown are mode-dependent. Every ph
 ## Session wrapped
 
 **Project files updated:**
-- [project-name] — log.md (session entry), todo.md (2 items added, 1 checked off)
+- [project-name] — log.md (session entry), todo.md (2 items added, 1 checked off, 1 duplicate closed in design-notes.md)
 
 **Notes captured:**
 - Updated notes/azure-apim-gotchas.md with header versioning finding
@@ -399,7 +401,7 @@ This line is the signal that every phase ran to completion. It must be the **las
 - **Be thorough, not verbose.** Check every phase, but don't pad empty phases with filler text.
 - **Read before writing.** Always read the current state of a file before updating it. Don't write based on assumptions about what's in the file.
 - **Don't duplicate.** If something is already captured (e.g., from earlier in the session), don't re-capture it.
-- **Preserve existing content.** When updating files like `todo.md` or `log.md`, append — don't overwrite or reorganize existing content.
+- **Preserve existing content.** `log.md` and `decisions.md` are records: append, and never rewrite past entries (marking a superseded decision's status is the one exception). `todo.md` is a working list: merging duplicate items and closing finished ones is part of keeping it current, but never drop the substance of an open item.
 - **Stage only what you touched this session.** A file "looking ready" is not authorisation to commit it — its owner is someone else. See Phase 7 for the full rule.
 - **Verify worktree isolation before committing.** If the workspace requires per-session worktrees (check its `CLAUDE.md`) and you are in the main workspace, stop before staging — a shared index can leak parallel-session work into your commit regardless of how carefully you stage by name.
 - **Ask if uncertain.** If you're not sure whether a finding is worth capturing or where it belongs, ask the user rather than guessing.
