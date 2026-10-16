@@ -23,9 +23,11 @@ jobs:
       # Pinned, not `latest`: a new golangci-lint release can add or change
       # checks and fail Lint on every PR at once (it did on 2026-09-24).
       # Renovate (renovate.json) opens a PR bumping this input in both steps
-      # below; fix any new findings in that PR. Dependabot bumps the action
-      # itself (@v9). CONTRIBUTING.md and the Makefile read the version from
-      # this file, so it is written only here.
+      # below; fix any new findings in that PR (once you push to it, update
+      # it with "Update branch", not Renovate's rebase, which drops your
+      # commits). Dependabot bumps the action itself (@v9). The version is
+      # written only here: CONTRIBUTING.md reads the first unquoted
+      # `version: v...` line of this file, so keep these two steps first.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
