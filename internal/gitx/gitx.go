@@ -38,6 +38,19 @@ func command(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	return cmd
 }
 
+// run runs cmd and waits for it. exec.ErrWaitDelay means git exited 0 and only
+// a process it started, such as a hook's backgrounded job, still held its
+// stdout or stderr when WaitDelay ran out: git succeeded, and what it wrote
+// before exiting has had all of WaitDelay to be read, so that counts as
+// success. A git killed
+// because its context ended reports an ExitError instead, never this.
+func run(cmd *exec.Cmd) error {
+	if err := cmd.Run(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
+		return err
+	}
+	return nil
+}
+
 // Run executes `git <args...>` in dir (or the current directory if dir is "")
 // and returns trimmed stdout. On failure the error wraps git's stderr, and a
 // failure of a remote command (fetch, pull, push, clone, ls-remote) to reach or
@@ -64,7 +77,7 @@ func RunEnv(ctx context.Context, dir string, env []string, args ...string) (stri
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
-	if err := cmd.Run(); err != nil {
+	if err := run(cmd); err != nil {
 		return "", runError(args, err, errb.String())
 	}
 	return strings.TrimSpace(out.String()), nil
@@ -78,7 +91,7 @@ func RunRaw(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
-	if err := cmd.Run(); err != nil {
+	if err := run(cmd); err != nil {
 		return nil, runError(args, err, errb.String())
 	}
 	return out.Bytes(), nil
@@ -88,7 +101,7 @@ func RunRaw(ctx context.Context, dir string, args ...string) ([]byte, error) {
 // clean non-zero exit (the predicate is false) from git being unavailable.
 func ok(ctx context.Context, dir string, args ...string) bool {
 	cmd := command(ctx, dir, args...)
-	return cmd.Run() == nil
+	return run(cmd) == nil
 }
 
 // Available reports whether a git binary is on PATH.

@@ -3,6 +3,7 @@ package gitx
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -47,5 +48,32 @@ func TestRunReturnsWhenContextEndsDespiteLingeringChild(t *testing.T) {
 	}
 	if d := time.Since(start); d > 5*time.Second {
 		t.Errorf("Run returned %s after its context ended; want promptly", d)
+	}
+}
+
+// A git that exits 0 while a process it started still holds its stderr (a hook
+// that backgrounds a task without redirecting it) succeeded: the WaitDelay
+// that cuts the wait short must not turn that into a failure.
+func TestRunSucceedsWhenHookChildOutlivesGit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the hook fixture is a POSIX shell script that backgrounds a job")
+	}
+	ctx, dir := initRepo(t)
+	hook := filepath.Join(dir, ".git", "hooks", "post-commit")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\nsleep 2 &\n"), 0o755); err != nil { //nolint:gosec // an executable test hook
+		t.Fatal(err)
+	}
+	saved := waitDelay
+	waitDelay = 100 * time.Millisecond
+	t.Cleanup(func() { waitDelay = saved })
+
+	if _, err := Run(ctx, dir, "commit", "--allow-empty", "-m", "via Run"); err != nil {
+		t.Errorf("Run: git exited 0, but Run failed: %v", err)
+	}
+	if _, err := RunRaw(ctx, dir, "commit", "--allow-empty", "-m", "via RunRaw"); err != nil {
+		t.Errorf("RunRaw: git exited 0, but RunRaw failed: %v", err)
+	}
+	if got := mustRun(t, ctx, dir, "log", "-1", "--format=%s"); got != "via RunRaw" {
+		t.Errorf("last commit = %q, want the RunRaw commit", got)
 	}
 }
