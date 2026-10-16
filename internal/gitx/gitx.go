@@ -13,7 +13,30 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+// waitDelay bounds how long a git command's I/O is waited on once its context
+// has ended and git was killed. A process git started, such as ssh stuck
+// connecting, keeps git's stdout and stderr open after git itself is gone;
+// without the bound, a cancelled or timed-out command would wait for it. A
+// variable so tests can shorten it.
+var waitDelay = 5 * time.Second
+
+// command builds the exec.Cmd for `git <args...>` in dir. exec.CommandContext
+// kills git when ctx ends, and WaitDelay stops Wait from blocking on the pipes
+// a lingering child of git still holds.
+func command(ctx context.Context, dir string, args ...string) *exec.Cmd {
+	// #nosec G204 -- "git" is a fixed binary; args originate internally (never
+	// from a shell string), and this is the single controlled choke point for
+	// every git invocation in cg.
+	cmd := exec.CommandContext(ctx, "git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	cmd.WaitDelay = waitDelay
+	return cmd
+}
 
 // Run executes `git <args...>` in dir (or the current directory if dir is "")
 // and returns trimmed stdout. On failure the error wraps git's stderr, and a
@@ -28,13 +51,7 @@ func Run(ctx context.Context, dir string, args ...string) (string, error) {
 // process environment, e.g. GIT_TERMINAL_PROMPT=0 so a read against a remote
 // without credentials fails instead of waiting on an interactive prompt.
 func RunEnv(ctx context.Context, dir string, env []string, args ...string) (string, error) {
-	// #nosec G204 -- "git" is a fixed binary; args originate internally (never
-	// from a shell string), and this is the single controlled choke point for
-	// every git invocation in cg.
-	cmd := exec.CommandContext(ctx, "git", args...)
-	if dir != "" {
-		cmd.Dir = dir
-	}
+	cmd := command(ctx, dir, args...)
 	if touchesRemote(args) {
 		// Git translates its own messages under LANG, and classifyRemote
 		// matches some of them; LC_ALL=C keeps them in English. The caller's
@@ -57,11 +74,7 @@ func RunEnv(ctx context.Context, dir string, env []string, args ...string) (stri
 // byte-exact output such as `git cat-file blob`. On failure the error wraps
 // git's stderr.
 func RunRaw(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	// #nosec G204 -- see Run: fixed "git" binary, internal args.
-	cmd := exec.CommandContext(ctx, "git", args...)
-	if dir != "" {
-		cmd.Dir = dir
-	}
+	cmd := command(ctx, dir, args...)
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
@@ -74,11 +87,7 @@ func RunRaw(ctx context.Context, dir string, args ...string) ([]byte, error) {
 // ok reports whether `git <args...>` exits zero in dir. It distinguishes a
 // clean non-zero exit (the predicate is false) from git being unavailable.
 func ok(ctx context.Context, dir string, args ...string) bool {
-	// #nosec G204 -- see Run: fixed "git" binary, internal args.
-	cmd := exec.CommandContext(ctx, "git", args...)
-	if dir != "" {
-		cmd.Dir = dir
-	}
+	cmd := command(ctx, dir, args...)
 	return cmd.Run() == nil
 }
 
