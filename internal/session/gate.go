@@ -19,17 +19,31 @@ var skipAllPattern = regexp.MustCompile(`(?i)^(/|idea:|just a quick|no project|s
 
 // defaultGate is the built-in, framework-neutral gate body used when no
 // session.gateTemplate is configured. Workspaces with their own wording point
-// session.gateTemplate at a file they own. Tokens below are substituted.
+// session.gateTemplate at a file they own. Tokens below are substituted, and
+// the set-context block is added (see withSetContext).
 const defaultGate = `⚠️ SESSION-START — before making changes, confirm:
 1. The area(s) this work belongs to.
 2. The project tracking it (or create one).
 3. You are in the right working tree for your workflow.
 
-Session ID: {{session_id}}
+{{worktree_warning}}`
+
+// setContextBlock tells the agent how to record the session's area and project,
+// which is what creates the badge file. cg adds it to every gate rather than
+// leaving it to the template: the template is user-owned and never updated, so
+// a workspace whose copy predates the instruction would otherwise never write a
+// badge (#195).
+const setContextBlock = `Session ID: {{session_id}}
 Badge state file for this session: {{badge_file}}
 Once the area and project are confirmed, record them for the status line:
-  cg session set-context --session-id {{session_id}} --area <area-slug> --project <project-slug>
-{{worktree_warning}}`
+  cg session set-context --session-id {{session_id}} --area <area-slug> --project <project-slug>`
+
+// setContextPlaceholder places the set-context block in a gate template.
+const setContextPlaceholder = "{{set_context}}"
+
+// setContextCommand marks a template that already carries its own set-context
+// instruction, such as a copy of the default template from before cg added it.
+const setContextCommand = "cg session set-context"
 
 // defaultWorktreeWarning is appended (as the {{worktree_warning}} token) when
 // the session runs in the main worktree, where the git index is shared with
@@ -74,6 +88,8 @@ func Gate(ctx context.Context, root string, in GateInput, gateTemplatePath strin
 		warning = defaultWorktreeWarning
 	}
 
+	body = withSetContext(body)
+
 	repl := strings.NewReplacer(
 		"{{session_id}}", in.SessionID,
 		"{{badge_file}}", ContextFile(root, in.SessionID),
@@ -82,6 +98,40 @@ func Gate(ctx context.Context, root string, in GateInput, gateTemplatePath strin
 	body = strings.TrimRight(repl.Replace(body), "\n")
 
 	return "<user-prompt-submit-hook>\n" + body + "\n</user-prompt-submit-hook>", true
+}
+
+// withSetContext puts the set-context block in body: at {{set_context}} when
+// the template has it, otherwise before {{worktree_warning}}, otherwise at the
+// end. A template that already names the command (and has no placeholder) is
+// left as it is, and lines of the block the template already has are not
+// repeated (the original default template had the session ID and badge file
+// lines but not the command).
+func withSetContext(body string) string {
+	placed := strings.Contains(body, setContextPlaceholder)
+	if !placed && strings.Contains(body, setContextCommand) {
+		return body
+	}
+	have := map[string]bool{}
+	for _, l := range strings.Split(body, "\n") {
+		have[strings.TrimSpace(l)] = true
+	}
+	var add []string
+	for _, l := range strings.Split(setContextBlock, "\n") {
+		if !have[strings.TrimSpace(l)] {
+			add = append(add, l)
+		}
+	}
+	block := strings.Join(add, "\n")
+	switch {
+	case placed:
+		return strings.ReplaceAll(body, setContextPlaceholder, block)
+	case strings.Contains(body, "{{worktree_warning}}"):
+		return strings.Replace(body, "{{worktree_warning}}", block+"\n{{worktree_warning}}", 1)
+	case strings.TrimSpace(body) == "":
+		return block
+	default:
+		return strings.TrimRight(body, "\n") + "\n\n" + block
+	}
 }
 
 // inMainWorktree reports whether cwd's working tree is the main worktree (its
