@@ -188,7 +188,8 @@ adds it to every gate, whatever the template says, because the template is
 user-owned and never updated. A template places it with `{{set_context}}`;
 without the token it goes before `{{worktree_warning}}`, or at the end. A
 template that already contains `cg session set-context` is left as it is, and
-lines of the block the template already has are not repeated.
+lines of the block the template already has are not repeated (a line counts
+as present only when its text matches exactly).
 
 ## Session badge file
 

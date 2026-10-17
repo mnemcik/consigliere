@@ -93,6 +93,7 @@ func TestGateAddsSetContext(t *testing.T) {
 		// Current default template.
 		"token":    "⚠️ SESSION-START — confirm:\n1. Area.\n\n{{set_context}}\n{{worktree_warning}}\n",
 		"shipped":  shippedGate(t),
+		"empty":    " \n",
 		"no token": "CUSTOM gate\r\nwith CRLF\r\n",
 		"crlf original": "Gate\r\nSession ID: {{session_id}}\r\n" +
 			"Badge state file for this session: {{badge_file}}\r\n{{worktree_warning}}\r\n",
@@ -137,4 +138,12 @@ func shippedGate(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+// TestGateEmptyTemplateStartsWithBlock keeps an empty template from rendering
+// leading blank lines.
+func TestGateEmptyTemplateStartsWithBlock(t *testing.T) {
+	if got := withSetContext(" \n"); got != setContextBlock {
+		t.Errorf("empty template should render just the block, got:\n%q", got)
+	}
 }

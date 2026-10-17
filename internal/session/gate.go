@@ -38,8 +38,8 @@ Badge state file for this session: {{badge_file}}
 Once the area and project are confirmed, record them for the status line:
   cg session set-context --session-id {{session_id}} --area <area-slug> --project <project-slug>`
 
-// setContextToken places the set-context block in a gate template.
-const setContextToken = "{{set_context}}"
+// setContextPlaceholder places the set-context block in a gate template.
+const setContextPlaceholder = "{{set_context}}"
 
 // setContextCommand marks a template that already carries its own set-context
 // instruction, such as a copy of the default template from before cg added it.
@@ -106,8 +106,8 @@ func Gate(ctx context.Context, root string, in GateInput, gateTemplatePath strin
 // of the block the template already has are not repeated (the original default
 // template had the session ID and badge file lines but not the command).
 func withSetContext(body string) string {
-	if strings.Contains(body, setContextToken) {
-		return strings.ReplaceAll(body, setContextToken, setContextBlock)
+	if strings.Contains(body, setContextPlaceholder) {
+		return strings.ReplaceAll(body, setContextPlaceholder, setContextBlock)
 	}
 	if strings.Contains(body, setContextCommand) {
 		return body
@@ -125,6 +125,9 @@ func withSetContext(body string) string {
 	block := strings.Join(add, "\n")
 	if strings.Contains(body, "{{worktree_warning}}") {
 		return strings.Replace(body, "{{worktree_warning}}", block+"\n{{worktree_warning}}", 1)
+	}
+	if strings.TrimSpace(body) == "" {
+		return block
 	}
 	return strings.TrimRight(body, "\n") + "\n\n" + block
 }
