@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.30.0](https://github.com/mnemcik/consigliere/compare/v1.29.0...v1.30.0) (2026-10-16)
+
+
+### Features
+
+* **gitx:** classify remote auth and unreachable failures ([#183](https://github.com/mnemcik/consigliere/issues/183)) ([8bdb9ec](https://github.com/mnemcik/consigliere/commit/8bdb9eca2dd2c5b02fa6b80a4069e4608a78956b))
+* standing projects with no finish line ([#181](https://github.com/mnemcik/consigliere/issues/181)) ([4e033c8](https://github.com/mnemcik/consigliere/commit/4e033c80f19db3aed586edfc0a0fafb07d6b7c0a))
+
+
+### Bug Fixes
+
+* **init:** keep configured .cg.json settings on --force ([#179](https://github.com/mnemcik/consigliere/issues/179)) ([c8f9cdd](https://github.com/mnemcik/consigliere/commit/c8f9cdda74007d30232e15926d19d6e2d684cdce))
+* **share:** handle a case-only rename when staging ([#180](https://github.com/mnemcik/consigliere/issues/180)) ([2162c2b](https://github.com/mnemcik/consigliere/commit/2162c2b51e2008b3e18635c6cca2e6d3d49586ac))
+* **wrap:** close every copy of a finished todo item ([#190](https://github.com/mnemcik/consigliere/issues/190)) ([2a235fb](https://github.com/mnemcik/consigliere/commit/2a235fb71756c66e13d8436a27bea33866347a77))
+
 ## [1.29.0](https://github.com/mnemcik/consigliere/compare/v1.28.1...v1.29.0) (2026-10-14)
 
 
