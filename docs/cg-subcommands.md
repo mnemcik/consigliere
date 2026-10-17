@@ -182,6 +182,14 @@ its own wording via `session.gateTemplate` (a file it owns). This keeps the
 framework/workspace boundary clean — the binary ships mechanics, the workspace
 ships its content.
 
+The one exception is the **set-context block**: the session ID, the badge file
+path and the `cg session set-context` command that creates the badge. The binary
+adds it to every gate, whatever the template says, because the template is
+user-owned and never updated. A template places it with `{{set_context}}`;
+without the token it goes before `{{worktree_warning}}`, or at the end. A
+template that already contains `cg session set-context` is left as it is, and
+lines of the block the template already has are not repeated.
+
 ## Session badge file
 
 Each session's badge state lives in `.claude/session-context/<session-id>.json`

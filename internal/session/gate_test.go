@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mnemcik/consigliere/templates"
 )
 
 func TestGateSkipAll(t *testing.T) {
@@ -71,4 +73,68 @@ func TestGatePrunesStaleContexts(t *testing.T) {
 	if _, err := os.Stat(fresh); err != nil {
 		t.Error("fresh context file should survive pruning")
 	}
+}
+
+// TestGateAddsSetContext covers #195: a workspace's gate template is user-owned
+// and never updated, so cg adds the set-context instruction to templates of
+// every vintage, exactly once.
+func TestGateAddsSetContext(t *testing.T) {
+	const cmd = "cg session set-context --session-id abc"
+	cases := map[string]string{
+		// Default template as cg init seeded it before 2026-09-25.
+		"original": "⚠️ SESSION-START — confirm:\n1. Area.\n\nSession ID: {{session_id}}\n" +
+			"Badge state file for this session: {{badge_file}}\n{{worktree_warning}}\n",
+		// Default template from 2026-09-25, which carries the command itself.
+		"with command": "⚠️ SESSION-START — confirm:\n1. Area.\n\nSession ID: {{session_id}}\n" +
+			"Badge state file for this session: {{badge_file}}\n" +
+			"Once the area and project are confirmed, record them for the status line:\n" +
+			"  cg session set-context --session-id {{session_id}} --area <area-slug> --project <project-slug>\n" +
+			"{{worktree_warning}}\n",
+		// Current default template.
+		"token":    "⚠️ SESSION-START — confirm:\n1. Area.\n\n{{set_context}}\n{{worktree_warning}}\n",
+		"shipped":  shippedGate(t),
+		"no token": "CUSTOM gate\r\nwith CRLF\r\n",
+		"crlf original": "Gate\r\nSession ID: {{session_id}}\r\n" +
+			"Badge state file for this session: {{badge_file}}\r\n{{worktree_warning}}\r\n",
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "gate.md"), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			text, emit := Gate(context.Background(), root,
+				GateInput{Prompt: "do work", SessionID: "abc", CWD: root}, "gate.md", 0)
+			if !emit {
+				t.Fatal("expected the gate to emit")
+			}
+			for _, want := range []string{cmd, "Session ID: abc", "Badge state file for this session: " + ContextFile(root, "abc")} {
+				if n := strings.Count(text, want); n != 1 {
+					t.Errorf("want %q once, got %d times:\n%s", want, n, text)
+				}
+			}
+			if strings.Contains(text, "{{") {
+				t.Errorf("unsubstituted token left:\n%s", text)
+			}
+		})
+	}
+}
+
+// TestGateSetContextBeforeWorktreeWarning keeps the worktree warning last, as
+// it was before cg added the block.
+func TestGateSetContextBeforeWorktreeWarning(t *testing.T) {
+	got := withSetContext("Gate\n{{worktree_warning}}")
+	if !strings.HasSuffix(got, setContextBlock+"\n{{worktree_warning}}") {
+		t.Errorf("block should sit right before the worktree warning:\n%s", got)
+	}
+}
+
+// shippedGate returns the gate template cg init seeds today.
+func shippedGate(t *testing.T) string {
+	t.Helper()
+	b, err := templates.FS.ReadFile("workspace/.claude/cg/session-gate.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
