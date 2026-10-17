@@ -91,10 +91,12 @@ func TestGateAddsSetContext(t *testing.T) {
 			"  cg session set-context --session-id {{session_id}} --area <area-slug> --project <project-slug>\n" +
 			"{{worktree_warning}}\n",
 		// Current default template.
-		"token":    "⚠️ SESSION-START — confirm:\n1. Area.\n\n{{set_context}}\n{{worktree_warning}}\n",
-		"shipped":  shippedGate(t),
-		"empty":    " \n",
-		"no token": "CUSTOM gate\r\nwith CRLF\r\n",
+		"token":   "⚠️ SESSION-START — confirm:\n1. Area.\n\n{{set_context}}\n{{worktree_warning}}\n",
+		"shipped": shippedGate(t),
+		"empty":   " \n",
+		// Placeholder added to a template that keeps its own session ID line.
+		"placeholder and own lines": "Gate\nSession ID: {{session_id}}\n{{set_context}}\n{{worktree_warning}}\n",
+		"no token":                  "CUSTOM gate\r\nwith CRLF\r\n",
 		"crlf original": "Gate\r\nSession ID: {{session_id}}\r\n" +
 			"Badge state file for this session: {{badge_file}}\r\n{{worktree_warning}}\r\n",
 	}

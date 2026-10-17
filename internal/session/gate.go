@@ -102,14 +102,13 @@ func Gate(ctx context.Context, root string, in GateInput, gateTemplatePath strin
 
 // withSetContext puts the set-context block in body: at {{set_context}} when
 // the template has it, otherwise before {{worktree_warning}}, otherwise at the
-// end. A template that already names the command is left as it is, and lines
-// of the block the template already has are not repeated (the original default
-// template had the session ID and badge file lines but not the command).
+// end. A template that already names the command (and has no placeholder) is
+// left as it is, and lines of the block the template already has are not
+// repeated (the original default template had the session ID and badge file
+// lines but not the command).
 func withSetContext(body string) string {
-	if strings.Contains(body, setContextPlaceholder) {
-		return strings.ReplaceAll(body, setContextPlaceholder, setContextBlock)
-	}
-	if strings.Contains(body, setContextCommand) {
+	placed := strings.Contains(body, setContextPlaceholder)
+	if !placed && strings.Contains(body, setContextCommand) {
 		return body
 	}
 	have := map[string]bool{}
@@ -123,13 +122,16 @@ func withSetContext(body string) string {
 		}
 	}
 	block := strings.Join(add, "\n")
-	if strings.Contains(body, "{{worktree_warning}}") {
+	switch {
+	case placed:
+		return strings.ReplaceAll(body, setContextPlaceholder, block)
+	case strings.Contains(body, "{{worktree_warning}}"):
 		return strings.Replace(body, "{{worktree_warning}}", block+"\n{{worktree_warning}}", 1)
-	}
-	if strings.TrimSpace(body) == "" {
+	case strings.TrimSpace(body) == "":
 		return block
+	default:
+		return strings.TrimRight(body, "\n") + "\n\n" + block
 	}
-	return strings.TrimRight(body, "\n") + "\n\n" + block
 }
 
 // inMainWorktree reports whether cwd's working tree is the main worktree (its
