@@ -212,7 +212,7 @@ Sections (the template enforces them):
 
 After Phase 7 commits, return to this file and replace the `<TBD>` SHA with the actual WIP commit SHA. The resume side reads this to know what was committed.
 
-`resume.md` stays in the session worktree, on the unlanded branch: a session that resumes the project starts in the main checkout, where the file is not. `cg active` and `cg session set-context` look for it in every worktree of the workspace, and `cg session set-context` prints where it is, so the resuming session finds it there.
+`resume.md` stays in the session worktree, on the unlanded branch: a session that resumes the project starts in the main checkout, where the file is not. `cg active`, the session-start gate and `cg session set-context` look for it in every worktree of the workspace, and `cg session set-context` prints where it is and how to re-enter its worktree, so the resuming session finds it there. The resuming session deletes it with `git rm` once work has resumed; `cg worktree land` refuses to land a commit that still carries it.
 
 ---
 
@@ -228,7 +228,7 @@ After all updates are written, commit in each repo you touched this session (the
 4. **Stage by name only.** Use `git add <path1> <path2> ...`. **Never `git add -A`, `git add .`, or `git add -u`** — those sweep up work you did not author this session.
 5. **Verify the staged set.** Run `git status --short` (or `git diff --cached --stat`) and confirm the list matches what you intended to stage, nothing more. If extras appeared between your staging command and this check, a parallel session probably staged them into the shared index — abort, unstage them, and revisit step 1.
 6. **Commit** with a clear message:
-   - **End mode:** summarize what was captured (e.g., `Wrap session: update versioning-guidelines log, add APIM header versioning todo`).
+   - **End mode:** summarize what was captured (e.g., `Wrap session: update versioning-guidelines log, add APIM header versioning todo`). If this session resumed a paused project, `projects/<slug>/resume.md` must be deleted by now and the deletion staged (`git rm projects/<slug>/resume.md`): `cg worktree land` refuses to land it, because on the landing branch it would mark the project paused for good.
    - **Pause mode:** prefix with `WIP pause:` followed by a one-line cursor (e.g., `WIP pause: half-finished IPv6 regex in apim-ip-logging-adr — next: test IPv6 case`). After the commit lands locally, **return to `resume.md` and replace the `<TBD>` Dirty-state SHA with the actual commit SHA**.
    - If the working tree was clean (no edits since the last commit) **and you are in pause mode**, skip the commit step. Note in `resume.md` Dirty state: `WIP commit SHA: none — worktree clean before pause`.
 7. **Push.**

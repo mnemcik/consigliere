@@ -20,45 +20,67 @@ func ResumeFile(wsRoot, project string) string {
 	return filepath.Join(wsRoot, "projects", project, "resume.md")
 }
 
-// resumeLookupTimeout bounds the git calls that list worktrees. Paused state is
-// read from the SessionEnd hook, whose budget is short; a slow or broken git
-// falls back to the caller's own checkout.
-const resumeLookupTimeout = time.Second
+// resumeLookupTimeout bounds the git call that lists worktrees. Paused state
+// is read from the SessionEnd hook, whose budget is short (1.5 s, shared with
+// the badge lock wait); a slow or broken git falls back to the caller's own
+// checkout.
+const resumeLookupTimeout = 400 * time.Millisecond
 
-// ResumeDirs returns the workspace roots a project's resume.md is looked up
-// under: wsRoot first, then the same workspace in every other worktree of its
-// repository. The pause-mode wrap writes resume.md in the session worktree and
-// commits it to the unlanded session branch, so a session started in the main
-// checkout (or in another worktree) only finds it there. A workspace nested
-// below the git top level is mapped to the same subdirectory of each worktree.
-// Outside git, or when git fails, only wsRoot is returned.
-func ResumeDirs(wsRoot string) []string {
+// Checkout is the workspace as checked out in one worktree of its repository.
+type Checkout struct {
+	Dir    string // the workspace root in that worktree
+	Branch string // the branch checked out there; "" when detached or unknown
+	Own    bool   // the caller's own checkout
+}
+
+// Checkouts returns the workspace in every worktree of its repository: the
+// caller's own checkout (wsRoot) first, then the same workspace directory in
+// each other worktree. The pause-mode wrap writes resume.md in the session
+// worktree and commits it to the unlanded session branch, so a session started
+// in the main checkout (or in another worktree) only finds it there. A
+// workspace nested below the git top level is mapped to the same subdirectory
+// of each worktree. Outside git, or when git fails, only wsRoot is returned.
+func Checkouts(wsRoot string) []Checkout {
 	if wsRoot == "" {
 		return nil
 	}
-	dirs := []string{wsRoot}
-	seen := map[string]bool{canonical(wsRoot): true}
-
+	own := Checkout{Dir: wsRoot, Own: true}
 	ctx, cancel := context.WithTimeout(context.Background(), resumeLookupTimeout)
 	defer cancel()
 	top := gitx.ShowToplevel(ctx, wsRoot)
 	if top == "" {
-		return dirs
+		return []Checkout{own}
 	}
 	rel, err := filepath.Rel(canonical(top), canonical(wsRoot))
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return dirs
+		return []Checkout{own}
 	}
-	paths, err := gitx.WorktreePaths(ctx, wsRoot)
+	list, err := gitx.WorktreeList(ctx, wsRoot)
 	if err != nil {
-		return dirs
+		return []Checkout{own}
 	}
-	for _, p := range paths {
-		d := filepath.Join(p, rel)
-		if c := canonical(d); !seen[c] {
-			seen[c] = true
-			dirs = append(dirs, d)
+	out := []Checkout{own}
+	seen := map[string]bool{canonical(wsRoot): true}
+	for _, w := range list {
+		d := filepath.Join(w.Path, rel)
+		c := canonical(d)
+		if c == canonical(wsRoot) {
+			out[0].Branch = w.Branch
 		}
+		if seen[c] {
+			continue
+		}
+		seen[c] = true
+		out = append(out, Checkout{Dir: d, Branch: w.Branch})
+	}
+	return out
+}
+
+// ResumeDirs returns the Dir of each of Checkouts(wsRoot).
+func ResumeDirs(wsRoot string) []string {
+	var dirs []string
+	for _, c := range Checkouts(wsRoot) {
+		dirs = append(dirs, c.Dir)
 	}
 	return dirs
 }
@@ -73,23 +95,37 @@ func canonical(p string) string {
 	return filepath.Clean(p)
 }
 
-// ResumeFiles returns every existing resume.md for project, looked up in each
-// of ResumeDirs(wsRoot), the caller's own checkout first. A missing file is
-// skipped; any other error is returned.
-func ResumeFiles(wsRoot, project string) ([]string, error) {
+// Resume is one pause cursor: a project's resume.md in one checkout.
+type Resume struct {
+	Project  string
+	File     string
+	Checkout Checkout
+}
+
+// FindResume returns every resume.md for project across Checkouts(wsRoot),
+// the caller's own checkout first.
+func FindResume(wsRoot, project string) ([]Resume, error) {
 	if wsRoot == "" || project == "" {
 		return nil, nil
 	}
-	var found []string
-	for _, d := range ResumeDirs(wsRoot) {
-		f := ResumeFile(d, project)
+	return findResume(Checkouts(wsRoot), project)
+}
+
+// findResume looks project's resume.md up in each checkout. A missing file is
+// skipped. Any other error is returned when it comes from the caller's own
+// checkout; from another worktree (a sibling directory the caller cannot read,
+// an odd mount) it is skipped, so one bad worktree cannot break every lookup.
+func findResume(cs []Checkout, project string) ([]Resume, error) {
+	var found []Resume
+	for _, c := range cs {
+		f := ResumeFile(c.Dir, project)
 		if _, err := os.Stat(f); err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
+			if errors.Is(err, fs.ErrNotExist) || !c.Own {
 				continue
 			}
 			return found, err
 		}
-		found = append(found, f)
+		found = append(found, Resume{Project: project, File: f, Checkout: c})
 	}
 	return found, nil
 }
@@ -97,10 +133,45 @@ func ResumeFiles(wsRoot, project string) ([]string, error) {
 // IsPaused reports whether a project is paused: its resume.md exists in any
 // worktree of the workspace (the wrap skill's pause mode writes it, and the
 // resuming session deletes it once it has read it). A missing file means not
-// paused; any other error is returned.
+// paused; an error reading the caller's own checkout is returned.
 func IsPaused(wsRoot, project string) (bool, error) {
-	found, err := ResumeFiles(wsRoot, project)
+	if wsRoot == "" || project == "" {
+		return false, nil
+	}
+	return pausedIn(Checkouts(wsRoot), project)
+}
+
+func pausedIn(cs []Checkout, project string) (bool, error) {
+	found, err := findResume(cs, project)
 	return len(found) > 0, err
+}
+
+// PausedProjects lists every paused project across Checkouts(wsRoot), one
+// entry per project (the caller's own checkout wins, then worktree order),
+// sorted by project.
+func PausedProjects(wsRoot string) []Resume {
+	return pausedProjectsIn(Checkouts(wsRoot))
+}
+
+func pausedProjectsIn(cs []Checkout) []Resume {
+	var out []Resume
+	seen := map[string]bool{}
+	for _, c := range cs {
+		m, err := filepath.Glob(filepath.Join(c.Dir, "projects", "*", "resume.md"))
+		if err != nil {
+			continue
+		}
+		for _, f := range m {
+			project := filepath.Base(filepath.Dir(f))
+			if seen[project] {
+				continue
+			}
+			seen[project] = true
+			out = append(out, Resume{Project: project, File: f, Checkout: c})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Project < out[j].Project })
+	return out
 }
 
 // MarkPaused records that a session paused its project: it sets the pause

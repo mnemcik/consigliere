@@ -57,6 +57,9 @@ these. Defined in `internal/cgerr`:
 commits (unless `--force`). A paused worktree or branch, one that carries a
 `projects/*/resume.md` left by `/wrap pause` and not on the landing branch, is
 reused instead: its WIP commits are the pause and stay unlanded.
+`cg worktree land` exits **2** while HEAD carries such a cursor: on the landing
+branch it would mark the project paused from every checkout. The resuming
+session deletes it with `git rm` and commits the deletion first.
 
 ### Remote failures
 
@@ -225,7 +228,7 @@ git-ignored.
 
 | Step | Command | Effect |
 |------|---------|--------|
-| Claim | `cg session set-context` | Creates or updates the badge and clears its pause marker. If the project is paused (`projects/<slug>/resume.md` exists in any worktree of the workspace), the pausing session's badge is deleted: this session is resuming it, and the path of each `resume.md` is printed with the worktree that holds the paused work. |
+| Claim | `cg session set-context` | Creates or updates the badge and clears its pause marker. If the project is paused (`projects/<slug>/resume.md` exists in any worktree of the workspace), the pausing session's badge is deleted: this session is resuming it, and the `cg worktree create <session-slug>` command for the worktree that holds the paused work is printed with the path of each `resume.md`. |
 | Work | `cg session mark-dirty` (PostToolUse hook) | Sets `dirty` on the first file edit. |
 | End | `cg session release` (end-mode wrap) | Deletes the badge. |
 | Session closes | `cg session end` (Claude Code `SessionEnd` hook: exit, `/clear`, `/resume`, logout) | Deletes the badge if it is clean and the session did not pause its project. A dirty badge stays, because the worktree may hold unlanded work. |
@@ -234,7 +237,10 @@ git-ignored.
 `resume.md` is looked up in the caller's checkout and in the same workspace
 directory of every other worktree of the repository (`git worktree list`). The
 pause-mode wrap leaves it in the session worktree on an unlanded branch, so a
-session started in the main checkout finds it there.
+session started in the main checkout finds it there. The session-start gate
+lists every paused project with the path of its `resume.md`, whatever gate
+template the workspace uses. An unreadable directory in another worktree is
+skipped; only an error in the caller's own checkout is reported.
 
 `cg active` never lists the caller's own session. It lists the pausing
 session's badge as `paused` while its project has a `resume.md`, whatever the

@@ -1,6 +1,6 @@
 # Resume — {Project Title}
 
-Pickup context for a paused session. Written by `/wrap pause`; **delete it once work has resumed**.
+Pickup context for a paused session. Written by `/wrap pause` in the session worktree; **delete it with `git rm` once work has resumed** (`cg worktree land` refuses to land it).
 
 Paused: YYYY-MM-DD
 

@@ -43,6 +43,9 @@ type GateInput struct {
 	Prompt    string
 	SessionID string
 	CWD       string
+	// WorkspaceRoot is the workspace cwd belongs to, where paused projects are
+	// looked up (in every worktree, see Checkouts). Empty skips the lookup.
+	WorkspaceRoot string
 }
 
 // Gate renders the session-start gate text for a prompt, or returns emit=false
@@ -80,8 +83,30 @@ func Gate(ctx context.Context, root string, in GateInput, gateTemplatePath strin
 		"{{worktree_warning}}", warning,
 	)
 	body = strings.TrimRight(repl.Replace(body), "\n")
+	// Appended to any template, so a workspace's own gate wording (a file cg
+	// never rewrites) still tells the agent about paused projects.
+	if notice := pausedNotice(PausedProjects(in.WorkspaceRoot)); notice != "" {
+		body += "\n\n" + notice
+	}
 
 	return "<user-prompt-submit-hook>\n" + body + "\n</user-prompt-submit-hook>", true
+}
+
+// pausedNotice lists paused projects for the gate. A /wrap pause leaves its
+// resume.md in the session worktree on an unlanded branch, so an agent started
+// in the main checkout does not see it in projects/; this is what points it
+// there before it decides the project has no pickup context.
+func pausedNotice(paused []Resume) string {
+	if len(paused) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("⏸️ Paused projects (/wrap pause). If this prompt resumes one, run cg session set-context\n" +
+		"for it, which prints how to pick it up, and read its resume.md before working:")
+	for _, r := range paused {
+		b.WriteString("\n  - " + r.Project + ": " + r.File)
+	}
+	return b.String()
 }
 
 // inMainWorktree reports whether cwd's working tree is the main worktree (its

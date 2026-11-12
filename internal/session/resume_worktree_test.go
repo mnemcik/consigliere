@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,15 +55,19 @@ func TestResumeFoundInAnotherWorktree(t *testing.T) {
 	for name, sub := range map[string]string{"top level": "", "nested workspace": "vault"} {
 		t.Run(name, func(t *testing.T) {
 			mainWS, linkedWS := pausedWorktreeRepo(t, sub)
-			want := []string{ResumeFile(linkedWS, "p")}
+			want := ResumeFile(linkedWS, "p")
 
-			got, err := ResumeFiles(mainWS, "p")
-			if err != nil || !reflect.DeepEqual(got, want) {
-				t.Errorf("ResumeFiles from main = (%v, %v), want %v", got, err, want)
-			}
-			got, err = ResumeFiles(linkedWS, "p")
-			if err != nil || !reflect.DeepEqual(got, want) {
-				t.Errorf("ResumeFiles from the paused worktree = (%v, %v), want %v", got, err, want)
+			for from, ws := range map[string]string{"main": mainWS, "paused worktree": linkedWS} {
+				got, err := FindResume(ws, "p")
+				if err != nil || len(got) != 1 || got[0].File != want {
+					t.Fatalf("FindResume from %s = (%+v, %v), want %s", from, got, err, want)
+				}
+				if own := canonical(ws) == canonical(linkedWS); got[0].Checkout.Own != own {
+					t.Errorf("FindResume from %s: Own = %v, want %v", from, got[0].Checkout.Own, own)
+				}
+				if got[0].Checkout.Branch != "session/p" {
+					t.Errorf("FindResume from %s: Branch = %q, want session/p", from, got[0].Checkout.Branch)
+				}
 			}
 			if paused, err := IsPaused(mainWS, "p"); err != nil || !paused {
 				t.Errorf("IsPaused from main = (%v, %v), want paused", paused, err)
@@ -69,7 +75,48 @@ func TestResumeFoundInAnotherWorktree(t *testing.T) {
 			if paused, err := IsPaused(mainWS, "q"); err != nil || paused {
 				t.Errorf("IsPaused(q) = (%v, %v), want not paused", paused, err)
 			}
+			got := PausedProjects(mainWS)
+			if len(got) != 1 || got[0].Project != "p" || got[0].File != want {
+				t.Errorf("PausedProjects from main = %+v, want p at %s", got, want)
+			}
 		})
+	}
+}
+
+// An unreadable directory in another worktree must not break the lookup; the
+// same error in the caller's own checkout is still reported.
+func TestResumeSkipsUnreadableOtherWorktree(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions and a non-root user")
+	}
+	mainWS, linkedWS := pausedWorktreeRepo(t, "")
+	dir := filepath.Join(linkedWS, "projects", "p")
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) }) //nolint:gosec // restore so TempDir cleanup can remove it
+	if paused, err := IsPaused(mainWS, "p"); err != nil || paused {
+		t.Errorf("IsPaused from main = (%v, %v), want not paused and no error", paused, err)
+	}
+	if _, err := IsPaused(linkedWS, "p"); err == nil {
+		t.Error("IsPaused from its own checkout must report the permission error")
+	}
+}
+
+func TestGateListsPausedProjects(t *testing.T) {
+	mainWS, linkedWS := pausedWorktreeRepo(t, "")
+	text, emit := Gate(context.Background(), mainWS,
+		GateInput{Prompt: "carry on", SessionID: "s", CWD: mainWS, WorkspaceRoot: mainWS}, "", 0)
+	if !emit || !strings.Contains(text, "Paused projects") || !strings.Contains(text, "p: "+ResumeFile(linkedWS, "p")) {
+		t.Errorf("gate text lacks the paused project:\n%s", text)
+	}
+	if !strings.HasSuffix(text, "</user-prompt-submit-hook>") {
+		t.Errorf("notice must sit inside the hook block:\n%s", text)
+	}
+	text, _ = Gate(context.Background(), mainWS,
+		GateInput{Prompt: "carry on", SessionID: "s", CWD: mainWS}, "", 0)
+	if strings.Contains(text, "Paused projects") {
+		t.Error("no WorkspaceRoot: the gate must not list paused projects")
 	}
 }
 
@@ -118,12 +165,12 @@ func TestPauseSeenFromMainCheckout(t *testing.T) {
 	}
 }
 
-func TestResumeDirsOutsideGit(t *testing.T) {
+func TestCheckoutsOutsideGit(t *testing.T) {
 	ws := t.TempDir()
-	if got := ResumeDirs(ws); !reflect.DeepEqual(got, []string{ws}) {
-		t.Errorf("ResumeDirs outside git = %v, want [%s]", got, ws)
+	if got := Checkouts(ws); !reflect.DeepEqual(got, []Checkout{{Dir: ws, Own: true}}) {
+		t.Errorf("Checkouts outside git = %+v, want only %s", got, ws)
 	}
-	if got := ResumeDirs(""); got != nil {
-		t.Errorf("ResumeDirs(\"\") = %v, want nil", got)
+	if got := Checkouts(""); got != nil {
+		t.Errorf("Checkouts(\"\") = %v, want nil", got)
 	}
 }

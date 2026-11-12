@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -415,7 +414,7 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 	}
 	// Refuse outside a workspace: inside any other git repo the badge root
 	// would still resolve, leaving a stray .claude/ the status line never reads.
-	root, wsRoot, _ := sessionRoots(cmd.Context(), cwd)
+	root, wsRoot, cfg := sessionRoots(cmd.Context(), cwd)
 	if wsRoot == "" || root == "" {
 		return fmt.Errorf("not inside a Consigliere workspace: %s", cwd)
 	}
@@ -433,32 +432,37 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 	for _, sid := range retired {
 		_, _ = fmt.Fprintf(out, "Resuming paused project: released session %s\n", sid)
 	}
-	resumeFiles, err := session.ResumeFiles(wsRoot, setContextProject)
+	resumes, err := session.FindResume(wsRoot, setContextProject)
 	if err != nil {
 		return err
 	}
-	printResumeNotice(out, wsRoot, setContextProject, resumeFiles)
+	printResumeNotice(out, setContextProject, resumes, cfg.WorktreeSettings().BranchPrefix)
 	return nil
 }
 
 // printResumeNotice tells the agent claiming a paused project where its pickup
-// context is. The pause-mode wrap leaves resume.md in the session worktree, on
-// a branch that is not landed, so an agent started in the main checkout would
-// not find it at projects/<slug>/resume.md there.
-func printResumeNotice(out io.Writer, wsRoot, project string, files []string) {
-	if len(files) == 0 {
+// context is and how to pick it up. The pause-mode wrap leaves resume.md in the
+// session worktree, on a branch that is not landed, so an agent started in the
+// main checkout would not find it at projects/<slug>/resume.md there. The
+// worktree's session slug can differ from the project slug, so the command to
+// re-enter it is derived from its branch.
+func printResumeNotice(out io.Writer, project string, resumes []session.Resume, branchPrefix string) {
+	if len(resumes) == 0 {
 		return
 	}
-	_, _ = fmt.Fprintf(out, "Project %s is paused (/wrap pause). Read its pickup context before working,\n"+
-		"and delete it once the user confirms work has resumed:\n", project)
-	for _, f := range files {
-		_, _ = fmt.Fprintf(out, "  %s\n", f)
-		// f is <checkout>/projects/<project>/resume.md.
-		checkout := filepath.Dir(filepath.Dir(filepath.Dir(f)))
-		if canonicalPath(checkout) != canonicalPath(wsRoot) {
-			_, _ = fmt.Fprintf(out, "  The paused work is in %s: continue there, not in this checkout.\n", checkout)
+	_, _ = fmt.Fprintf(out, "Project %s is paused (/wrap pause). To resume it:\n", project)
+	for _, r := range resumes {
+		if !r.Checkout.Own {
+			if slug, ok := strings.CutPrefix(r.Checkout.Branch, branchPrefix); ok && slug != "" && branchPrefix != "" {
+				_, _ = fmt.Fprintf(out, "  - work in its worktree: cg worktree create %s   (%s)\n", slug, r.Checkout.Dir)
+			} else {
+				_, _ = fmt.Fprintf(out, "  - work in the checkout that holds it: %s\n", r.Checkout.Dir)
+			}
 		}
+		_, _ = fmt.Fprintf(out, "  - read its pickup context: %s\n", r.File)
 	}
+	_, _ = fmt.Fprintf(out, "  - once the user confirms work has resumed, delete it and commit the deletion\n"+
+		"    (git rm projects/%s/resume.md && git commit); cg worktree land refuses to land it\n", project)
 }
 
 // startGateInput is the UserPromptSubmit hook payload the gate consumes.
@@ -496,10 +500,12 @@ func runSessionStartGate(cmd *cobra.Command, _ []string) error {
 	cfg, _ := workspace.Detect(root)
 	s := cfg.SessionSettings()
 
+	wsRoot, _, _ := workspace.FindRoot(cwd)
 	text, emit := session.Gate(cmd.Context(), root, session.GateInput{
-		Prompt:    in.Prompt,
-		SessionID: in.SessionID,
-		CWD:       cwd,
+		Prompt:        in.Prompt,
+		SessionID:     in.SessionID,
+		CWD:           cwd,
+		WorkspaceRoot: wsRoot,
 	}, s.GateTemplate, s.PruneDays)
 	if emit {
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), text)
