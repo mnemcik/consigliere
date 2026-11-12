@@ -206,3 +206,17 @@ func TestRepausedOverLandedCursor(t *testing.T) {
 	_, err = Land(ctx, localLandOpts(wt), &log)
 	wantExit(t, err, cgerr.ExitDirty, &log)
 }
+
+// Land run from a subdirectory of the worktree must still see the cursor:
+// git ls-tree lists only the current directory unless told otherwise.
+func TestLandFromSubdirRefusesPauseCursor(t *testing.T) {
+	ctx, root := setupLocalWorkspace(t)
+	var log bytes.Buffer
+	wt, err := Create(ctx, "p", localOpts(root), &log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pauseIn(t, ctx, wt)
+	_, err = Land(ctx, localLandOpts(filepath.Join(wt, "projects", "p")), &log)
+	wantExit(t, err, cgerr.ExitDirty, &log)
+}

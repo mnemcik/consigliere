@@ -174,3 +174,23 @@ func TestCheckoutsOutsideGit(t *testing.T) {
 		t.Errorf("Checkouts(\"\") = %v, want nil", got)
 	}
 }
+
+// A dangling resume.md symlink in the caller's checkout must not hide a real
+// cursor in another worktree.
+func TestPausedProjectsSkipsDanglingSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need extra privileges on Windows")
+	}
+	mainWS, linkedWS := pausedWorktreeRepo(t, "")
+	dangling := ResumeFile(mainWS, "p")
+	if err := os.MkdirAll(filepath.Dir(dangling), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(mainWS, "missing"), dangling); err != nil {
+		t.Fatal(err)
+	}
+	got := PausedProjects(mainWS)
+	if len(got) != 1 || got[0].File != ResumeFile(linkedWS, "p") {
+		t.Errorf("PausedProjects = %+v, want the worktree's cursor", got)
+	}
+}

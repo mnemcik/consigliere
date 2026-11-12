@@ -454,16 +454,28 @@ func printResumeNotice(out io.Writer, project string, resumes []session.Resume, 
 	for _, r := range resumes {
 		if !r.Checkout.Own {
 			if slug, ok := strings.CutPrefix(r.Checkout.Branch, branchPrefix); ok && slug != "" && branchPrefix != "" {
-				_, _ = fmt.Fprintf(out, "  - work in its worktree: cg worktree create %s   (%s)\n", slug, r.Checkout.Dir)
-			} else {
-				_, _ = fmt.Fprintf(out, "  - work in the checkout that holds it: %s\n", r.Checkout.Dir)
+				_, _ = fmt.Fprintf(out, "  - re-enter its worktree: cg worktree create %s\n", slug)
 			}
+			// cg worktree create prints the path but does not change directory.
+			_, _ = fmt.Fprintf(out, "  - move into %s and do all further work there (Claude Code: EnterWorktree with that path),\n"+
+				"    not in this checkout\n", shellQuote(r.Checkout.Dir))
 		}
-		_, _ = fmt.Fprintf(out, "  - read its pickup context: %s\n", r.File)
+		_, _ = fmt.Fprintf(out, "  - read its pickup context: %s\n", shellQuote(r.File))
 	}
-	_, _ = fmt.Fprintf(out, "  - once the user confirms work has resumed, delete it and commit the deletion\n"+
-		"    (git rm %s && git commit); cg worktree land refuses to land it\n", resumes[0].File)
+	_, _ = fmt.Fprintln(out, "  - once the user confirms work has resumed, delete each pickup file listed above in the\n"+
+		"    checkout that holds it and commit the deletion there; cg worktree land refuses to land it:")
+	for _, r := range resumes {
+		// -f: the pause-mode wrap edits resume.md after its WIP commit (the SHA),
+		// and plain git rm refuses a file with local modifications.
+		_, _ = fmt.Fprintf(out, "      git -C %s rm -f -- %s && git -C %s commit -m \"Resume %s: drop pause cursor\"\n",
+			shellQuote(r.Checkout.Dir), shellQuote(r.File), shellQuote(r.Checkout.Dir), project)
+	}
 }
+
+// shellQuote wraps a path in double quotes so a space does not split it in a
+// copied command. Backslashes are left alone (unlike %q), so a Windows path
+// stays valid in PowerShell and cmd.
+func shellQuote(p string) string { return `"` + p + `"` }
 
 // startGateInput is the UserPromptSubmit hook payload the gate consumes.
 type startGateInput struct {

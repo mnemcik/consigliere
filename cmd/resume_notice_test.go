@@ -27,7 +27,8 @@ func TestPrintResumeNotice(t *testing.T) {
 	for _, want := range []string{
 		"cg worktree create p-fix",
 		"/ws--p-fix/projects/p/resume.md",
-		"git rm /ws--p-fix/projects/p/resume.md",
+		`git -C "/ws--p-fix" rm -f -- "/ws--p-fix/projects/p/resume.md"`,
+		`move into "/ws--p-fix"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("notice lacks %q:\n%s", want, got)
@@ -45,7 +46,20 @@ func TestPrintResumeNotice(t *testing.T) {
 	if strings.Contains(got, "cg worktree create") {
 		t.Errorf("no session worktree: must not print a create command:\n%s", got)
 	}
-	if !strings.Contains(got, "work in the checkout that holds it: /other") {
+	if !strings.Contains(got, `move into "/other"`) {
 		t.Errorf("notice lacks the other checkout:\n%s", got)
+	}
+	// Every cursor gets its own deletion, in its own checkout.
+	for _, want := range []string{`git -C "/ws" rm -f -- "/ws/projects/p/resume.md"`, `git -C "/other" rm -f -- "/other/projects/p/resume.md"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("notice lacks %q:\n%s", want, got)
+		}
+	}
+	// A path with a space stays one argument.
+	out.Reset()
+	printResumeNotice(&out, "p", []session.Resume{{Project: "p", File: "/my ws/projects/p/resume.md",
+		Checkout: session.Checkout{Dir: "/my ws", Own: true}}}, "session/")
+	if !strings.Contains(out.String(), `rm -f -- "/my ws/projects/p/resume.md"`) {
+		t.Errorf("path with a space must be quoted:\n%s", out.String())
 	}
 }

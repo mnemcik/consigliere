@@ -125,7 +125,7 @@ func Land(ctx context.Context, opt *LandOptions, logw io.Writer) (LandResult, er
 	if cursors := pause.OnRev(ctx, dir, "HEAD", landingRef); len(cursors) > 0 {
 		return LandResult{}, cgerr.New(cgerr.ExitDirty,
 			"HEAD carries the /wrap pause cursor %s, so the project is still paused. "+
-				"If the work has resumed, delete it and commit the deletion (git rm %s && git commit), then land; "+
+				"If the work has resumed, delete it and commit the deletion (git rm -f -- %s && git commit), then land; "+
 				"to stop mid-work again, pause instead of landing",
 			strings.Join(cursors, ", "), strings.Join(cursors, " "))
 	}

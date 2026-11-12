@@ -59,7 +59,7 @@ commits (unless `--force`). A paused worktree or branch, one that carries a
 reused instead: its WIP commits are the pause and stay unlanded.
 `cg worktree land` exits **2** while HEAD carries such a cursor: on the landing
 branch it would mark the project paused from every checkout. The resuming
-session deletes it with `git rm` and commits the deletion first.
+session deletes it with `git rm -f` (the pause edits it after its WIP commit) and commits the deletion first.
 
 ### Remote failures
 

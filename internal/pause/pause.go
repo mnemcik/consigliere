@@ -28,13 +28,14 @@ func IsCursorPath(name string) bool {
 }
 
 // OnRev returns the pause cursors committed on rev (repo-relative,
-// slash-separated) that differ from the landing ref. A cursor that is on the
+// slash-separated, from the full tree wherever in the repository dir is) that
+// differ from the landing ref. A cursor that is on the
 // landing ref with the same content was landed by mistake; it does not mark rev
 // as paused, so it cannot switch the unlanded-commit guard off for every
 // branch. A new pause over such a file changes its content, so it still
 // counts. Errors read as "no cursor", which keeps the guard.
 func OnRev(ctx context.Context, dir, rev, landing string) []string {
-	out, err := gitx.Run(ctx, dir, "ls-tree", "-r", "-z", "--name-only", rev)
+	out, err := gitx.Run(ctx, dir, "ls-tree", "-r", "-z", "--full-tree", "--name-only", rev)
 	if err != nil {
 		return nil
 	}
@@ -51,7 +52,7 @@ func OnRev(ctx context.Context, dir, rev, landing string) []string {
 // worktree at dir (tracked or untracked, as absolute paths) that are not on
 // the landing ref with the same content. dir must be the worktree's top level.
 func InWorktree(ctx context.Context, dir, landing string) []string {
-	out, err := gitx.Run(ctx, dir, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	out, err := gitx.Run(ctx, dir, "ls-files", "-z", "--full-name", "--cached", "--others", "--exclude-standard")
 	if err != nil {
 		return nil
 	}

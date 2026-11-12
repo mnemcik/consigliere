@@ -76,15 +76,6 @@ func Checkouts(wsRoot string) []Checkout {
 	return out
 }
 
-// ResumeDirs returns the Dir of each of Checkouts(wsRoot).
-func ResumeDirs(wsRoot string) []string {
-	var dirs []string
-	for _, c := range Checkouts(wsRoot) {
-		dirs = append(dirs, c.Dir)
-	}
-	return dirs
-}
-
 // canonical resolves symlinks so the same directory reached through two paths
 // (on macOS /tmp and /private/tmp) compares equal. A path that cannot be
 // resolved is only cleaned.
@@ -164,6 +155,11 @@ func pausedProjectsIn(cs []Checkout) []Resume {
 		for _, f := range m {
 			project := filepath.Base(filepath.Dir(f))
 			if seen[project] {
+				continue
+			}
+			// Glob also returns a dangling symlink; skipping it before marking
+			// the project seen keeps a valid cursor in a later worktree visible.
+			if fi, serr := os.Stat(f); serr != nil || fi.IsDir() {
 				continue
 			}
 			seen[project] = true

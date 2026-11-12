@@ -172,7 +172,7 @@ when .cg.json sets no strategy and the repository has no origin remote.
 Refuses (exit 2) while HEAD carries a /wrap pause cursor (a
 projects/*/resume.md that is not on the landing branch): landing it would mark
 the project paused from every checkout. The session that resumed the project
-deletes it and commits the deletion (git rm) before landing.
+deletes it and commits the deletion (git rm -f) before landing.
 
 Normally run with NO arguments. The optional argument is a commit SHA — NOT a
 slug (unlike 'worktree create <slug>' / 'remove <slug>'). When given, it asserts
