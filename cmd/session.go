@@ -462,7 +462,7 @@ func printResumeNotice(out io.Writer, project string, resumes []session.Resume, 
 		_, _ = fmt.Fprintf(out, "  - read its pickup context: %s\n", r.File)
 	}
 	_, _ = fmt.Fprintf(out, "  - once the user confirms work has resumed, delete it and commit the deletion\n"+
-		"    (git rm projects/%s/resume.md && git commit); cg worktree land refuses to land it\n", project)
+		"    (git rm %s && git commit); cg worktree land refuses to land it\n", resumes[0].File)
 }
 
 // startGateInput is the UserPromptSubmit hook payload the gate consumes.

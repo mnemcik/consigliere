@@ -27,7 +27,7 @@ func TestPrintResumeNotice(t *testing.T) {
 	for _, want := range []string{
 		"cg worktree create p-fix",
 		"/ws--p-fix/projects/p/resume.md",
-		"git rm projects/p/resume.md",
+		"git rm /ws--p-fix/projects/p/resume.md",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("notice lacks %q:\n%s", want, got)

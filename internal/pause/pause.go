@@ -28,30 +28,41 @@ func IsCursorPath(name string) bool {
 }
 
 // OnRev returns the pause cursors committed on rev (repo-relative,
-// slash-separated) that are not on the landing ref. A cursor that is also on
-// the landing ref was landed by mistake; it does not mark rev as paused, so it
-// cannot switch the unlanded-commit guard off for every branch. Errors read as
-// "no cursor", which keeps the guard.
+// slash-separated) that differ from the landing ref. A cursor that is on the
+// landing ref with the same content was landed by mistake; it does not mark rev
+// as paused, so it cannot switch the unlanded-commit guard off for every
+// branch. A new pause over such a file changes its content, so it still
+// counts. Errors read as "no cursor", which keeps the guard.
 func OnRev(ctx context.Context, dir, rev, landing string) []string {
 	out, err := gitx.Run(ctx, dir, "ls-tree", "-r", "-z", "--name-only", rev)
 	if err != nil {
 		return nil
 	}
-	return notOn(ctx, dir, landing, cursors(out))
+	var found []string
+	for _, name := range cursors(out) {
+		if blob, ok := blobAt(ctx, dir, rev, name); !ok || !sameOn(ctx, dir, landing, name, blob) {
+			found = append(found, name)
+		}
+	}
+	return found
 }
 
 // InWorktree returns the pause cursors present in the working tree of the
 // worktree at dir (tracked or untracked, as absolute paths) that are not on
-// the landing ref. dir must be the worktree's top level.
+// the landing ref with the same content. dir must be the worktree's top level.
 func InWorktree(ctx context.Context, dir, landing string) []string {
 	out, err := gitx.Run(ctx, dir, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
 	if err != nil {
 		return nil
 	}
 	var found []string
-	for _, rel := range notOn(ctx, dir, landing, cursors(out)) {
+	for _, rel := range cursors(out) {
 		abs := filepath.Join(dir, filepath.FromSlash(rel))
-		if fileExists(abs) {
+		if !fileExists(abs) {
+			continue
+		}
+		blob, err := gitx.Run(ctx, dir, "hash-object", "--", rel)
+		if err != nil || !sameOn(ctx, dir, landing, rel, strings.TrimSpace(blob)) {
 			found = append(found, abs)
 		}
 	}
@@ -73,15 +84,19 @@ func cursors(out string) []string {
 	return found
 }
 
-// notOn drops the names that exist on ref.
-func notOn(ctx context.Context, dir, ref string, names []string) []string {
-	var keep []string
-	for _, name := range names {
-		if _, err := gitx.Run(ctx, dir, "cat-file", "-e", ref+":"+name); err != nil {
-			keep = append(keep, name)
-		}
+// blobAt returns the object id of name on rev.
+func blobAt(ctx context.Context, dir, rev, name string) (string, bool) {
+	out, err := gitx.Run(ctx, dir, "rev-parse", "--verify", "--quiet", rev+":"+name)
+	if err != nil || out == "" {
+		return "", false
 	}
-	return keep
+	return strings.TrimSpace(out), true
+}
+
+// sameOn reports whether name exists on ref with the object id blob.
+func sameOn(ctx context.Context, dir, ref, name, blob string) bool {
+	onRef, ok := blobAt(ctx, dir, ref, name)
+	return ok && onRef == blob
 }
 
 func fileExists(p string) bool {

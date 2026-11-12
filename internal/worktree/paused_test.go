@@ -185,3 +185,24 @@ func TestLandRefusesPauseCursorRemote(t *testing.T) {
 		t.Fatalf("expected ExitDirty, got %v", err)
 	}
 }
+
+// A cursor landed by mistake, then paused over again: the new content is a
+// real pause, so land still refuses it and create still reuses the worktree.
+func TestRepausedOverLandedCursor(t *testing.T) {
+	ctx, root := setupLocalWorkspace(t)
+	pauseIn(t, ctx, root) // the stale cursor on main
+	var log bytes.Buffer
+	wt, err := Create(ctx, "p", localOpts(root), &log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, "projects", "p", "resume.md"), []byte("new cursor\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, ctx, wt, "commit", "--quiet", "-am", "WIP pause: again")
+	if _, err := Create(ctx, "p", localOpts(root), &log); err != nil {
+		t.Fatalf("Create on a re-paused worktree: %v\n%s", err, log.String())
+	}
+	_, err = Land(ctx, localLandOpts(wt), &log)
+	wantExit(t, err, cgerr.ExitDirty, &log)
+}
