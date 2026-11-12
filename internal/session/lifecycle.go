@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -9,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/mnemcik/consigliere/internal/gitx"
 )
 
 // ResumeFile returns the path of a project's pause cursor (written by the
@@ -17,21 +20,87 @@ func ResumeFile(wsRoot, project string) string {
 	return filepath.Join(wsRoot, "projects", project, "resume.md")
 }
 
-// IsPaused reports whether a project is paused: its resume.md exists (the
-// wrap skill's pause mode writes it, and the resuming session deletes it once
-// it has read it). A missing file means not paused; any other error is
-// returned.
-func IsPaused(wsRoot, project string) (bool, error) {
-	if wsRoot == "" || project == "" {
-		return false, nil
+// resumeLookupTimeout bounds the git calls that list worktrees. Paused state is
+// read from the SessionEnd hook, whose budget is short; a slow or broken git
+// falls back to the caller's own checkout.
+const resumeLookupTimeout = time.Second
+
+// ResumeDirs returns the workspace roots a project's resume.md is looked up
+// under: wsRoot first, then the same workspace in every other worktree of its
+// repository. The pause-mode wrap writes resume.md in the session worktree and
+// commits it to the unlanded session branch, so a session started in the main
+// checkout (or in another worktree) only finds it there. A workspace nested
+// below the git top level is mapped to the same subdirectory of each worktree.
+// Outside git, or when git fails, only wsRoot is returned.
+func ResumeDirs(wsRoot string) []string {
+	if wsRoot == "" {
+		return nil
 	}
-	if _, err := os.Stat(ResumeFile(wsRoot, project)); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return false, nil
+	dirs := []string{wsRoot}
+	seen := map[string]bool{canonical(wsRoot): true}
+
+	ctx, cancel := context.WithTimeout(context.Background(), resumeLookupTimeout)
+	defer cancel()
+	top := gitx.ShowToplevel(ctx, wsRoot)
+	if top == "" {
+		return dirs
+	}
+	rel, err := filepath.Rel(canonical(top), canonical(wsRoot))
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return dirs
+	}
+	paths, err := gitx.WorktreePaths(ctx, wsRoot)
+	if err != nil {
+		return dirs
+	}
+	for _, p := range paths {
+		d := filepath.Join(p, rel)
+		if c := canonical(d); !seen[c] {
+			seen[c] = true
+			dirs = append(dirs, d)
 		}
-		return false, err
 	}
-	return true, nil
+	return dirs
+}
+
+// canonical resolves symlinks so the same directory reached through two paths
+// (on macOS /tmp and /private/tmp) compares equal. A path that cannot be
+// resolved is only cleaned.
+func canonical(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return filepath.Clean(p)
+}
+
+// ResumeFiles returns every existing resume.md for project, looked up in each
+// of ResumeDirs(wsRoot), the caller's own checkout first. A missing file is
+// skipped; any other error is returned.
+func ResumeFiles(wsRoot, project string) ([]string, error) {
+	if wsRoot == "" || project == "" {
+		return nil, nil
+	}
+	var found []string
+	for _, d := range ResumeDirs(wsRoot) {
+		f := ResumeFile(d, project)
+		if _, err := os.Stat(f); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return found, err
+		}
+		found = append(found, f)
+	}
+	return found, nil
+}
+
+// IsPaused reports whether a project is paused: its resume.md exists in any
+// worktree of the workspace (the wrap skill's pause mode writes it, and the
+// resuming session deletes it once it has read it). A missing file means not
+// paused; any other error is returned.
+func IsPaused(wsRoot, project string) (bool, error) {
+	found, err := ResumeFiles(wsRoot, project)
+	return len(found) > 0, err
 }
 
 // MarkPaused records that a session paused its project: it sets the pause

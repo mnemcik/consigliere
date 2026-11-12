@@ -107,15 +107,19 @@ func ActiveProjects(root string, opts ActiveOptions) ([]ActiveSession, error) {
 	return out, nil
 }
 
-// pausedWithoutBadge lists paused projects (projects/*/resume.md) that no
-// badge already reported, as paused or as a live resuming session.
+// pausedWithoutBadge lists paused projects (projects/*/resume.md in any
+// worktree of the workspace, see ResumeDirs) that no badge already reported,
+// as paused or as a live resuming session. A project paused in two worktrees
+// is listed once.
 func pausedWithoutBadge(wsRoot string, seen map[string]bool) []ActiveSession {
 	if wsRoot == "" {
 		return nil
 	}
-	files, err := filepath.Glob(filepath.Join(wsRoot, "projects", "*", "resume.md"))
-	if err != nil {
-		return nil
+	var files []string
+	for _, d := range ResumeDirs(wsRoot) {
+		if m, err := filepath.Glob(filepath.Join(d, "projects", "*", "resume.md")); err == nil {
+			files = append(files, m...)
+		}
 	}
 	var out []ActiveSession
 	for _, f := range files {
@@ -127,6 +131,7 @@ func pausedWithoutBadge(wsRoot string, seen map[string]bool) []ActiveSession {
 		if serr != nil {
 			continue
 		}
+		seen[project] = true
 		out = append(out, ActiveSession{Project: project, MTime: fi.ModTime(), State: StatePaused})
 	}
 	return out

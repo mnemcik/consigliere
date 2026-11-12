@@ -92,7 +92,9 @@ Prints the worktree path to stdout on success so callers can:
     path=$(cg worktree create my-slug) && cd "$path"
 
 Exits 2 when the target branch or worktree has unlanded commits; re-run with
---force to proceed as-is. Exits 7 when origin cannot be reached or refuses the
+--force to proceed as-is. A paused worktree or branch (it carries a
+projects/*/resume.md left by /wrap pause) is reused without --force: its WIP
+commits are the pause and stay unlanded. Exits 7 when origin cannot be reached or refuses the
 credentials: create fetches the landing branch first (not under the local
 strategy, which has nothing to fetch).`,
 	Args: cobra.ExactArgs(1),

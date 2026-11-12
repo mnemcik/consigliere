@@ -212,6 +212,8 @@ Sections (the template enforces them):
 
 After Phase 7 commits, return to this file and replace the `<TBD>` SHA with the actual WIP commit SHA. The resume side reads this to know what was committed.
 
+`resume.md` stays in the session worktree, on the unlanded branch: a session that resumes the project starts in the main checkout, where the file is not. `cg active` and `cg session set-context` look for it in every worktree of the workspace, and `cg session set-context` prints where it is, so the resuming session finds it there.
+
 ---
 
 ### Phase 7: Commit and push

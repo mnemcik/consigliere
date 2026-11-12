@@ -54,7 +54,9 @@ these. Defined in `internal/cgerr`:
 | 7 | `ExitRemote` | a fetch or push against `origin` failed because the remote could not be reached or did not accept the credentials (`cg worktree create`, `remove`, `land`). From `land` the push was never accepted or git reported it as failed: usually nothing landed, but a connection that drops mid-push can leave the remote updated, and re-running is safe either way |
 
 `cg worktree create` exits **2** when the target branch/worktree has unlanded
-commits (unless `--force`).
+commits (unless `--force`). A paused worktree or branch, one that carries a
+`projects/*/resume.md` left by `/wrap pause` and not on the landing branch, is
+reused instead: its WIP commits are the pause and stay unlanded.
 
 ### Remote failures
 
@@ -223,11 +225,16 @@ git-ignored.
 
 | Step | Command | Effect |
 |------|---------|--------|
-| Claim | `cg session set-context` | Creates or updates the badge and clears its pause marker. If the project is paused (`projects/<slug>/resume.md` exists), the pausing session's badge is deleted: this session is resuming it. |
+| Claim | `cg session set-context` | Creates or updates the badge and clears its pause marker. If the project is paused (`projects/<slug>/resume.md` exists in any worktree of the workspace), the pausing session's badge is deleted: this session is resuming it, and the path of each `resume.md` is printed with the worktree that holds the paused work. |
 | Work | `cg session mark-dirty` (PostToolUse hook) | Sets `dirty` on the first file edit. |
 | End | `cg session release` (end-mode wrap) | Deletes the badge. |
 | Session closes | `cg session end` (Claude Code `SessionEnd` hook: exit, `/clear`, `/resume`, logout) | Deletes the badge if it is clean and the session did not pause its project. A dirty badge stays, because the worktree may hold unlanded work. |
 | Pause | `cg session pause` (pause-mode wrap) | Sets the pause marker (`"paused": true`, `"pausedAt"`) on the badge, which stays. `cg active` reports the project as paused while `resume.md` exists. |
+
+`resume.md` is looked up in the caller's checkout and in the same workspace
+directory of every other worktree of the repository (`git worktree list`). The
+pause-mode wrap leaves it in the session worktree on an unlanded branch, so a
+session started in the main checkout finds it there.
 
 `cg active` never lists the caller's own session. It lists the pausing
 session's badge as `paused` while its project has a `resume.md`, whatever the

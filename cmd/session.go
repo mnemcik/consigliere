@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -272,8 +273,10 @@ Existing fields such as the dirty flag are preserved. It refuses to run
 outside a Consigliere workspace. The session ID must match [A-Za-z0-9_-]+.
 The file format is described in docs/cg-subcommands.md, "Session badge file".
 
-When the project is paused (projects/<project>/resume.md exists), this session
-is resuming it, so other sessions' claims on the project are released.
+When the project is paused (projects/<project>/resume.md exists in any worktree
+of the workspace), this session is resuming it, so the pausing session's claim
+is released, and the path of each resume.md is printed, with the worktree that
+holds the paused work.
 
 ` + sessionIDHelp,
 	Example: `  cg session set-context --session-id 1b2c... --area platform --project api-gateway`,
@@ -430,7 +433,32 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 	for _, sid := range retired {
 		_, _ = fmt.Fprintf(out, "Resuming paused project: released session %s\n", sid)
 	}
+	resumeFiles, err := session.ResumeFiles(wsRoot, setContextProject)
+	if err != nil {
+		return err
+	}
+	printResumeNotice(out, wsRoot, setContextProject, resumeFiles)
 	return nil
+}
+
+// printResumeNotice tells the agent claiming a paused project where its pickup
+// context is. The pause-mode wrap leaves resume.md in the session worktree, on
+// a branch that is not landed, so an agent started in the main checkout would
+// not find it at projects/<slug>/resume.md there.
+func printResumeNotice(out io.Writer, wsRoot, project string, files []string) {
+	if len(files) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(out, "Project %s is paused (/wrap pause). Read its pickup context before working,\n"+
+		"and delete it once the user confirms work has resumed:\n", project)
+	for _, f := range files {
+		_, _ = fmt.Fprintf(out, "  %s\n", f)
+		// f is <checkout>/projects/<project>/resume.md.
+		checkout := filepath.Dir(filepath.Dir(filepath.Dir(f)))
+		if canonicalPath(checkout) != canonicalPath(wsRoot) {
+			_, _ = fmt.Fprintf(out, "  The paused work is in %s: continue there, not in this checkout.\n", checkout)
+		}
+	}
 }
 
 // startGateInput is the UserPromptSubmit hook payload the gate consumes.
