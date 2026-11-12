@@ -85,7 +85,7 @@ func TestShellQuoteRoundTrip(t *testing.T) {
 		"",
 		"/two\nlines",
 	} {
-		out, err := exec.Command(sh, "-c", "printf '%s' "+shellQuote(p)).Output() //nolint:gosec // test drives sh with fixed inputs
+		out, err := exec.CommandContext(t.Context(), sh, "-c", "printf '%s' "+shellQuote(p)).Output() //nolint:gosec // test drives sh with fixed inputs
 		if err != nil || string(out) != p {
 			t.Errorf("sh got %q (%v) for %q via %s", out, err, p, shellQuote(p))
 		}
