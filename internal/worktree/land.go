@@ -123,11 +123,20 @@ func Land(ctx context.Context, opt *LandOptions, logw io.Writer) (LandResult, er
 		landingRef = "refs/heads/" + landingBranch
 	}
 	if cursors := pause.OnRev(ctx, dir, "HEAD", landingRef); len(cursors) > 0 {
+		// ":/" makes each path top-level relative, so the suggested command
+		// works from any directory of the worktree; the commit pathspec keeps
+		// anything else that is staged out of it.
+		specs := make([]string, len(cursors))
+		for i, c := range cursors {
+			specs[i] = `":/` + c + `"`
+		}
+		paths := strings.Join(specs, " ")
 		return LandResult{}, cgerr.New(cgerr.ExitDirty,
 			"HEAD carries the /wrap pause cursor %s, so the project is still paused. "+
-				"If the work has resumed, delete it and commit the deletion (git rm -f -- %s && git commit), then land; "+
+				"If the work has resumed, delete it and commit only the deletion "+
+				"(git rm -f -- %s && git commit -m \"Drop pause cursor\" -- %s), then land; "+
 				"to stop mid-work again, pause instead of landing",
-			strings.Join(cursors, ", "), strings.Join(cursors, " "))
+			strings.Join(cursors, ", "), paths, paths)
 	}
 
 	retries := opt.MaxRetries

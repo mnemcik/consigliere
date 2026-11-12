@@ -28,6 +28,7 @@ func TestPrintResumeNotice(t *testing.T) {
 		"cg worktree create p-fix",
 		"/ws--p-fix/projects/p/resume.md",
 		`git -C "/ws--p-fix" rm -f -- "/ws--p-fix/projects/p/resume.md"`,
+		`drop pause cursor" -- "/ws--p-fix/projects/p/resume.md"`,
 		`move into "/ws--p-fix"`,
 	} {
 		if !strings.Contains(got, want) {

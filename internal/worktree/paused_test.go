@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/mnemcik/consigliere/internal/cgerr"
+	"github.com/mnemcik/consigliere/internal/gitx"
 	"github.com/mnemcik/consigliere/internal/workspace"
 )
 
@@ -219,4 +220,37 @@ func TestLandFromSubdirRefusesPauseCursor(t *testing.T) {
 	pauseIn(t, ctx, wt)
 	_, err = Land(ctx, localLandOpts(filepath.Join(wt, "projects", "p")), &log)
 	wantExit(t, err, cgerr.ExitDirty, &log)
+}
+
+// The command the land refusal suggests works from a subdirectory and commits
+// only the deletion, leaving another staged file staged.
+func TestLandRefusalCommandWorksFromSubdir(t *testing.T) {
+	if !gitx.Available() {
+		t.Skip("git not available on PATH")
+	}
+	ctx, root := setupLocalWorkspace(t)
+	var log bytes.Buffer
+	wt, err := Create(ctx, "p", localOpts(root), &log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pauseIn(t, ctx, wt)
+	sub := filepath.Join(wt, "projects", "p")
+	if err := os.WriteFile(filepath.Join(wt, "other.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, ctx, wt, "add", "other.txt")
+
+	_, err = Land(ctx, localLandOpts(sub), &log)
+	wantExit(t, err, cgerr.ExitDirty, &log)
+	spec := `:/projects/p/resume.md`
+	if !strings.Contains(err.Error(), `"`+spec+`"`) {
+		t.Fatalf("refusal lacks the top-level pathspec: %v", err)
+	}
+	mustGit(t, ctx, sub, "rm", "-q", "-f", "--", spec)
+	mustGit(t, ctx, sub, "commit", "--quiet", "-m", "Drop pause cursor", "--", spec)
+	staged, err := gitx.Run(ctx, wt, "diff", "--cached", "--name-only")
+	if err != nil || strings.TrimSpace(staged) != "other.txt" {
+		t.Errorf("staged after the commit = %q (%v), want other.txt still staged", staged, err)
+	}
 }

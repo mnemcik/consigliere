@@ -110,11 +110,15 @@ func findResume(cs []Checkout, project string) ([]Resume, error) {
 	var found []Resume
 	for _, c := range cs {
 		f := ResumeFile(c.Dir, project)
-		if _, err := os.Stat(f); err != nil {
+		fi, err := os.Stat(f)
+		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) || !c.Own {
 				continue
 			}
 			return found, err
+		}
+		if fi.IsDir() { // as in pausedProjectsIn: a directory is not a cursor
+			continue
 		}
 		found = append(found, Resume{Project: project, File: f, Checkout: c})
 	}
