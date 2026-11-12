@@ -476,12 +476,18 @@ func printResumeNotice(out io.Writer, project string, resumes []session.Resume, 
 		// pathspec leaves anything else staged in that checkout (in the main
 		// checkout, possibly another session's files) out of the commit.
 		dir, file := shellQuote(r.Checkout.Dir), shellQuote(r.File)
-		_, _ = fmt.Fprintf(out, "      git -C %s rm -f -- %s && git -C %s commit -m \"Resume %s: drop pause cursor\" -- %s\n",
+		_, _ = fmt.Fprintf(out, "      git -C %s rm -f -- %s && git -C %s commit -m 'Resume %s: drop pause cursor' -- %s\n",
 			dir, file, dir, project, file)
 	}
 }
 
-func shellQuote(p string) string { return `"` + p + `"` }
+// shellQuote single-quotes a path for a POSIX shell, so nothing in it is
+// expanded or split: spaces, $, backticks and double quotes stay literal. A
+// single quote in the path closes the quoting, is escaped, and reopens it.
+// Agents run these commands in a POSIX shell (Claude Code uses Git Bash on
+// Windows), where backslashes inside single quotes are literal too, so a
+// Windows path is unchanged.
+func shellQuote(p string) string { return "'" + strings.ReplaceAll(p, "'", `'\''`) + "'" }
 
 // startGateInput is the UserPromptSubmit hook payload the gate consumes.
 type startGateInput struct {
