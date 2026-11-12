@@ -82,6 +82,8 @@ func TestShellQuoteRoundTrip(t *testing.T) {
 		`/it's "quoted"/x`,
 		`C:\Users\me\ws`,
 		"/100%/x",
+		"",
+		"/two\nlines",
 	} {
 		out, err := exec.Command(sh, "-c", "printf '%s' "+shellQuote(p)).Output() //nolint:gosec // test drives sh with fixed inputs
 		if err != nil || string(out) != p {

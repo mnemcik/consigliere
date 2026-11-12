@@ -476,8 +476,9 @@ func printResumeNotice(out io.Writer, project string, resumes []session.Resume, 
 		// pathspec leaves anything else staged in that checkout (in the main
 		// checkout, possibly another session's files) out of the commit.
 		dir, file := shellQuote(r.Checkout.Dir), shellQuote(r.File)
-		_, _ = fmt.Fprintf(out, "      git -C %s rm -f -- %s && git -C %s commit -m 'Resume %s: drop pause cursor' -- %s\n",
-			dir, file, dir, project, file)
+		msg := shellQuote("Resume " + project + ": drop pause cursor")
+		_, _ = fmt.Fprintf(out, "      git -C %s rm -f -- %s && git -C %s commit -m %s -- %s\n",
+			dir, file, dir, msg, file)
 	}
 }
 
