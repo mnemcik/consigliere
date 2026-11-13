@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.30.1](https://github.com/mnemcik/consigliere/compare/v1.30.0...v1.30.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **session:** find a paused project's resume.md from any worktree ([#208](https://github.com/mnemcik/consigliere/issues/208)) ([28d6bf7](https://github.com/mnemcik/consigliere/commit/28d6bf7a8e456065606f021ed7adb31dfaf61633))
+
 ## [1.30.0](https://github.com/mnemcik/consigliere/compare/v1.29.0...v1.30.0) (2026-10-16)
 
 
