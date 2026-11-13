@@ -19,6 +19,9 @@ func EndSession(root, wsRoot, sessionID string) (bool, error) {
 	if !ValidSessionID(sessionID) {
 		return false, fmt.Errorf("invalid session id %q", sessionID)
 	}
+	// Resolve the worktrees before taking the lock: the SessionEnd budget is
+	// shared between the lock wait and the git call.
+	checkouts := Checkouts(wsRoot)
 	released := false
 	err := withBadgeLock(root, sessionID, func() error {
 		c, err := ReadContext(root, sessionID)
@@ -26,7 +29,7 @@ func EndSession(root, wsRoot, sessionID string) (bool, error) {
 			return err
 		}
 		if c.Paused {
-			paused, err := IsPaused(wsRoot, c.Project)
+			paused, err := pausedIn(checkouts, c.Project)
 			if err != nil || paused {
 				return err
 			}

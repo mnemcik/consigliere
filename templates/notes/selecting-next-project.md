@@ -23,7 +23,7 @@ Rank within a priority bucket is **mutable and user-owned**. Claude may suggest 
 
 ## `cg active` — the active-work detector
 
-`cg active` lists sessions that still claim a project (from the per-session badge files under `.claude/session-context/*.json`) plus paused projects (from `projects/<slug>/resume.md`). A session claims a project with `cg session set-context` and releases it with `cg session release`, which the end-mode wrap runs, so a wrapped session is not listed. The caller's own session is always excluded.
+`cg active` lists sessions that still claim a project (from the per-session badge files under `.claude/session-context/*.json`) plus paused projects (from `projects/<slug>/resume.md` in any worktree of the workspace: a `/wrap pause` leaves it in the session worktree, on a branch that is not landed). A session claims a project with `cg session set-context` and releases it with `cg session release`, which the end-mode wrap runs, so a wrapped session is not listed. The caller's own session is always excluded.
 
 | Invocation | Output |
 |---|---|
@@ -31,7 +31,7 @@ Rank within a priority bucket is **mutable and user-owned**. Claude may suggest 
 | `cg active --slugs` | Distinct **live** project slugs, one per line — ideal for `grep` / `if` checks. Paused projects are not included. |
 | `cg active --json` | A JSON array of entries, each with a `state` field — ideal for piping into other tooling. |
 
-**Paused projects** are not live: nobody is working on them, so they are pickable. Picking one up means resuming it (read its `resume.md`); running `cg session set-context` on it releases the pausing session's claim.
+**Paused projects** are not live: nobody is working on them, so they are pickable. Picking one up means resuming it: run `cg session set-context` on it, which releases the pausing session's claim and prints the `cg worktree create` command for its worktree and the path of its `resume.md`, then follow Session-Start step 5.
 
 **Liveness windows** only matter for claims that were never released (crash, closed terminal, no wrap): such a claim counts as live while its badge was written recently, within 48h by default when `dirty` and 4h when clean. Both are configurable in `.cg.json` under `session.dirtyWindowMin` / `session.activeWindowMin`.
 

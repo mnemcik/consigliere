@@ -92,8 +92,10 @@ Prints the worktree path to stdout on success so callers can:
     path=$(cg worktree create my-slug) && cd "$path"
 
 Exits 2 when the target branch or worktree has unlanded commits; re-run with
---force to proceed as-is. Exits 7 when origin cannot be reached or refuses the
-credentials: create fetches the landing branch first (not under the local
+--force to proceed as-is. A paused worktree or branch is reused without
+--force: it carries a projects/*/resume.md left by /wrap pause that is not on
+the landing branch, and its WIP commits are the pause, so they stay unlanded.
+Exits 7 when origin cannot be reached or refuses the credentials: create fetches the landing branch first (not under the local
 strategy, which has nothing to fetch).`,
 	Args: cobra.ExactArgs(1),
 	RunE: runWorktreeCreate,
@@ -167,12 +169,17 @@ fast-forwards it to HEAD, together with the worktree that has it checked out
 way, or a rebase in progress — the land fails with exit 6. This is the default
 when .cg.json sets no strategy and the repository has no origin remote.
 
+Refuses (exit 2) while HEAD carries a /wrap pause cursor (a
+projects/*/resume.md that is not on the landing branch): landing it would mark
+the project paused from every checkout. The session that resumed the project
+deletes it and commits the deletion (git rm -f) before landing.
+
 Normally run with NO arguments. The optional argument is a commit SHA — NOT a
 slug (unlike 'worktree create <slug>' / 'remove <slug>'). When given, it asserts
 that commit is reachable from HEAD before landing. As a convenience, passing
 this worktree's own slug (or 'session/<slug>') is tolerated and lands HEAD.
 
-Exit codes: 1 usage, 3 rebase conflict, 4 push (or local move) failed after
+Exit codes: 1 usage, 2 pause cursor on HEAD, 3 rebase conflict, 4 push (or local move) failed after
 retries, 5 assertion failed, 6 landing checkout blocked (local), 7 remote
 unreachable or credentials refused.`,
 	Args: cobra.MaximumNArgs(1),

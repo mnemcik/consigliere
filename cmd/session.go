@@ -272,8 +272,10 @@ Existing fields such as the dirty flag are preserved. It refuses to run
 outside a Consigliere workspace. The session ID must match [A-Za-z0-9_-]+.
 The file format is described in docs/cg-subcommands.md, "Session badge file".
 
-When the project is paused (projects/<project>/resume.md exists), this session
-is resuming it, so other sessions' claims on the project are released.
+When the project is paused (projects/<project>/resume.md exists in any worktree
+of the workspace), this session is resuming it, so the pausing session's claim
+is released, and the path of each resume.md is printed, with the worktree that
+holds the paused work.
 
 ` + sessionIDHelp,
 	Example: `  cg session set-context --session-id 1b2c... --area platform --project api-gateway`,
@@ -412,7 +414,7 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 	}
 	// Refuse outside a workspace: inside any other git repo the badge root
 	// would still resolve, leaving a stray .claude/ the status line never reads.
-	root, wsRoot, _ := sessionRoots(cmd.Context(), cwd)
+	root, wsRoot, cfg := sessionRoots(cmd.Context(), cwd)
 	if wsRoot == "" || root == "" {
 		return fmt.Errorf("not inside a Consigliere workspace: %s", cwd)
 	}
@@ -430,8 +432,63 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 	for _, sid := range retired {
 		_, _ = fmt.Fprintf(out, "Resuming paused project: released session %s\n", sid)
 	}
+	resumes, err := session.FindResume(wsRoot, setContextProject)
+	if err != nil {
+		return err
+	}
+	printResumeNotice(out, setContextProject, resumes, cfg.WorktreeSettings().BranchPrefix)
 	return nil
 }
+
+// printResumeNotice tells the agent claiming a paused project where its pickup
+// context is and how to pick it up. The pause-mode wrap leaves resume.md in the
+// session worktree, on a branch that is not landed, so an agent started in the
+// main checkout would not find it at projects/<slug>/resume.md there. The
+// worktree's session slug can differ from the project slug, so the command to
+// re-enter it is derived from its branch.
+func printResumeNotice(out io.Writer, project string, resumes []session.Resume, branchPrefix string) {
+	if len(resumes) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(out, "Project %s is paused (/wrap pause). To resume it:\n", project)
+	entered := false
+	for _, r := range resumes {
+		if !r.Checkout.Own {
+			if !entered {
+				if slug, ok := strings.CutPrefix(r.Checkout.Branch, branchPrefix); ok && slug != "" && branchPrefix != "" {
+					_, _ = fmt.Fprintf(out, "  - re-enter its worktree: cg worktree create %s\n", slug)
+				}
+				// cg worktree create prints the path but does not change directory.
+				_, _ = fmt.Fprintf(out, "  - move into %s and do all further work there (Claude Code: EnterWorktree with that path),\n"+
+					"    not in this checkout\n", shellQuote(r.Checkout.Dir))
+				entered = true
+			} else {
+				_, _ = fmt.Fprintf(out, "  - another pause cursor for it is in %s\n", shellQuote(r.Checkout.Dir))
+			}
+		}
+		_, _ = fmt.Fprintf(out, "  - read its pickup context: %s\n", shellQuote(r.File))
+	}
+	_, _ = fmt.Fprintln(out, "  - once the user confirms work has resumed, delete each pickup file listed above in the\n"+
+		"    checkout that holds it and commit only that deletion; cg worktree land refuses to land it:")
+	for _, r := range resumes {
+		// -f: the pause-mode wrap edits resume.md after its WIP commit (the SHA),
+		// and plain git rm refuses a file with local modifications. The commit
+		// pathspec leaves anything else staged in that checkout (in the main
+		// checkout, possibly another session's files) out of the commit.
+		dir, file := shellQuote(r.Checkout.Dir), shellQuote(r.File)
+		msg := shellQuote("Resume " + project + ": drop pause cursor")
+		_, _ = fmt.Fprintf(out, "      git -C %s rm -f -- %s && git -C %s commit -m %s -- %s\n",
+			dir, file, dir, msg, file)
+	}
+}
+
+// shellQuote single-quotes a path for a POSIX shell, so nothing in it is
+// expanded or split: spaces, $, backticks and double quotes stay literal. A
+// single quote in the path closes the quoting, is escaped, and reopens it.
+// Agents run these commands in a POSIX shell (Claude Code uses Git Bash on
+// Windows), where backslashes inside single quotes are literal too, so a
+// Windows path is unchanged.
+func shellQuote(p string) string { return "'" + strings.ReplaceAll(p, "'", `'\''`) + "'" }
 
 // startGateInput is the UserPromptSubmit hook payload the gate consumes.
 type startGateInput struct {
@@ -468,10 +525,12 @@ func runSessionStartGate(cmd *cobra.Command, _ []string) error {
 	cfg, _ := workspace.Detect(root)
 	s := cfg.SessionSettings()
 
+	wsRoot, _, _ := workspace.FindRoot(cwd)
 	text, emit := session.Gate(cmd.Context(), root, session.GateInput{
-		Prompt:    in.Prompt,
-		SessionID: in.SessionID,
-		CWD:       cwd,
+		Prompt:        in.Prompt,
+		SessionID:     in.SessionID,
+		CWD:           cwd,
+		WorkspaceRoot: wsRoot,
 	}, s.GateTemplate, s.PruneDays)
 	if emit {
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), text)

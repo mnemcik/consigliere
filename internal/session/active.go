@@ -55,6 +55,7 @@ func ActiveProjects(root string, opts ActiveOptions) ([]ActiveSession, error) {
 	if err != nil {
 		return nil, err
 	}
+	checkouts := Checkouts(opts.WorkspaceRoot) // one worktree scan for every badge
 	var out []ActiveSession
 	covered := map[string]bool{} // projects already reported by a badge
 	for _, f := range matches {
@@ -74,7 +75,7 @@ func ActiveProjects(root string, opts ActiveOptions) ([]ActiveSession, error) {
 			Project: c.Project, Area: c.Area, Dirty: c.Dirty,
 			MTime: fi.ModTime(), SessionID: sid, State: StateLive,
 		}
-		paused, perr := IsPaused(opts.WorkspaceRoot, c.Project)
+		paused, perr := pausedIn(checkouts, c.Project)
 		if perr != nil {
 			return nil, perr
 		}
@@ -94,7 +95,7 @@ func ActiveProjects(root string, opts ActiveOptions) ([]ActiveSession, error) {
 		covered[c.Project] = true
 		out = append(out, s)
 	}
-	out = append(out, pausedWithoutBadge(opts.WorkspaceRoot, covered)...)
+	out = append(out, pausedWithoutBadge(checkouts, covered)...)
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Project != out[j].Project {
 			return out[i].Project < out[j].Project
@@ -107,27 +108,21 @@ func ActiveProjects(root string, opts ActiveOptions) ([]ActiveSession, error) {
 	return out, nil
 }
 
-// pausedWithoutBadge lists paused projects (projects/*/resume.md) that no
-// badge already reported, as paused or as a live resuming session.
-func pausedWithoutBadge(wsRoot string, seen map[string]bool) []ActiveSession {
-	if wsRoot == "" {
-		return nil
-	}
-	files, err := filepath.Glob(filepath.Join(wsRoot, "projects", "*", "resume.md"))
-	if err != nil {
-		return nil
-	}
+// pausedWithoutBadge lists paused projects (projects/*/resume.md in any
+// worktree of the workspace, see Checkouts) that no badge already reported,
+// as paused or as a live resuming session. A project paused in two worktrees
+// is listed once.
+func pausedWithoutBadge(cs []Checkout, seen map[string]bool) []ActiveSession {
 	var out []ActiveSession
-	for _, f := range files {
-		project := filepath.Base(filepath.Dir(f))
-		if seen[project] {
+	for _, r := range pausedProjectsIn(cs) {
+		if seen[r.Project] {
 			continue
 		}
-		fi, serr := os.Stat(f)
+		fi, serr := os.Stat(r.File)
 		if serr != nil {
 			continue
 		}
-		out = append(out, ActiveSession{Project: project, MTime: fi.ModTime(), State: StatePaused})
+		out = append(out, ActiveSession{Project: r.Project, MTime: fi.ModTime(), State: StatePaused})
 	}
 	return out
 }
