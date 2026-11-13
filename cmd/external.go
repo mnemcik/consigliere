@@ -52,7 +52,8 @@ func externalDispatch(args []string) (path string, rest []string, ok bool) {
 
 // resolveExternalSubcommand finds the executable backing `cg <namespace>`. It
 // first consults the workspace's installed extensions (an extension whose ledger
-// declares <namespace> ships a binary at <source>/bin/<binary>), then falls back
+// declares <namespace> ships a binary at <source>/<subdir>/bin/<binary>, where
+// <subdir> is empty for a single-repo extension), then falls back
 // to a `cg-<namespace>` executable on $PATH.
 func resolveExternalSubcommand(root, namespace string) (string, bool) {
 	if root != "" {
@@ -63,11 +64,17 @@ func resolveExternalSubcommand(root, namespace string) (string, bool) {
 				if lerr != nil || led == nil {
 					continue
 				}
+				// A co-located extension's bin/ sits under its subdir, next to
+				// its manifest, not at the repo root.
+				sub, perr := extension.CleanSubdir(e.Path)
+				if perr != nil {
+					continue
+				}
 				for _, sc := range led.Subcommands {
 					if sc.Namespace != namespace {
 						continue
 					}
-					bin := filepath.Join(extension.SourceRoot(e), "bin", sc.Binary)
+					bin := filepath.Join(extension.SourceRoot(e), sub, "bin", sc.Binary)
 					if info, serr := os.Stat(bin); serr == nil && !info.IsDir() {
 						return bin, true
 					}
