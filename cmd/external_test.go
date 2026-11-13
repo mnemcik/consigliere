@@ -45,6 +45,48 @@ func TestResolveExternalSubcommandFromExtension(t *testing.T) {
 	}
 }
 
+// A co-located (monorepo) extension keeps bin/ under its subdir, next to its
+// manifest; the resolver must look there, not at the store tree's root.
+func TestResolveExternalSubcommandFromSubdirExtension(t *testing.T) {
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	ws := newWorkspace(t)
+
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	ref := &workspace.ExtensionRef{Name: "shopping", Version: "0.1.0", Source: "direct",
+		Repo: "https://example.com/cg-extensions", Path: "shopping", Commit: commit}
+	cfg, _ := workspace.Detect(ws)
+	cfg.UpsertExtension(ref)
+	if err := cfg.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	led := &extension.Ledger{Name: "shopping", Version: "0.1.0",
+		Subcommands: []extension.SubcommandContribution{{Namespace: "shop", Binary: "cg-shop"}}}
+	if err := led.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	root := extension.SourceRoot(ref)
+	bin := filepath.Join(root, "shopping", "bin", "cg-shop")
+	if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A same-named binary at the tree root belongs to no extension and must not win.
+	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "bin", "cg-shop"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok := resolveExternalSubcommand(ws, "shop")
+	if !ok || got != bin {
+		t.Errorf("resolveExternalSubcommand(shop) = %q,%v; want %q,true", got, ok, bin)
+	}
+}
+
 func TestResolveExternalSubcommandPATHFallback(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("PATH executable-bit semantics differ on Windows")
