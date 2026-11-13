@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.30.2](https://github.com/mnemcik/consigliere/compare/v1.30.1...v1.30.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **extension:** resolve a co-located extension's subcommand under its subdir ([#210](https://github.com/mnemcik/consigliere/issues/210)) ([aefadc5](https://github.com/mnemcik/consigliere/commit/aefadc529e11c37a7d0654a202515a76efd2e5ce))
+
 ## [1.30.1](https://github.com/mnemcik/consigliere/compare/v1.30.0...v1.30.1) (2026-11-13)
 
 
