@@ -1,0 +1,33 @@
+name: Upstream Proposal Gate
+
+# A PR labelled `upstream-proposal` carries a change that came out of a workspace
+# (a drifted framework note, a local rule worth sharing), not deliberate framework
+# work. It reads like the maintainer's own PR, so this check fails until the
+# maintainer adds `impact-reviewed` after weighing what it changes for every
+# workspace on `cg sync`. PRs without the label pass. Labels come from the event
+# payload, so nothing is checked out and no token is needed.
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - labeled
+      - unlabeled
+
+permissions: {}
+
+jobs:
+  gate:
+    name: Upstream proposal reviewed
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          PROPOSAL: ${{ contains(github.event.pull_request.labels.*.name, 'upstream-proposal') }}
+          REVIEWED: ${{ contains(github.event.pull_request.labels.*.name, 'impact-reviewed') }}
+        run: |
+          if [ "$PROPOSAL" = "true" ] && [ "$REVIEWED" != "true" ]; then
+            echo "::error::upstream-proposal PR: review its impact on every workspace, then add the impact-reviewed label."
+            exit 1
+          fi
+          echo "ok (upstream-proposal=$PROPOSAL, impact-reviewed=$REVIEWED)"
