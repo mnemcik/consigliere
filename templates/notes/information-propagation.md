@@ -37,5 +37,12 @@ After any session where new information is discussed or identified, existing tra
 | Scope change | Project Scope, area Overview |
 | Blocker or risk | Project `README.md` Dependencies, project `todo.md`, area Architecture & Constraints |
 | Meeting notes | All areas mentioned, project `log.md` for session record |
+| Work that finishes another project's todo item | That project's `todo.md`: tick the item there too, with a pointer to the commit or log entry |
+
+### Known miss — another project's todo item
+
+Work in one project often completes an item that sits in a *different* project's `todo.md`: a shared service gets configured, a credential gets set up, a check gets added along the way. The "check off every copy" rule only searches the current project's folder, so the other project's item stays open and keeps advertising work that is done, and a later session re-plans it. When a session finishes something another project lists, tick it there too, pointing to the evidence.
+
+The same gap runs the other way: **before starting an old todo item, check the live system first.** It may already be done by work tracked somewhere else.
 
 **This is not optional.** Stale information in areas and projects leads to duplicated or contradictory context across sessions.
