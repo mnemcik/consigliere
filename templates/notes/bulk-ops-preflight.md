@@ -14,6 +14,8 @@ Before running a single command (or short loop) that touches **many entities**, 
 
 About to run a command (or `for`/`xargs` loop) that touches many entities — bulk permission changes, mass invitations, mass repo/resource creation, remote-URL rewrites, multi-file rename/`sed` sweeps, `--paginate` API mutations, anything iterating over a `for X in $(...)`. Threshold is approximate: **more than ~5 entities, or any set you can't visually enumerate before the command runs.**
 
+**Secret writes have no threshold.** A command or script that writes credential values to **more than one** item (password-manager items, `secrets.yaml` files, broker password files, device configs) gets the pre-flight at any count, plus one step: **verify each item's provenance**. Read the item's notes and its consumers' docs to confirm what it actually holds, not just that the field labels match. Two items with the same field name can hold different per-device values, and overwriting them with an assumed shared value is only recoverable from the store's item history.
+
 ## Why this exists
 
 The common shape of bulk-op incidents: the **target set was assumed**, not enumerated; the **exclusion set was implicit**, not declared; and **the command worked on one entity**, so it was assumed to work on all. Shell word-splitting on an unquoted `$(...)` expansion, a loose host/path regex, or an off-by-one arity bug then hits entities you never intended to touch — sometimes irreversibly.
@@ -36,6 +38,17 @@ Only then run the full batch.
 - `for X in $(...)` splits differently across shells (notably bash vs zsh) — test on the actual shell, and prefer a quoted array / `mapfile` / `--jq`.
 - Mass-edit verbs — repo/membership edits, `git remote set-url`, `find -exec`, `sed -i` over a glob — all qualify as bulk-op vectors.
 - A `--dry-run` flag in your own scripts is cheap insurance even for one-shot scripts.
+
+## Back up, verify, then overwrite: separate steps
+
+When a batch overwrites or deletes live files, **back up in one command, verify the backup, and only then overwrite in a second command.** Don't put backup and overwrite in the same loop body, and don't start a script by `rm -rf`-ing an earlier backup.
+
+1. **Backup step:** copy every target to a dated backup folder. Nothing else.
+2. **Verify step:** count the backup files against the target list, and compare checksums against the live files (or their known-good source, such as the repo's `HEAD`). A wrong path or a glob that didn't expand shows up here as a count or hash mismatch.
+3. **Overwrite step:** only after 2 passes. Write in place (`cat new > live`) when the existing owner and mode should be kept; check the existing ownership first instead of assuming it.
+4. **Clean-up:** remove backups only in a later, explicit step, after the change is verified (or leave them in a temp folder that expires).
+
+The failure this prevents: a file list that didn't split (an unquoted `$FILES` in zsh) makes the backup copy nothing, or copy to the wrong place, while reporting success, and the overwrite that follows in the same loop then runs with no backup behind it.
 
 ## Re-runnable content edits — test the post-state first
 
