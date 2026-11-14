@@ -135,7 +135,7 @@ For the trigger list, the step-by-step propagation procedure, and the new-inform
 <!-- cg:section:start=idea-workflow -->
 ## Workflow: Idea → Project
 
-When an idea is captured, explored, turned into a project, parked, or rejected, load [`notes/idea-to-project-workflow.md`](notes/idea-to-project-workflow.md) for the lifecycle steps and status vocabulary (`raw → exploring → ready → parked | rejected`).
+When an idea is captured, explored, turned into a project, parked, or rejected, load [`notes/idea-to-project-workflow.md`](notes/idea-to-project-workflow.md) for the lifecycle steps and status vocabulary (`raw → exploring → ready → promoted | parked | rejected`).
 <!-- cg:section:end=idea-workflow -->
 
 <!-- cg:section:start=session-end -->

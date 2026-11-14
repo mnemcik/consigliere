@@ -1,6 +1,6 @@
 ---
 title: "{Idea Title}"
-status: raw  # raw → exploring → ready → parked | rejected
+status: raw  # raw → exploring → ready → promoted | parked | rejected
 areas: [area-slug]
 tags: [tag1, tag2]
 created: YYYY-MM-DD
@@ -9,6 +9,7 @@ created: YYYY-MM-DD
 # {Idea Title}
 
 <!-- When status reaches "ready", create a project from templates/project/ -->
+<!-- When the project exists, set status: promoted and link it here: **Project:** [Name](../projects/slug/README.md) -->
 
 ## What
 
