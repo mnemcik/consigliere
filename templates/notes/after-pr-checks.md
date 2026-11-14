@@ -20,6 +20,8 @@ Run the loop immediately after `gh pr create`, and again after each push of foll
    - Issue comments: `gh api repos/<org>/<repo>/issues/<N>/comments`
    - Review decisions: `gh api repos/<org>/<repo>/pulls/<N>/reviews`
 
+   CodeRabbit's summary usually lands within about a minute of a push; its line-by-line findings can follow over the next few minutes on a larger diff, so one early empty fetch is not "no comments".
+
 2. **For each open comment, decide one of three outcomes:**
    - **Fix** — comment is valid and the fix is mechanical, local, and low-risk (gofmt, typo, missing null-check, misnamed variable, missing CHANGELOG entry, lint violations, obvious bug). Implement in a follow-up commit on the same branch. Never amend — each review round is its own commit so the PR timeline stays readable.
    - **Reply with reasoning** — comment is valid *as an observation* but Claude judges the fix unnecessary, incorrect, or out-of-scope for this PR. Post a reply explaining *why* — cite the relevant constraint, test, decision, or scope rule. Do not silently dismiss. Endpoint depends on comment type:
@@ -33,11 +35,38 @@ Run the loop immediately after `gh pr create`, and again after each push of foll
    - All CI checks are green or explicitly accepted skips, AND
    - Every inline and issue comment is either marked resolved, has a follow-up commit addressing it, or has a reasoning reply from Claude.
 
-5. **If CI or review is still pending at session end** — offer the user a `/schedule` agent to resume the loop in an appropriate window (15–30 min for typical Go CI, longer for slow pipelines, ~60 min if waiting for CodeRabbit on a large diff).
+   CodeRabbit reviews each commit once and doesn't withdraw an earlier `CHANGES_REQUESTED` when the follow-up has no findings. If that stale review is all that blocks a merge, a top-level `@coderabbitai approve` comment resolves its threads and approves (with `request_changes_workflow` / auto-approvals enabled); never post it on a PR whose impact the user still has to review.
+
+5. **If CI or review is still pending at session end** — offer the user a `/schedule` agent to resume the loop in an appropriate window (15–30 min for typical Go CI, longer for slow pipelines, ~60 min if waiting for CodeRabbit on a large diff). Name the concrete action in the offer ("resume the review loop on PR #<N>"), not "check on things".
+
+## Delegating the loop to a subagent
+
+A subagent that opens or works a PR doesn't know this note, and tends to stop at "PR opened" or at the first green run, leaving the review comments unanswered. Put this block, verbatim, into every PR-related subagent prompt; paraphrasing drops the exit clause it exists for:
+
+```
+PR-loop contract — you MUST NOT exit until ONE of the following is true:
+  (a) the PR is merged by the user and its branch/worktree are cleaned up, OR
+  (b) you are blocked and have reported the blocker to the supervising session.
+
+Each iteration:
+  1. Push the current branch.
+  2. Poll CI until every check has a terminal state (success, failure, or accepted skip).
+  3. Fetch every new comment and review since the last iteration. Classify each: fix / reply with reasoning / escalate.
+  4. Apply uncontroversial fixes (lint, type errors, validated suggested diffs) in a new commit. Push.
+  5. Reply with reasoning to every finding you reject; never resolve a thread without a commit or a reply.
+  6. Re-fetch; repeat from 2 until all CI is green AND every comment is addressed.
+  7. Ask the supervisor for merge authorisation. Never merge yourself.
+
+Report a checkpoint to the supervisor every iteration:
+  PR #<N> | round <K> | CI: <green|failing checks> | open comments: <count> | last commit: <sha> | next: <action>
+```
+
+The checkpoint line doubles as the supervisor's stall signal: no checkpoint for about 30 minutes means the loop has dropped and needs a nudge.
 
 ## Guardrails
 
 - **Never silently resolve a comment.** Either a commit addresses it or a reply explains the reasoning. A PR timeline without replies is a PR where decisions went unrecorded.
-- **Never force-push or amend on a review branch.** Each round of review earns its own commit; the timeline is the review trail.
+- **Never force-push or amend on a review branch.** Each round of review earns its own commit; the timeline is the review trail. Rewriting a reviewed commit also breaks CodeRabbit's incremental review, which anchors on the commits it has seen.
 - **Bot comments (CodeRabbit, Copilot, dependabot) follow the same rule as human comments.** Bots are noisy but not dismissible by default — assess validity, fix or reply.
 - **If a comment disagrees with an existing decision** (recorded in `decisions.md` or an area file), the reply should cite the decision. Do not reopen settled ground without user direction.
+- **Scope creep gets a reply, not a silent fix.** A correct comment that belongs in another PR is answered as such, ideally with a link to the follow-up issue or todo entry that tracks it.
