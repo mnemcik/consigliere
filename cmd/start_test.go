@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -191,7 +192,11 @@ func TestLeadingRootFlagsBeforeStart(t *testing.T) {
 		rootCmd.SetArgs(nil)
 	})
 
-	rootCmd.SetArgs(argsForStart([]string{"--no-auto-update", "start", "foo", "--no-auto-update"}))
+	args, err := argsForStart([]string{"--no-auto-update", "start", "foo", "--no-auto-update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootCmd.SetArgs(args)
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -209,19 +214,110 @@ func TestArgsForStartLeavesOtherCommandsAlone(t *testing.T) {
 		{"--no-auto-update", "status"},
 		{"start", "--x"},
 		{"--no-auto-update"},
-		{"--bogus", "start"},
 		{},
 	} {
-		if got := argsForStart(args); !reflect.DeepEqual(got, args) {
-			t.Errorf("argsForStart(%q) = %q, want unchanged", args, got)
+		if got, err := argsForStart(args); err != nil || !reflect.DeepEqual(got, args) {
+			t.Errorf("argsForStart(%q) = %q, %v; want unchanged", args, got, err)
 		}
 	}
 }
 
+func TestArgsForStartRejectsBadLeadingFlags(t *testing.T) {
+	t.Cleanup(func() { noAutoUpdate = false })
+	for _, args := range [][]string{
+		{"--no-auto-update=invalid", "start", "prompt"},
+		{"--bogus", "start"},
+	} {
+		got, err := argsForStart(args)
+		var ce *cgerr.CodedError
+		if !errors.As(err, &ce) || ce.Code != cgerr.ExitUsage {
+			t.Errorf("argsForStart(%q) = %q, %v; want an ExitUsage error, nothing forwarded", args, got, err)
+		}
+	}
+}
+
+// executeRoot runs args through cobra (as main does after argsForStart) and
+// returns what cg printed and the error Execute returned.
+func executeRoot(t *testing.T, args []string) (stdout, stderr string, err error) {
+	t.Helper()
+	var out, errOut bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&errOut)
+	rootCmd.SetArgs(args)
+	t.Cleanup(func() {
+		rootCmd.SetOut(nil)
+		rootCmd.SetErr(nil)
+		rootCmd.SetArgs(nil)
+		rootCmd.SilenceErrors, rootCmd.SilenceUsage = false, false
+		startCmd.SilenceErrors, startCmd.SilenceUsage = false, false
+		noAutoUpdate = false
+	})
+	err = rootCmd.Execute()
+	return out.String(), errOut.String(), err
+}
+
+func TestBareCgWithoutAgentFallsBackToHelp(t *testing.T) {
+	workspaceWithAgent(t, []string{"cg-test-no-such-agent-xyz"})
+	s := newStubStart(t, true)
+
+	stdout, stderr, err := executeRoot(t, []string{"--no-auto-update"})
+	if err != nil {
+		t.Fatalf("bare cg must exit 0 when the agent is missing, got %v", err)
+	}
+	if s.called {
+		t.Error("no agent may start")
+	}
+	if !strings.Contains(stdout, "Usage:") {
+		t.Errorf("want help on stdout, got %q", stdout)
+	}
+	if !strings.Contains(stderr, noAgentHint) || strings.Contains(stderr, "Error:") {
+		t.Errorf("want only the hint on stderr, got %q", stderr)
+	}
+}
+
+func TestStartWithoutAgentErrorsWithoutUsage(t *testing.T) {
+	workspaceWithAgent(t, []string{"cg-test-no-such-agent-xyz"})
+	newStubStart(t, true)
+
+	stdout, stderr, err := executeRoot(t, []string{"start"})
+	var ce *cgerr.CodedError
+	if !errors.As(err, &ce) || ce.Code != cgerr.ExitUsage {
+		t.Fatalf("want ExitUsage, got %v", err)
+	}
+	if !strings.Contains(stderr, "Error: cg start:") {
+		t.Errorf("want the error on stderr, got %q", stderr)
+	}
+	if strings.Contains(stdout+stderr, "Usage:") {
+		t.Errorf("no usage text after the error; stdout %q stderr %q", stdout, stderr)
+	}
+}
+
+// On Windows execAgent returns the agent's exit code as a CodedError with no
+// message; cg must pass the code on without printing anything of its own.
+func TestAgentExitCodePrintsNothing(t *testing.T) {
+	for _, args := range [][]string{{"start"}, {"--no-auto-update"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			workspaceWithAgent(t, []string{testAgent(t)})
+			newStubStart(t, true)
+			runAgent = func(string, []string) error { return cgerr.New(3, "") }
+
+			stdout, stderr, err := executeRoot(t, args)
+			var ce *cgerr.CodedError
+			if !errors.As(err, &ce) || ce.Code != 3 {
+				t.Fatalf("want exit code 3 passed on, got %v", err)
+			}
+			if stdout != "" || stderr != "" {
+				t.Errorf("cg must print nothing; stdout %q stderr %q", stdout, stderr)
+			}
+		})
+	}
+}
+
 // installLauncher records extension name in the workspace at ws with a launcher
-// ledger entry and, when withBinary, drops its binary into the extension tree.
-// It returns the binary's path.
-func installLauncher(t *testing.T, ws, name string, args []string, withBinary bool) string {
+// in its ledger (ledgerBin) and writes its tree: a manifest declaring a launcher
+// with manifestBin ("" = none) and, when withBinary, the binary itself. It
+// returns the binary's path.
+func installLauncher(t *testing.T, ws, name, ledgerBin, manifestBin string, args []string, withBinary bool) string {
 	t.Helper()
 	ref := &workspace.ExtensionRef{Name: name, Version: "0.1.0", Source: "direct",
 		Repo: "https://example.com/" + name, Commit: "0123456789abcdef0123456789abcdef01234567"}
@@ -234,28 +330,62 @@ func installLauncher(t *testing.T, ws, name string, args []string, withBinary bo
 		t.Fatal(err)
 	}
 	led := &extension.Ledger{Name: name, Version: "0.1.0",
-		Launcher: []extension.LauncherContribution{{Binary: "cg-" + name, Args: args}}}
+		Launcher: []extension.LauncherContribution{{Binary: ledgerBin, Args: args}}}
 	if err := led.Save(ws); err != nil {
 		t.Fatal(err)
 	}
-	bin := filepath.Join(extension.SourceRoot(ref), "bin", "cg-"+name)
+	tree := extension.SourceRoot(ref)
+	if err := os.MkdirAll(filepath.Join(tree, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := extension.Manifest{Manifest: extension.SchemaVersion, Name: name, Version: "0.1.0", Description: "d"}
+	if manifestBin != "" {
+		m.Contributes.Launcher = []extension.LauncherContribution{{Binary: manifestBin, Args: args}}
+	}
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tree, extension.ManifestFile), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(tree, "bin", manifestBin)
 	if withBinary {
-		if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-			t.Fatal(err)
+		// Both the declared binary and whatever the ledger points at exist, so
+		// only the manifest check can keep cg from running the ledger's choice.
+		for _, b := range []string{manifestBin, ledgerBin} {
+			if b == "" {
+				continue
+			}
+			p := filepath.Join(tree, "bin", b)
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(p, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	return bin
 }
 
-func TestStartRunsLauncherWithAgent(t *testing.T) {
+// launcherWorkspace is a workspace whose agent is the test binary, as cwd, with
+// a private extension store.
+func launcherWorkspace(t *testing.T, agent ...string) (ws, exe string) {
+	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	exe := testAgent(t)
-	workspaceWithAgent(t, []string{exe, "--flag"})
-	ws, _ := os.Getwd()
-	bin := installLauncher(t, ws, "tmux", []string{"launch"}, true)
+	exe = testAgent(t)
+	workspaceWithAgent(t, append([]string{exe}, agent...))
+	ws, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ws, exe
+}
+
+func TestStartRunsLauncherWithAgent(t *testing.T) {
+	ws, exe := launcherWorkspace(t, "--flag")
+	bin := installLauncher(t, ws, "tmux", "cg-tmux", "cg-tmux", []string{"launch"}, true)
 	s := newStubStart(t, true)
 
 	if err := startCmd.RunE(startCmd, []string{"--resume", "abc"}); err != nil {
@@ -264,18 +394,37 @@ func TestStartRunsLauncherWithAgent(t *testing.T) {
 	if s.path != bin {
 		t.Fatalf("ran %q, want the launcher %q", s.path, bin)
 	}
-	want := []string{bin, "launch", "--", exe, "--flag", "--resume", "abc"}
-	if !reflect.DeepEqual(s.argv, want) {
+	if want := []string{bin, "launch", "--", exe, "--flag", "--resume", "abc"}; !reflect.DeepEqual(s.argv, want) {
 		t.Errorf("argv = %q, want %q", s.argv, want)
 	}
 }
 
+// The ledger is committed in the workspace, so it can't make cg run a
+// launcher the extension's manifest doesn't declare, or a binary outside it.
+func TestStartIgnoresLedgerLauncherTheManifestDoesNotDeclare(t *testing.T) {
+	for _, tc := range []struct{ name, ledgerBin, manifestBin string }{
+		{"manifest declares none", "cg-tmux", ""},
+		{"ledger points elsewhere", "../../../evil", "cg-tmux"},
+		{"different binary", "cg-other", "cg-tmux"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ws, exe := launcherWorkspace(t)
+			installLauncher(t, ws, "tmux", tc.ledgerBin, tc.manifestBin, nil, true)
+			s := newStubStart(t, true)
+
+			if err := startCmd.RunE(startCmd, nil); err != nil {
+				t.Fatal(err)
+			}
+			if s.path != exe || !reflect.DeepEqual(s.argv, []string{exe}) {
+				t.Errorf("want the agent directly, got %+v", s)
+			}
+		})
+	}
+}
+
 func TestStartWithMissingLauncherBinaryStartsAgent(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	exe := testAgent(t)
-	workspaceWithAgent(t, []string{exe})
-	ws, _ := os.Getwd()
-	installLauncher(t, ws, "tmux", nil, false)
+	ws, exe := launcherWorkspace(t)
+	installLauncher(t, ws, "tmux", "cg-tmux", "cg-tmux", nil, false)
 	s := newStubStart(t, true)
 
 	if err := startCmd.RunE(startCmd, nil); err != nil {
@@ -287,11 +436,9 @@ func TestStartWithMissingLauncherBinaryStartsAgent(t *testing.T) {
 }
 
 func TestStartRefusesTwoLaunchers(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	workspaceWithAgent(t, []string{testAgent(t)})
-	ws, _ := os.Getwd()
-	installLauncher(t, ws, "tmux", nil, true)
-	installLauncher(t, ws, "zellij", nil, true)
+	ws, _ := launcherWorkspace(t)
+	installLauncher(t, ws, "tmux", "cg-tmux", "cg-tmux", nil, true)
+	installLauncher(t, ws, "zellij", "cg-zellij", "cg-zellij", nil, true)
 	s := newStubStart(t, true)
 
 	err := startCmd.RunE(startCmd, nil)
@@ -301,5 +448,30 @@ func TestStartRefusesTwoLaunchers(t *testing.T) {
 	}
 	if s.called {
 		t.Error("nothing may start when two launchers are installed")
+	}
+
+	// Bare cg falls back to help instead.
+	stdout, stderr, err := executeRoot(t, []string{"--no-auto-update"})
+	if err != nil || !strings.Contains(stdout, "Usage:") || !strings.Contains(stderr, noAgentHint) {
+		t.Errorf("bare cg: err %v stdout %q stderr %q", err, stdout, stderr)
+	}
+}
+
+func TestLauncherFailureNamesTheExtension(t *testing.T) {
+	ws, _ := launcherWorkspace(t)
+	installLauncher(t, ws, "tmux", "cg-tmux", "cg-tmux", nil, true)
+	newStubStart(t, true)
+	runAgent = func(string, []string) error { return errors.New("exec format error") }
+
+	err := startCmd.RunE(startCmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "launcher of extension tmux") || !strings.Contains(err.Error(), "exec format error") {
+		t.Errorf("want the error to name the extension, got %v", err)
+	}
+	// An exit code passed through from the launcher stays silent.
+	runAgent = func(string, []string) error { return cgerr.New(5, "") }
+	_, stderr, err := executeRoot(t, []string{"start"})
+	var ce *cgerr.CodedError
+	if !errors.As(err, &ce) || ce.Code != 5 || stderr != "" {
+		t.Errorf("want exit 5 passed on silently, got %v, stderr %q", err, stderr)
 	}
 }

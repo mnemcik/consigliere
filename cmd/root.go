@@ -82,6 +82,11 @@ func Execute() error {
 	if path, rest, ok := externalDispatch(os.Args[1:]); ok {
 		return runExternal(path, rest)
 	}
-	rootCmd.SetArgs(argsForStart(os.Args[1:]))
+	args, err := argsForStart(os.Args[1:])
+	if err != nil {
+		rootCmd.PrintErrln("Error:", err)
+		return err
+	}
+	rootCmd.SetArgs(args)
 	return rootCmd.Execute()
 }

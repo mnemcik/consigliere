@@ -152,9 +152,6 @@ forbids cross-extension dependencies (declare none).
     ],
     "gitignore": [
       { "id": "1password-cache", "path": "fragments/gitignore" }
-    ],
-    "launcher": [
-      { "binary": "cg-1password", "args": ["launch"] }
     ]
   }
 }
@@ -196,7 +193,9 @@ forbids cross-extension dependencies (declare none).
 4. **`subcommands`** — `[{ namespace, binary }]`. Declares that the extension
    ships an external binary `bin/<binary>` exposed as `cg <namespace> …` via the
    external-subcommand resolver (below). Install symlinks/records the binary;
-   it is **not** copied into the workspace.
+   it is **not** copied into the workspace. The binary is looked up by its
+   exact name, with no `.exe` added, also on Windows; a Windows build must be
+   committed under the declared name.
 
 5. **`templates`** — `[{ src, dest }]`. Copies template files into the
    workspace `templates/` tree (same copy semantics as notes, including
@@ -264,11 +263,22 @@ forbids cross-extension dependencies (declare none).
    `cg start` (and bare `cg` in a workspace) run `bin/<binary> <args…> --
    <agent argv…> <user args…>` instead of the agent (`session.agent`) directly;
    the binary is expected to exec the agent itself, e.g. inside a terminal
-   multiplexer. Like `subcommands` it touches no workspace files: it is recorded
-   in the ledger, and `cg start` reads the binary from the extension's tree.
-   When two installed extensions contribute a launcher, `cg start` refuses and
-   names them; when the binary is missing it warns and starts the agent
-   directly. A cg older than this contribution point ignores the key, so the
+   multiplexer:
+
+   ```json
+   "launcher": [{ "binary": "cg-tmux", "args": ["launch"] }]
+   ```
+
+   Like `subcommands` it touches no workspace files and is recorded in the
+   ledger. Because the ledger is committed in the workspace, `cg start` doesn't
+   trust it alone: it runs a launcher only when the extension's own manifest,
+   in its tree at the recorded commit, validates and declares the same entry,
+   and the binary exists there (looked up by its exact name, as for
+   `subcommands`). Otherwise it warns, naming the extension, and starts the
+   agent directly; `cg init` restores a missing tree. When two installed
+   extensions contribute a launcher, `cg start` refuses and names them (bare
+   `cg` prints help instead), and a launcher that fails to start is named in
+   the error. A cg older than this contribution point ignores the key, so the
    extension still installs and `cg` keeps its older behaviour.
 
 ## `cg extension` subcommand suite
@@ -437,6 +447,7 @@ diff. Not user-edited.
   "hooks": [{ "event": "SessionStart", "wrapper": ".claude/hooks/credentials-gate.sh" }],
   "templates": ["templates/credential-request.md"],
   "subcommands": [{ "namespace": "secret", "binary": "cg-1password" }],
+  "launcher": [{ "binary": "cg-1password", "args": ["launch"] }], // only when the manifest declares one
   "indexRows": [{ "file": "notes/INDEX.md", "marker": "ext:1password:index" }],
   "gitHooks": [".cg/git-hooks/post-commit.d/1password-check.sh"],
   "gitignore": ["1password-cache"],

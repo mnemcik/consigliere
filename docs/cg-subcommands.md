@@ -39,6 +39,17 @@ template.
 | `cg tags` | `area-tags.sh` | **shipped** |
 | `cg colors check` | `colors-check.sh` | **shipped** |
 
+## `cg start` and bare `cg`
+
+`cg start [args…]` runs the workspace's AI session: the argv in `.cg.json` `session.agent` (default `["claude"]`) in the current directory, with `args` appended. Bare `cg` does the same when it runs inside a workspace or worktree with stdin and stdout on a terminal; otherwise it prints help, as before.
+
+- **The command comes from the workspace.** `session.agent` is read from the workspace's own `.cg.json`, so typing `cg` in a workspace you cloned runs whatever that file names, before the agent's own folder-trust prompt. Check `session.agent` in a workspace you didn't create.
+- **No agent, no error.** When the agent can't be started (not on `PATH`, an empty program name), bare `cg` prints help plus a one-line hint and exits 0; `cg start` prints the error and exits 1.
+- **Exit code and output.** On Unix the agent replaces the cg process, so its exit code and signals are its own. On Windows cg waits for it and exits with its code, printing nothing of its own.
+- **Root hooks.** Bare `cg` now runs the root pre-run hook (the one-time "cg updated" notice and the background update check), also when it falls back to help; once the agent replaces cg, the post-run notice does not run.
+- **`start` is a built-in verb.** It takes precedence over an extension subcommand with the namespace `start` and over a `cg-start` executable on `PATH`.
+- **Flags.** Root flags go before `start` (`cg --no-auto-update start`); everything after `start` goes to the agent unchanged. A root flag before `start` that doesn't parse is an error.
+
 ## Exit-code contract
 
 Promoted from `land-worktree-commit.sh`; callers (e.g. the wrap skill) branch on
