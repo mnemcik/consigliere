@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"golang.org/x/term"
 
 	"github.com/mnemcik/consigliere/internal/cgerr"
@@ -61,22 +62,36 @@ const noAgentHint = "cg: no agent started: set session.agent in .cg.json, or run
 // runRoot is bare `cg`: start the session when inside a workspace and attached
 // to a terminal, otherwise print help as before. The terminal check keeps
 // scripts and pipes (`cg | cat`, `cg </dev/null`) from launching an agent.
-// When the agent can't be started (not on PATH, invalid session.agent), it
-// also prints help, plus a one-line hint, and exits 0 as bare `cg` always did.
+// When the agent can't be started (not on PATH, invalid session.agent, or it
+// fails to start), it also prints help, plus a one-line hint, and exits 0 as
+// bare `cg` always did.
 func runRoot(cmd *cobra.Command, _ []string) error {
 	root := workspaceRootForDispatch()
 	if root == "" || !isInteractive() {
 		return cmd.Help()
 	}
 	path, argv, err := resolveAgent(root, nil)
-	if err != nil {
-		if herr := cmd.Help(); herr != nil {
-			return herr
+	if err == nil {
+		err = runAgent(path, argv)
+		if err == nil || isExitCode(err) {
+			return finishAgent(cmd, err)
 		}
-		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), noAgentHint)
-		return nil
 	}
-	return finishAgent(cmd, runAgent(path, argv))
+	// The agent couldn't be resolved or failed to start (e.g. removed after
+	// the lookup): help plus the hint, exit 0, as bare cg always did.
+	if herr := cmd.Help(); herr != nil {
+		return herr
+	}
+	_, _ = fmt.Fprintln(cmd.ErrOrStderr(), noAgentHint)
+	return nil
+}
+
+// isExitCode reports whether err only carries an exit code passed through
+// from the agent (a CodedError without a message), as opposed to a failure to
+// start it.
+func isExitCode(err error) bool {
+	var ce *cgerr.CodedError
+	return errors.As(err, &ce) && ce.Err.Error() == ""
 }
 
 // finishAgent applies cg's output rules to the result of running the agent:
@@ -88,8 +103,7 @@ func finishAgent(cmd *cobra.Command, err error) error {
 		return nil
 	}
 	cmd.SilenceUsage = true
-	var ce *cgerr.CodedError
-	if errors.As(err, &ce) && ce.Err.Error() == "" {
+	if isExitCode(err) {
 		cmd.SilenceErrors = true
 	}
 	return err
@@ -145,6 +159,12 @@ func argsForStart(args []string) ([]string, error) {
 		return args, nil
 	}
 	if err := rootCmd.PersistentFlags().Parse(args[:i]); err != nil {
+		if errors.Is(err, pflag.ErrHelp) {
+			// `cg --help start`: a help request. Handing the arguments to cobra
+			// as they are would run start, whose disabled flag parsing passes
+			// --help to the agent, so ask for start's help explicitly.
+			return []string{cmdHelp, startCmd.Name()}, nil
+		}
 		return nil, cgerr.New(cgerr.ExitUsage, "%v", err)
 	}
 	return args[i:], nil

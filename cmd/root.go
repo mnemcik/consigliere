@@ -14,6 +14,7 @@ var Version = "dev"
 const (
 	cmdUpdate  = "update"
 	cmdVersion = "version"
+	cmdHelp    = "help"
 	cmdCheck   = "check"
 )
 
@@ -60,7 +61,7 @@ func autoUpdateDisabled(cmd *cobra.Command) bool {
 		return true
 	}
 	switch cmd.Name() {
-	case cmdVersion, "help", cmdUpdate:
+	case cmdVersion, cmdHelp, cmdUpdate:
 		return true
 	}
 	if p := cmd.Parent(); p != nil && p.Name() == cmdUpdate {

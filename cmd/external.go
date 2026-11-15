@@ -35,7 +35,7 @@ func externalDispatch(args []string) (path string, rest []string, ok bool) {
 		return "", nil, false // no verb (flags only)
 	}
 	verb := args[verbIdx]
-	if verb == "help" || verb == "completion" || verb == "__complete" {
+	if verb == cmdHelp || verb == "completion" || verb == "__complete" {
 		return "", nil, false
 	}
 	// If cobra can resolve the verb onward to a real (non-root) command, it's a
