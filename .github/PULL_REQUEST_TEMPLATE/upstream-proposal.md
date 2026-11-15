@@ -17,6 +17,6 @@ What this PR changes in the framework.
 ## Test plan
 
 - [ ] `make check` passes locally (lint + test + fmt + tidy)
-- [ ] Opened as a draft with the `upstream-proposal` label; `impact-reviewed` is added by the maintainer only
+- [ ] Opened as a draft with the `upstream-proposal` label; the `impact-review` status is set by the maintainer only
 
-See [CONTRIBUTING.md](https://github.com/mnemcik/consigliere/blob/main/CONTRIBUTING.md#upstream-proposals) for what the label and the gate do.
+See [CONTRIBUTING.md](https://github.com/mnemcik/consigliere/blob/main/CONTRIBUTING.md#upstream-proposals) for the label, and [Impact review](https://github.com/mnemcik/consigliere/blob/main/CONTRIBUTING.md#impact-review) for the required check.
