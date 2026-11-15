@@ -20,6 +20,7 @@ template.
 
 | Subcommand | Promotes | Status |
 |------------|----------|--------|
+| `cg start [agent args…]`; bare `cg` in a workspace from a terminal | none | **shipped** |
 | `cg worktree create <slug> [--force]` | `create-session-worktree.sh` | **shipped** |
 | `cg worktree land [<sha>] [--strategy …]` | `land-worktree-commit.sh` | **shipped** |
 | `cg worktree remove <slug> [--force]` | `remove-session-worktree.sh` | **shipped** |
@@ -157,7 +158,9 @@ unchanged.
                                           //   stdout is prepended to the badge; `cg
                                           //   init` seeds it from the user's prior
                                           //   statusLine command. "" = badge only
-    "badgeFormat": "[{area}/{project}]"  // status-line badge format
+    "badgeFormat": "[{area}/{project}]", // status-line badge format
+    "agent": ["claude"]                  // argv `cg start` / bare `cg` runs to start the
+                                          //   workspace's AI session (program, then its args)
   },
 
   "pushPolicy": {
@@ -179,6 +182,7 @@ unchanged.
 | `session.dirtyWindowMin` | `2880` |
 | `session.pruneDays` | `7` |
 | `session.badgeFormat` | `[{area}/{project}]` |
+| `session.agent` | `["claude"]` |
 | `pushPolicy.source` | `areas` |
 
 Workspace-specific gate wording and status-line behavior stay **out of the
