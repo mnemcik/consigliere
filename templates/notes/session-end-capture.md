@@ -25,7 +25,7 @@ Findings from working on a specific topic, tool, or resource (gotchas, patterns,
 
 Observations about how the user prefers to work with Claude — prompting patterns, communication preferences, decision-making style, collaboration expectations.
 
-1. **Check for duplicates first** — Read `insights/DRAFTS.md` and check if the observation is already captured (as `draft`, `promoted`, or `rejected`). If an existing insight covers the same theme, skip or add new evidence to that file instead of creating a new one.
+1. **Check for duplicates first** — Read `insights/DRAFTS.md` and check if the observation is already captured (as `draft`, `promoted`, or `rejected`). If an existing insight covers the same point, add new evidence to that file instead of creating a new one, as a dated bullet in its Evidence section: `- **YYYY-MM-DD (project/context):** what happened`. One bullet per re-observation keeps repeats countable, so a pattern that keeps coming back stands out at review time. If the existing insight is already `promoted` and Claude still had to be corrected, record that too: the rule isn't taking effect, so it may be worded badly or sit in the wrong place, and the next review should look at it.
 2. Create an insight file in `insights/YYYY-MM-DD/` (today's date subfolder) using `templates/insight.md` with status `draft`
 3. Include concrete evidence (paraphrased examples from the session)
 4. Propose a suggested rule that could be added to CLAUDE.md if promoted
