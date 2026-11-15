@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/mnemcik/consigliere/internal/cgerr"
+	"github.com/mnemcik/consigliere/internal/extension"
 	"github.com/mnemcik/consigliere/internal/workspace"
 )
 
@@ -165,5 +167,91 @@ func TestStartRejectsEmptyAgentElement(t *testing.T) {
 	}
 	if s.called {
 		t.Error("agent must not run with an invalid session.agent")
+	}
+}
+
+// installLauncher records extension name in the workspace at ws with a launcher
+// ledger entry and, when withBinary, drops its binary into the extension tree.
+// It returns the binary's path.
+func installLauncher(t *testing.T, ws, name string, args []string, withBinary bool) string {
+	t.Helper()
+	ref := &workspace.ExtensionRef{Name: name, Version: "0.1.0", Source: "direct",
+		Repo: "https://example.com/" + name, Commit: "0123456789abcdef0123456789abcdef01234567"}
+	cfg, err := workspace.Detect(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.UpsertExtension(ref)
+	if err := cfg.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	led := &extension.Ledger{Name: name, Version: "0.1.0",
+		Launcher: []extension.LauncherContribution{{Binary: "cg-" + name, Args: args}}}
+	if err := led.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(extension.SourceRoot(ref), "bin", "cg-"+name)
+	if withBinary {
+		if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return bin
+}
+
+func TestStartRunsLauncherWithAgent(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	exe := testAgent(t)
+	workspaceWithAgent(t, []string{exe, "--flag"})
+	ws, _ := os.Getwd()
+	bin := installLauncher(t, ws, "tmux", []string{"launch"}, true)
+	s := newStubStart(t, true)
+
+	if err := startCmd.RunE(startCmd, []string{"--resume", "abc"}); err != nil {
+		t.Fatal(err)
+	}
+	if s.path != bin {
+		t.Fatalf("ran %q, want the launcher %q", s.path, bin)
+	}
+	want := []string{bin, "launch", "--", exe, "--flag", "--resume", "abc"}
+	if !reflect.DeepEqual(s.argv, want) {
+		t.Errorf("argv = %q, want %q", s.argv, want)
+	}
+}
+
+func TestStartWithMissingLauncherBinaryStartsAgent(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	exe := testAgent(t)
+	workspaceWithAgent(t, []string{exe})
+	ws, _ := os.Getwd()
+	installLauncher(t, ws, "tmux", nil, false)
+	s := newStubStart(t, true)
+
+	if err := startCmd.RunE(startCmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	if s.path != exe || !reflect.DeepEqual(s.argv, []string{exe}) {
+		t.Errorf("want the agent directly, got %+v", s)
+	}
+}
+
+func TestStartRefusesTwoLaunchers(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	workspaceWithAgent(t, []string{testAgent(t)})
+	ws, _ := os.Getwd()
+	installLauncher(t, ws, "tmux", nil, true)
+	installLauncher(t, ws, "zellij", nil, true)
+	s := newStubStart(t, true)
+
+	err := startCmd.RunE(startCmd, nil)
+	var ce *cgerr.CodedError
+	if !errors.As(err, &ce) || ce.Code != cgerr.ExitUsage || !strings.Contains(err.Error(), "tmux, zellij") {
+		t.Errorf("want ExitUsage naming both extensions, got %v", err)
+	}
+	if s.called {
+		t.Error("nothing may start when two launchers are installed")
 	}
 }

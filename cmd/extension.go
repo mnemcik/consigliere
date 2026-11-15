@@ -631,6 +631,7 @@ func printInstallSummary(cmd *cobra.Command, m *extension.Manifest, dest, source
 	add(len(c.Hooks), "hook(s)")
 	add(len(c.GitHooks), "git hook script(s)")
 	add(len(c.Subcommands), "subcommand(s)")
+	add(len(c.Launcher), "launcher")
 	add(len(c.Templates), "template(s)")
 	if len(declared) == 0 {
 		_, _ = fmt.Fprintln(out, "  no contributions")

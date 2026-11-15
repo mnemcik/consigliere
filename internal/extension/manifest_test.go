@@ -3,6 +3,7 @@ package extension
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -112,6 +113,24 @@ func TestValidateRejects(t *testing.T) {
 			"invalid binary",
 		},
 		{
+			"two launchers",
+			Manifest{Manifest: 1, Name: "a", Version: "1.0.0", Description: "d",
+				Contributes: Contributions{Launcher: []LauncherContribution{{Binary: "cg-a"}, {Binary: "cg-b"}}}},
+			"at most one",
+		},
+		{
+			"launcher bad binary",
+			Manifest{Manifest: 1, Name: "a", Version: "1.0.0", Description: "d",
+				Contributes: Contributions{Launcher: []LauncherContribution{{Binary: "../x"}}}},
+			"launcher[0]: invalid binary",
+		},
+		{
+			"launcher empty arg",
+			Manifest{Manifest: 1, Name: "a", Version: "1.0.0", Description: "d",
+				Contributes: Contributions{Launcher: []LauncherContribution{{Binary: "cg-a", Args: []string{"launch", ""}}}}},
+			"args[1] is empty",
+		},
+		{
 			"template missing src",
 			Manifest{Manifest: 1, Name: "a", Version: "1.0.0", Description: "d",
 				Contributes: Contributions{Templates: []CopyContribution{{Src: "", Dest: "d"}}}},
@@ -208,5 +227,27 @@ func TestValidateRejectsEscapingPaths(t *testing.T) {
 				t.Errorf("%s %q accepted", name, escape)
 			}
 		}
+	}
+}
+
+func TestParseManifestLauncher(t *testing.T) {
+	m, err := ParseManifest([]byte(`{"manifest":1,"name":"tmux","version":"0.1.0","description":"d",
+		"contributes":{"launcher":[{"binary":"cg-tmux","args":["launch"]}]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	want := []LauncherContribution{{Binary: "cg-tmux", Args: []string{"launch"}}}
+	if !reflect.DeepEqual(m.Contributes.Launcher, want) {
+		t.Errorf("launcher = %+v, want %+v", m.Contributes.Launcher, want)
+	}
+	led, err := Apply(t.TempDir(), t.TempDir(), m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(led.Launcher, want) {
+		t.Errorf("ledger launcher = %+v, want %+v", led.Launcher, want)
 	}
 }

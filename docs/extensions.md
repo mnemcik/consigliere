@@ -152,6 +152,9 @@ forbids cross-extension dependencies (declare none).
     ],
     "gitignore": [
       { "id": "1password-cache", "path": "fragments/gitignore" }
+    ],
+    "launcher": [
+      { "binary": "cg-1password", "args": ["launch"] }
     ]
   }
 }
@@ -165,7 +168,7 @@ forbids cross-extension dependencies (declare none).
 | `name` | string | yes | Short, lowercase, `[a-z0-9-]+`. The install name, the `.cg.json` key, the legacy clone directory, the `ext:<name>:section` namespace, and the `cg-<name>` binary stem. Must be unique in the registry. |
 | `version` | string | yes | Extension semver. Recorded in `.cg.json`; compared on `cg extension update`. |
 | `description` | string | yes | One line, shown in `cg extension list` and the registry. |
-| `contributes` | object | yes | The contribution points (all seven keys below). Each is an array; an empty/absent array means "contributes nothing of this type". |
+| `contributes` | object | yes | The contribution points (all eight keys below). Each is an array; an empty/absent array means "contributes nothing of this type". |
 
 ### Contribution points
 
@@ -256,6 +259,17 @@ forbids cross-extension dependencies (declare none).
    A cg older than this contribution point ignores the key: it doesn't write the
    block, and it doesn't know about a block a newer cg wrote, so its `remove`
    leaves that block behind.
+
+8. **`launcher`** — `[{ binary, args? }]`, at most one entry. Makes
+   `cg start` (and bare `cg` in a workspace) run `bin/<binary> <args…> --
+   <agent argv…> <user args…>` instead of the agent (`session.agent`) directly;
+   the binary is expected to exec the agent itself, e.g. inside a terminal
+   multiplexer. Like `subcommands` it touches no workspace files: it is recorded
+   in the ledger, and `cg start` reads the binary from the extension's tree.
+   When two installed extensions contribute a launcher, `cg start` refuses and
+   names them; when the binary is missing it warns and starts the agent
+   directly. A cg older than this contribution point ignores the key, so the
+   extension still installs and `cg` keeps its older behaviour.
 
 ## `cg extension` subcommand suite
 

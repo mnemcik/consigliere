@@ -29,9 +29,9 @@ const hooksDirRel = ".claude/hooks"
 // before any change, and on failure the snapshot is restored — so a failed
 // apply leaves the workspace byte-for-byte as it was, even when contributions
 // overwrite files a prior install of the same extension already placed.
-// Subcommand contributions touch no workspace files (the external-subcommand
-// resolver reads them from the clone); they are recorded so the ledger is a
-// complete account of the manifest.
+// Subcommand and launcher contributions touch no workspace files (the
+// external-subcommand resolver and `cg start` read them from the clone); they
+// are recorded so the ledger is a complete account of the manifest.
 func Apply(root, cloneDir string, m *Manifest) (*Ledger, error) {
 	return ApplyWith(root, cloneDir, m, ApplyOptions{Force: true})
 }
@@ -238,6 +238,7 @@ func applyAll(root, cloneDir string, m *Manifest, l *Ledger, plans []copyPlan, n
 		l.GitHooks = append(l.GitHooks, dest)
 	}
 	l.Subcommands = append(l.Subcommands, m.Contributes.Subcommands...)
+	l.Launcher = append(l.Launcher, m.Contributes.Launcher...)
 	return nil
 }
 
