@@ -313,6 +313,38 @@ func TestAgentExitCodePrintsNothing(t *testing.T) {
 	}
 }
 
+func TestBareCgFallsBackWhenTheAgentFailsToStart(t *testing.T) {
+	workspaceWithAgent(t, []string{testAgent(t)})
+	newStubStart(t, true)
+	runAgent = func(string, []string) error { return errors.New("fork/exec: no such file or directory") }
+
+	stdout, stderr, err := executeRoot(t, []string{"--no-auto-update"})
+	if err != nil || !strings.Contains(stdout, "Usage:") || !strings.Contains(stderr, noAgentHint) {
+		t.Errorf("bare cg: err %v stdout %q stderr %q", err, stdout, stderr)
+	}
+	// cg start keeps the error.
+	_, stderr, err = executeRoot(t, []string{"start"})
+	if err == nil || !strings.Contains(stderr, "no such file") || strings.Contains(stderr, "Usage:") {
+		t.Errorf("cg start: err %v stderr %q", err, stderr)
+	}
+}
+
+func TestLeadingHelpBeforeStartIsAHelpRequest(t *testing.T) {
+	for _, flag := range []string{"--help", "-h"} {
+		args := []string{flag, "start"}
+		got, err := argsForStart(args)
+		if err != nil || !reflect.DeepEqual(got, []string{"help", "start"}) {
+			t.Fatalf("argsForStart(%q) = %q, %v; want [help start]", args, got, err)
+		}
+		workspaceWithAgent(t, []string{testAgent(t)})
+		s := newStubStart(t, true)
+		stdout, _, err := executeRoot(t, got)
+		if err != nil || s.called || !strings.Contains(stdout, "cg start [agent args") {
+			t.Errorf("%s start: want help and no agent; err %v called %v stdout %.60q", flag, err, s.called, stdout)
+		}
+	}
+}
+
 // installLauncher records extension name in the workspace at ws with a launcher
 // in its ledger (ledgerBin) and writes its tree: a manifest declaring a launcher
 // with manifestBin ("" = none) and, when withBinary, the binary itself. It
