@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -14,7 +16,8 @@ import (
 // TestExecAgentRunsAgent runs the real platform execAgent (syscall.Exec on
 // Unix, a child process on Windows) in a subprocess of the test binary. The
 // subprocess starts the test binary again as the "agent" (TestExecAgentHelper),
-// which prints the arguments and environment it got and exits 3. The parent
+// which prints the arguments, environment and a stdin line on stdout, a line on
+// stderr, and exits 3. The parent
 // checks the output and that exit code 3 reaches it on both platforms.
 func TestExecAgentRunsAgent(t *testing.T) {
 	if os.Getenv("CG_TEST_EXEC_AGENT") == "launch" {
@@ -33,13 +36,19 @@ func TestExecAgentRunsAgent(t *testing.T) {
 	}
 	c := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestExecAgentRunsAgent$") //nolint:gosec // the test binary itself
 	c.Env = append(os.Environ(), "CG_TEST_EXEC_AGENT=launch", "CG_TEST_AGENT_MARK=env-ok")
-	out, err := c.CombinedOutput()
+	c.Stdin = strings.NewReader("hello from stdin\n")
+	var stdout, stderr bytes.Buffer
+	c.Stdout, c.Stderr = &stdout, &stderr
+	err := c.Run()
 	var ee *exec.ExitError
 	if !errors.As(err, &ee) || ee.ExitCode() != 3 {
-		t.Fatalf("want exit 3 from the agent, got %v\n%s", err, out)
+		t.Fatalf("want exit 3 from the agent, got %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
 	}
-	if want := `AGENT args=["a b" ""] mark=env-ok`; !strings.Contains(string(out), want) {
-		t.Errorf("agent output missing %q:\n%s", want, out)
+	if want := `AGENT args=["a b" ""] mark=env-ok stdin="hello from stdin"`; !strings.Contains(stdout.String(), want) {
+		t.Errorf("agent stdout missing %q:\n%s", want, stdout.String())
+	}
+	if want := "AGENT stderr line"; !strings.Contains(stderr.String(), want) || strings.Contains(stdout.String(), want) {
+		t.Errorf("agent stderr must reach stderr only; stdout: %q stderr: %q", stdout.String(), stderr.String())
 	}
 }
 
@@ -56,6 +65,8 @@ func TestExecAgentHelper(t *testing.T) {
 			break
 		}
 	}
-	fmt.Printf("AGENT args=%q mark=%s\n", args, os.Getenv("CG_TEST_AGENT_MARK"))
+	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	fmt.Printf("AGENT args=%q mark=%s stdin=%q\n", args, os.Getenv("CG_TEST_AGENT_MARK"), strings.TrimRight(line, "\r\n"))
+	fmt.Fprintln(os.Stderr, "AGENT stderr line")
 	os.Exit(3)
 }
