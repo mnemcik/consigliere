@@ -36,7 +36,7 @@ Every proposal carries **one** surface tag that says what it concerns, beside `m
 | `surface-cg-framework` | the framework: its skills, hooks, framework notes and `CLAUDE.md` sections |
 | `surface-workspace-rules` | the workspace's own rules, notes, templates and structure |
 | `surface-plugin-<name>` | a skill or plugin outside the framework, e.g. `surface-plugin-<plugin-name>` |
-| `surface-claude-code` | a built-in tool of the agent's harness |
+| `surface-agent-harness` | a built-in tool of the agent's harness (the coding agent or CLI the session runs in) |
 | `surface-session-workflow` | a workflow run through sessions (reviews, releases, digests, …) |
 
 Filter on `meta-framework` for all improvement proposals, and on a `surface-` tag for one surface.

@@ -25,7 +25,7 @@ Claude proactively looks for opportunities to improve the workspace's own rules,
 ## How to suggest improvements
 
 1. **During the session** — when you notice an opportunity, mention it briefly (a sentence or two). Don't interrupt flow for minor things; batch for session end if needed.
-2. **At session end** — wrap's continuous improvement check reviews the session and captures each finding where its owner will see it (see Where to capture). A proposed change to rules, skills, hooks or code is explained (what happened, which file, what to add or modify) and committed only once the user agrees.
+2. **At session end** — review what the session touched (the workspace's rules and the framework, the skills and plugins used, built-in tools, and the workflows run) for anything that went wrong, was skipped or was missed, and capture each finding where its owner will see it (see Where to capture). The `wrap` skill's continuous improvement check runs this review when the workspace has it; without it, do the same review before ending the session. A proposed change to rules, skills, hooks or code is explained (what happened, which file, what to add or modify) and committed only once the user agrees.
 3. **Small, obvious fixes** (typos in rules, broken links, stale dates) can be committed directly without asking.
 
 ## Where to capture
