@@ -4,7 +4,7 @@
 
 - **Category:** process
 - **Tags:** `meta-framework`, `improvements`, `feedback-loop`, `ai-instructions`
-- **Framework note:** shipped by Consigliere and loaded on demand when looking for ways to improve how the workspace itself works. Safe to edit for your workspace.
+- **Framework note:** shipped by Consigliere and loaded on demand when looking for ways to improve the way of working: the workspace itself and the skills, plugins and tools it relies on. Safe to edit for your workspace.
 
 ## Summary
 
@@ -41,6 +41,6 @@ Improvements apply to **the way of working** — `CLAUDE.md` rules, templates, n
 ## Related
 
 - `CLAUDE.md` → **Continuous Improvement** (inline rule + trigger + the two preference rules)
-- [`capturing-improvement-proposals.md`](capturing-improvement-proposals.md) — persistence mechanics (idea file + BACKLOG row)
+- [`capturing-improvement-proposals.md`](capturing-improvement-proposals.md) — routing and persistence mechanics (owner of the surface, or idea file + BACKLOG row, with surface tags)
 - [`claude-md-hygiene.md`](claude-md-hygiene.md) — decides whether a promoted rule belongs inline in `CLAUDE.md` or in a note
 - [`reviewing-insights-workflow.md`](reviewing-insights-workflow.md) — promote/reject/defer for draft insights
