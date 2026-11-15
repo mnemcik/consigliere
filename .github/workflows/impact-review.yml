@@ -32,6 +32,7 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.event.pull_request.head.sha }}
           AUTHOR: ${{ github.event.pull_request.user.login }}
+          ACTION: ${{ github.event.action }}
         run: |
           case "$AUTHOR" in
             'consigliere-release-bot[bot]' | 'dependabot[bot]' | 'renovate[bot]')
@@ -43,6 +44,16 @@ jobs:
               description="Waiting for the maintainer's impact review"
               ;;
           esac
+          # A delayed or re-run job must not replace the maintainer's approval of
+          # this same commit. Reopening is the one deliberate reset.
+          if [ "$state" = pending ] && [ "$ACTION" != reopened ]; then
+            current=$(gh api "repos/$REPO/commits/$SHA/status" \
+              --jq '[.statuses[] | select(.context == "impact-review")][0].state // ""') || current=""
+            if [ "$current" = success ]; then
+              echo "impact-review: already success on this commit, left as is"
+              exit 0
+            fi
+          fi
           gh api -X POST "repos/$REPO/statuses/$SHA" \
             -f state="$state" -f context=impact-review -f description="$description" >/dev/null
           echo "impact-review: $state ($AUTHOR)"
