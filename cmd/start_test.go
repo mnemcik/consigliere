@@ -35,7 +35,7 @@ func newStubStart(t *testing.T, interactive bool) *stubStart {
 
 // workspaceWithAgent makes a workspace whose session.agent is agent and makes
 // it the working directory.
-func workspaceWithAgent(t *testing.T, agent []string) string {
+func workspaceWithAgent(t *testing.T, agent []string) {
 	t.Helper()
 	ws := newWorkspace(t)
 	if agent != nil {
@@ -49,7 +49,6 @@ func workspaceWithAgent(t *testing.T, agent []string) string {
 		}
 	}
 	t.Chdir(ws)
-	return ws
 }
 
 // testAgent is an executable that exists on every platform: the test binary.
