@@ -75,10 +75,10 @@ func startSession(root string, extra []string) error {
 		return err
 	}
 	agent := cfg.SessionSettings().Agent
-	for _, a := range agent {
-		if strings.TrimSpace(a) == "" {
-			return cgerr.New(cgerr.ExitUsage, "cg start: session.agent in %s has an empty element: %q", filepath.Join(root, ".cg.json"), agent)
-		}
+	// Only the program must be named; later elements are passed verbatim (an
+	// empty string is a valid argument).
+	if strings.TrimSpace(agent[0]) == "" {
+		return cgerr.New(cgerr.ExitUsage, "cg start: session.agent in %s has an empty program name: %q", filepath.Join(root, ".cg.json"), agent)
 	}
 	path, err := exec.LookPath(agent[0])
 	if err != nil {
@@ -143,4 +143,24 @@ func findLauncher(root string, cfg *workspace.Config) (*launcher, error) {
 		names[i] = l.ext
 	}
 	return nil, cgerr.New(cgerr.ExitUsage, "cg start: more than one installed extension contributes a launcher (%s); remove all but one", strings.Join(names, ", "))
+}
+
+// argsForStart handles root persistent flags given before the `start` verb
+// (`cg --no-auto-update start …`). startCmd disables flag parsing so that every
+// argument after `start` reaches the agent unchanged, which also leaves such
+// leading flags unparsed and forwarded to the agent. argsForStart parses them
+// into the root flag set and returns the arguments without them. Any other
+// argument list, or leading flags that don't parse, is returned unchanged.
+func argsForStart(args []string) []string {
+	i := 0
+	for i < len(args) && args[i] != "" && args[i][0] == '-' {
+		i++
+	}
+	if i == 0 || i == len(args) || args[i] != startCmd.Name() {
+		return args
+	}
+	if err := rootCmd.PersistentFlags().Parse(args[:i]); err != nil {
+		return args
+	}
+	return args[i:]
 }

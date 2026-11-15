@@ -159,14 +159,62 @@ func TestStartAgentNotFound(t *testing.T) {
 	}
 }
 
-func TestStartRejectsEmptyAgentElement(t *testing.T) {
-	workspaceWithAgent(t, []string{testAgent(t), " "})
+func TestStartRejectsEmptyProgramName(t *testing.T) {
+	workspaceWithAgent(t, []string{" ", "x"})
 	s := newStubStart(t, true)
-	if err := startCmd.RunE(startCmd, nil); err == nil || !strings.Contains(err.Error(), "empty element") {
-		t.Errorf("want empty-element error, got %v", err)
+	if err := startCmd.RunE(startCmd, nil); err == nil || !strings.Contains(err.Error(), "empty program name") {
+		t.Errorf("want empty-program error, got %v", err)
 	}
 	if s.called {
 		t.Error("agent must not run with an invalid session.agent")
+	}
+}
+
+func TestStartKeepsEmptyArguments(t *testing.T) {
+	exe := testAgent(t)
+	workspaceWithAgent(t, []string{exe, "wrapper.js", ""})
+	s := newStubStart(t, true)
+	if err := startCmd.RunE(startCmd, []string{""}); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{exe, "wrapper.js", "", ""}; !reflect.DeepEqual(s.argv, want) {
+		t.Errorf("argv = %q, want %q", s.argv, want)
+	}
+}
+
+func TestLeadingRootFlagsBeforeStart(t *testing.T) {
+	exe := testAgent(t)
+	workspaceWithAgent(t, []string{exe})
+	s := newStubStart(t, true)
+	t.Cleanup(func() {
+		noAutoUpdate = false
+		rootCmd.SetArgs(nil)
+	})
+
+	rootCmd.SetArgs(argsForStart([]string{"--no-auto-update", "start", "foo", "--no-auto-update"}))
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !noAutoUpdate {
+		t.Error("--no-auto-update before start was not applied")
+	}
+	// Flags after `start` belong to the agent, even ones named like cg's.
+	if want := []string{exe, "foo", "--no-auto-update"}; !reflect.DeepEqual(s.argv, want) {
+		t.Errorf("argv = %q, want %q", s.argv, want)
+	}
+}
+
+func TestArgsForStartLeavesOtherCommandsAlone(t *testing.T) {
+	for _, args := range [][]string{
+		{"--no-auto-update", "status"},
+		{"start", "--x"},
+		{"--no-auto-update"},
+		{"--bogus", "start"},
+		{},
+	} {
+		if got := argsForStart(args); !reflect.DeepEqual(got, args) {
+			t.Errorf("argsForStart(%q) = %q, want unchanged", args, got)
+		}
 	}
 }
 
