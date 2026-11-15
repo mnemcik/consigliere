@@ -72,7 +72,7 @@ Every harness improvement proposal (inline or full idea file) MUST:
 
 ## Mechanical steps
 
-1. **Route, then classify size.** If [Routing](#routing--who-owns-the-fix) sends the finding to a project's `todo.md` or another place outside the backlog (directly or through the routing note), write it there and stop. If it goes to the backlog, continue. Otherwise: single sentence, no bundling? → inline route. Otherwise → full idea file.
+1. **Route, then classify size.** If [Routing](#routing--who-owns-the-fix) sends the finding to a project's `todo.md` or another place outside the backlog (directly or through the routing note), write it there and stop. If it goes to the backlog, classify size: single sentence, no bundling? → inline route; otherwise → full idea file.
 2. **Check for duplicates.** Search `ideas/` + `ideas/BACKLOG.md` for existing proposals targeting the same surface. Extend rather than create if a relevant idea already exists.
 3. **Write the proposal** in the chosen location, including the required metadata (tags, target surface, cross-link).
 4. **Add/update the BACKLOG row.**
