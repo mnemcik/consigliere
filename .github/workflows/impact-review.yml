@@ -6,9 +6,10 @@ name: Impact Review
 # PR's head commit, which is a required check on main. A status belongs to one commit,
 # so new commits need a new review: nothing has to be reset.
 #
-# This workflow only reports the state of a new head: `success` for PRs opened by the
-# release and dependency bots (no impact review), `pending` for everything else, until
-# the maintainer sets `success` on that commit. Nothing is checked out, and no
+# A commit with no `impact-review` status can't merge (the required check shows as
+# expected), so this workflow posts nothing for ordinary PRs and so can never replace
+# the maintainer's `success`. It only posts `success` for PRs opened by the release and
+# dependency bots, which need no impact review. Nothing is checked out, and no
 # PR-controlled text (title, body, branch name) reaches a shell: only the author
 # login, the repo and the head SHA.
 on:
@@ -22,7 +23,9 @@ permissions: {}
 
 jobs:
   status:
-    name: Report impact-review status
+    name: Report impact-review status for bot PRs
+    if: >-
+      contains(fromJSON('["consigliere-release-bot[bot]","dependabot[bot]","renovate[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -32,28 +35,12 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.event.pull_request.head.sha }}
           AUTHOR: ${{ github.event.pull_request.user.login }}
-          ACTION: ${{ github.event.action }}
         run: |
           case "$AUTHOR" in
-            'consigliere-release-bot[bot]' | 'dependabot[bot]' | 'renovate[bot]')
-              state=success
-              description="Bot PR: no impact review needed"
-              ;;
-            *)
-              state=pending
-              description="Waiting for the maintainer's impact review"
-              ;;
+            'consigliere-release-bot[bot]' | 'dependabot[bot]' | 'renovate[bot]') ;;
+            *) echo "::error::not a bot PR: $AUTHOR"; exit 1 ;;
           esac
-          # A delayed or re-run job must not replace the maintainer's approval of
-          # this same commit. Reopening is the one deliberate reset.
-          if [ "$state" = pending ] && [ "$ACTION" != reopened ]; then
-            current=$(gh api "repos/$REPO/commits/$SHA/status" \
-              --jq '[.statuses[] | select(.context == "impact-review")][0].state // ""') || current=""
-            if [ "$current" = success ]; then
-              echo "impact-review: already success on this commit, left as is"
-              exit 0
-            fi
-          fi
           gh api -X POST "repos/$REPO/statuses/$SHA" \
-            -f state="$state" -f context=impact-review -f description="$description" >/dev/null
-          echo "impact-review: $state ($AUTHOR)"
+            -f state=success -f context=impact-review \
+            -f description="Bot PR: no impact review needed" >/dev/null
+          echo "impact-review: success (bot PR by $AUTHOR)"

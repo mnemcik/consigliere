@@ -91,14 +91,14 @@ When a test can't apply on one platform, skip it there with a reason (`t.Skip("â
 
 Every PR changes what every workspace gets on `cg sync`, so every PR gets an **impact review** by the maintainer before it can merge, whoever opened it. PRs opened by the release and dependency bots (`consigliere-release-bot`, Dependabot, Renovate) are exempt.
 
-- **The `impact-review` check** (required) is a commit status on the PR's head commit. The Impact Review workflow sets it to `pending` on every new head, and to `success` for the bots. After reviewing what the PR changes for every workspace, the maintainer sets it to `success` on that commit:
+- **The `impact-review` check** (required) is a commit status on the PR's head commit. Until it is `success`, the PR shows it as expected and can't merge. The Impact Review workflow sets it to `success` for the bots and posts nothing for other PRs, so it can't replace an approval. After reviewing what the PR changes for every workspace, the maintainer sets it to `success` on that commit:
 
   ```bash
   gh api -X POST repos/mnemcik/consigliere/statuses/<head-sha> \
     -f state=success -f context=impact-review -f description="Impact reviewed"
   ```
 
-- **New commits need a new review.** A status belongs to one commit, so a push leaves the new head without `success` until the maintainer reviews the new commits. That includes updating the branch from `main` (branch protection requires up-to-date branches): the maintainer re-marks the new head once the update is checked to add nothing beyond `main`. Reopening a PR resets it to `pending` too.
+- **New commits need a new review.** A status belongs to one commit, so a push leaves the new head without `success` until the maintainer reviews the new commits. That includes updating the branch from `main` (branch protection requires up-to-date branches): the maintainer re-marks the new head once the update is checked to add nothing beyond `main`.
 - **Who can set it:** any account or app with write access to statuses. Fork contributors can't. An agent running under the maintainer's account can, so an agent sets `success` only on the maintainer's explicit go-ahead for that commit, never on its own judgement.
 - **Bot PRs are exempt by who opened them.** Commits a person pushes to a bot's PR get `success` too, so don't push to bot branches; open a separate PR.
 - **Fill in "Impact on workspaces"** in the PR template: what changes on `cg sync` for workspaces that never edited the affected files, which edited files will show as drifted, and how Claude behaves differently.
