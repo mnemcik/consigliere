@@ -184,7 +184,7 @@ type SessionConfig struct {
 	BadgeFormat        string `json:"badgeFormat,omitempty"`
 	// Agent is the command `cg start` (and bare `cg` in a workspace) runs to
 	// start the workspace's AI session, as an argv array: the program, then its
-	// arguments. Empty = DefaultAgent.
+	// arguments. Empty = [DefaultAgentCommand].
 	Agent []string `json:"agent,omitempty"`
 }
 

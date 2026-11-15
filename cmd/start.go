@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,17 +26,26 @@ var startCmd = &cobra.Command{
 		"(an argv array, default [\"claude\"]) in the current directory, with any\n" +
 		"arguments passed on to it, e.g. `cg start --resume <id>`.\n\n" +
 		"Bare `cg` does the same inside a workspace when run from a terminal; outside a\n" +
-		"workspace, or without a terminal, it prints this help instead.\n\n" +
+		"workspace, without a terminal, or when the agent can't be started, it prints\n" +
+		"this help instead.\n\n" +
+		"session.agent comes from the workspace's own .cg.json, so in a workspace you\n" +
+		"cloned, check it before typing `cg`: the command runs before the agent's own\n" +
+		"folder-trust prompt.\n\n" +
 		"All arguments go to the agent, flags included; use `cg help start` for this text.",
 	DisableFlagParsing: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cmd.SilenceUsage = true
 		root := workspaceRootForDispatch()
 		if root == "" {
+			cmd.SilenceUsage = true
 			cwd, _ := os.Getwd()
 			return cgerr.New(cgerr.ExitUsage, "cg start: not inside a Consigliere workspace: %s", cwd)
 		}
-		return startSession(root, args)
+		path, argv, err := resolveAgent(root, args)
+		if err != nil {
+			cmd.SilenceUsage = true
+			return err
+		}
+		return finishAgent(cmd, runAgent(path, argv))
 	},
 }
 
@@ -43,15 +54,45 @@ func init() {
 	rootCmd.RunE = runRoot
 }
 
+// noAgentHint is what bare `cg` prints after the help when the workspace's
+// agent can't be started; `cg start` shows the reason.
+const noAgentHint = "cg: no agent started: set session.agent in .cg.json, or run `cg start` to see the error"
+
 // runRoot is bare `cg`: start the session when inside a workspace and attached
 // to a terminal, otherwise print help as before. The terminal check keeps
 // scripts and pipes (`cg | cat`, `cg </dev/null`) from launching an agent.
+// When the agent can't be started (not on PATH, invalid session.agent), it
+// also prints help, plus a one-line hint, and exits 0 as bare `cg` always did.
 func runRoot(cmd *cobra.Command, _ []string) error {
 	root := workspaceRootForDispatch()
 	if root == "" || !isInteractive() {
 		return cmd.Help()
 	}
-	return startSession(root, nil)
+	path, argv, err := resolveAgent(root, nil)
+	if err != nil {
+		if herr := cmd.Help(); herr != nil {
+			return herr
+		}
+		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), noAgentHint)
+		return nil
+	}
+	return finishAgent(cmd, runAgent(path, argv))
+}
+
+// finishAgent applies cg's output rules to the result of running the agent:
+// never the usage text, and no "Error:" line when the error only carries the
+// agent's own exit code (Windows, where cg waits for the agent): the agent has
+// already said what went wrong.
+func finishAgent(cmd *cobra.Command, err error) error {
+	if err == nil {
+		return nil
+	}
+	cmd.SilenceUsage = true
+	var ce *cgerr.CodedError
+	if errors.As(err, &ce) && ce.Err.Error() == "" {
+		cmd.SilenceErrors = true
+	}
+	return err
 }
 
 // isInteractive reports whether stdin and stdout are both a terminal.
@@ -64,45 +105,47 @@ var isInteractive = func() bool {
 // start_exec_*.go. A variable so tests can capture the call instead.
 var runAgent = execAgent
 
-// startSession resolves the agent command for the workspace at root and runs it
-// with extra appended.
-func startSession(root string, extra []string) error {
+// resolveAgent works out what `cg start` runs for the workspace at root with
+// extra appended: the resolved program path and the full argv. An error means
+// the agent can't be started (bare `cg` then falls back to help).
+func resolveAgent(root string, extra []string) (path string, argv []string, err error) {
 	cfg, err := workspace.Detect(root)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 	agent := cfg.SessionSettings().Agent
 	// Only the program must be named; later elements are passed verbatim (an
 	// empty string is a valid argument).
 	if strings.TrimSpace(agent[0]) == "" {
-		return cgerr.New(cgerr.ExitUsage, "cg start: session.agent in %s has an empty program name: %q", filepath.Join(root, ".cg.json"), agent)
+		return "", nil, cgerr.New(cgerr.ExitUsage, "cg start: session.agent in %s has an empty program name: %q", filepath.Join(root, ".cg.json"), agent)
 	}
-	path, err := exec.LookPath(agent[0])
+	path, err = exec.LookPath(agent[0])
 	if err != nil {
-		return cgerr.New(cgerr.ExitUsage,
+		return "", nil, cgerr.New(cgerr.ExitUsage,
 			"cg start: %q not found on PATH (the agent comes from session.agent in .cg.json, default %q)",
 			agent[0], workspace.DefaultAgentCommand)
 	}
-	argv := append(append([]string{agent[0]}, agent[1:]...), extra...)
-	return runAgent(path, argv)
+	argv = append(append([]string{agent[0]}, agent[1:]...), extra...)
+	return path, argv, nil
 }
 
 // argsForStart handles root persistent flags given before the `start` verb
 // (`cg --no-auto-update start …`). startCmd disables flag parsing so that every
 // argument after `start` reaches the agent unchanged, which also leaves such
-// leading flags unparsed and forwarded to the agent. argsForStart parses them
-// into the root flag set and returns the arguments without them. Any other
-// argument list, or leading flags that don't parse, is returned unchanged.
-func argsForStart(args []string) []string {
+// leading flags unparsed. argsForStart parses them into the root flag set and
+// returns the arguments without them; a leading flag that doesn't parse is an
+// error (it belongs to cg, not the agent). Any other argument list is returned
+// unchanged.
+func argsForStart(args []string) ([]string, error) {
 	i := 0
 	for i < len(args) && args[i] != "" && args[i][0] == '-' {
 		i++
 	}
 	if i == 0 || i == len(args) || args[i] != startCmd.Name() {
-		return args
+		return args, nil
 	}
 	if err := rootCmd.PersistentFlags().Parse(args[:i]); err != nil {
-		return args
+		return nil, cgerr.New(cgerr.ExitUsage, "%v", err)
 	}
-	return args[i:]
+	return args[i:], nil
 }

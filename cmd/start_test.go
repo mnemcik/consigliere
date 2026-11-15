@@ -189,7 +189,11 @@ func TestLeadingRootFlagsBeforeStart(t *testing.T) {
 		rootCmd.SetArgs(nil)
 	})
 
-	rootCmd.SetArgs(argsForStart([]string{"--no-auto-update", "start", "foo", "--no-auto-update"}))
+	args, err := argsForStart([]string{"--no-auto-update", "start", "foo", "--no-auto-update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootCmd.SetArgs(args)
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -207,11 +211,101 @@ func TestArgsForStartLeavesOtherCommandsAlone(t *testing.T) {
 		{"--no-auto-update", "status"},
 		{"start", "--x"},
 		{"--no-auto-update"},
-		{"--bogus", "start"},
 		{},
 	} {
-		if got := argsForStart(args); !reflect.DeepEqual(got, args) {
-			t.Errorf("argsForStart(%q) = %q, want unchanged", args, got)
+		if got, err := argsForStart(args); err != nil || !reflect.DeepEqual(got, args) {
+			t.Errorf("argsForStart(%q) = %q, %v; want unchanged", args, got, err)
 		}
+	}
+}
+
+func TestArgsForStartRejectsBadLeadingFlags(t *testing.T) {
+	t.Cleanup(func() { noAutoUpdate = false })
+	for _, args := range [][]string{
+		{"--no-auto-update=invalid", "start", "prompt"},
+		{"--bogus", "start"},
+	} {
+		got, err := argsForStart(args)
+		var ce *cgerr.CodedError
+		if !errors.As(err, &ce) || ce.Code != cgerr.ExitUsage {
+			t.Errorf("argsForStart(%q) = %q, %v; want an ExitUsage error, nothing forwarded", args, got, err)
+		}
+	}
+}
+
+// executeRoot runs args through cobra (as main does after argsForStart) and
+// returns what cg printed and the error Execute returned.
+func executeRoot(t *testing.T, args []string) (stdout, stderr string, err error) {
+	t.Helper()
+	var out, errOut bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&errOut)
+	rootCmd.SetArgs(args)
+	t.Cleanup(func() {
+		rootCmd.SetOut(nil)
+		rootCmd.SetErr(nil)
+		rootCmd.SetArgs(nil)
+		rootCmd.SilenceErrors, rootCmd.SilenceUsage = false, false
+		startCmd.SilenceErrors, startCmd.SilenceUsage = false, false
+		noAutoUpdate = false
+	})
+	err = rootCmd.Execute()
+	return out.String(), errOut.String(), err
+}
+
+func TestBareCgWithoutAgentFallsBackToHelp(t *testing.T) {
+	workspaceWithAgent(t, []string{"cg-test-no-such-agent-xyz"})
+	s := newStubStart(t, true)
+
+	stdout, stderr, err := executeRoot(t, []string{"--no-auto-update"})
+	if err != nil {
+		t.Fatalf("bare cg must exit 0 when the agent is missing, got %v", err)
+	}
+	if s.called {
+		t.Error("no agent may start")
+	}
+	if !strings.Contains(stdout, "Usage:") {
+		t.Errorf("want help on stdout, got %q", stdout)
+	}
+	if !strings.Contains(stderr, noAgentHint) || strings.Contains(stderr, "Error:") {
+		t.Errorf("want only the hint on stderr, got %q", stderr)
+	}
+}
+
+func TestStartWithoutAgentErrorsWithoutUsage(t *testing.T) {
+	workspaceWithAgent(t, []string{"cg-test-no-such-agent-xyz"})
+	newStubStart(t, true)
+
+	stdout, stderr, err := executeRoot(t, []string{"start"})
+	var ce *cgerr.CodedError
+	if !errors.As(err, &ce) || ce.Code != cgerr.ExitUsage {
+		t.Fatalf("want ExitUsage, got %v", err)
+	}
+	if !strings.Contains(stderr, "Error: cg start:") {
+		t.Errorf("want the error on stderr, got %q", stderr)
+	}
+	if strings.Contains(stdout+stderr, "Usage:") {
+		t.Errorf("no usage text after the error; stdout %q stderr %q", stdout, stderr)
+	}
+}
+
+// On Windows execAgent returns the agent's exit code as a CodedError with no
+// message; cg must pass the code on without printing anything of its own.
+func TestAgentExitCodePrintsNothing(t *testing.T) {
+	for _, args := range [][]string{{"start"}, {"--no-auto-update"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			workspaceWithAgent(t, []string{testAgent(t)})
+			newStubStart(t, true)
+			runAgent = func(string, []string) error { return cgerr.New(3, "") }
+
+			stdout, stderr, err := executeRoot(t, args)
+			var ce *cgerr.CodedError
+			if !errors.As(err, &ce) || ce.Code != 3 {
+				t.Fatalf("want exit code 3 passed on, got %v", err)
+			}
+			if stdout != "" || stderr != "" {
+				t.Errorf("cg must print nothing; stdout %q stderr %q", stdout, stderr)
+			}
+		})
 	}
 }
