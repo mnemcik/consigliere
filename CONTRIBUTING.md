@@ -87,16 +87,29 @@ When a test can't apply on one platform, skip it there with a reason (`t.Skip("â
 - CI (lint, including a Windows build, tests on Linux, macOS and Windows, cross-platform build) must be green.
 - No DCO sign-off is required.
 
+### Impact review
+
+Every PR changes what every workspace gets on `cg sync`, so every PR gets an **impact review** by the maintainer before it can merge, whoever opened it. PRs opened by the release and dependency bots (`consigliere-release-bot`, Dependabot, Renovate) are exempt.
+
+- **The `impact-review` check** (required) is a commit status on the PR's head commit. Until it is `success`, the PR shows it as expected and can't merge. The Impact Review workflow sets it to `success` for the bots and posts nothing for other PRs, so it can't replace an approval. After reviewing what the PR changes for every workspace, the maintainer sets it to `success` on that commit:
+
+  ```bash
+  gh api -X POST repos/mnemcik/consigliere/statuses/<head-sha> \
+    -f state=success -f context=impact-review -f description="Impact reviewed"
+  ```
+
+- **New commits need a new review.** A status belongs to one commit, so a push leaves the new head without `success` until the maintainer reviews the new commits. That includes updating the branch from `main` (branch protection requires up-to-date branches): the maintainer re-marks the new head once the update is checked to add nothing beyond `main`.
+- **Who can set it:** any account or app with write access to statuses. Fork contributors can't. An agent running under the maintainer's account can, so an agent sets `success` only on the maintainer's explicit go-ahead for that commit, never on its own judgement.
+- **Bot PRs are exempt by who opened them.** Commits a person pushes to a bot's PR get `success` too, so don't push to bot branches; open a separate PR.
+- **Fill in "Impact on workspaces"** in the PR template: what changes on `cg sync` for workspaces that never edited the affected files, which edited files will show as drifted, and how Claude behaves differently.
+
 ### Upstream proposals
 
-A change that comes out of a workspace, such as a framework note a workspace edited or a local rule worth sharing, is an **upstream proposal**, not deliberate framework work. Opened by an agent under the maintainer's account, it looks like the maintainer's own PR, so it is marked and gated:
+A change that comes out of a workspace, such as a framework note a workspace edited or a local rule worth sharing, is an **upstream proposal**, not deliberate framework work. Opened by an agent under the maintainer's account, it looks like the maintainer's own PR, so it is also marked:
 
 - **Label `upstream-proposal`**, set when the PR is opened.
 - **Opened as a draft**, so it cannot be merged until someone marks it ready.
 - **Body from the upstream-proposal template**: `gh pr create --draft --label upstream-proposal --template upstream-proposal.md`. Its Origin and Impact sections say where the change comes from and what it changes for every workspace on `cg sync`.
-- **The Upstream Proposal Gate check** fails while the PR has `upstream-proposal` and not `impact-reviewed`. Only the maintainer adds `impact-reviewed`, after reviewing the impact.
-
-Community PRs from other accounts can take the same label to get the same review.
 
 ## Release process
 
