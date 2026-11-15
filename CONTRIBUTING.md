@@ -91,8 +91,9 @@ When a test can't apply on one platform, skip it there with a reason (`t.Skip("â
 
 Every PR changes what every workspace gets on `cg sync`, so every PR gets an **impact review** by the maintainer before it can merge, whoever opened it. The release and dependency bots (`consigliere-release-bot`, Dependabot, Renovate) are exempt.
 
-- **The Upstream Proposal Gate check** (required) fails until the PR has the `impact-reviewed` label. Only the maintainer adds it, after reviewing what the PR changes for every workspace.
-- **New commits reset it.** A push fails the gate and removes `impact-reviewed`; the maintainer reviews the new commits and adds the label again.
+- **The Upstream Proposal Gate check** (required) fails until the PR has the `impact-reviewed` label. Only the maintainer adds it, after reviewing what the PR changes for every workspace. (GitHub lets anyone with triage access add labels; the maintainer is the only collaborator.)
+- **New commits reset it.** A push, or reopening a PR, fails the gate and removes `impact-reviewed`; the maintainer reviews the new commits and adds the label again.
+- **Bot PRs are exempt by who opened them.** Commits a person pushes to a bot's PR are not gated, so don't push to bot branches; open a separate PR.
 - **Fill in "Impact on workspaces"** in the PR template: what changes on `cg sync` for workspaces that never edited the affected files, which edited files will show as drifted, and how Claude behaves differently.
 
 ### Upstream proposals
