@@ -1,11 +1,18 @@
 name: Upstream Proposal Gate
 
-# A PR labelled `upstream-proposal` carries a change that came out of a workspace
-# (a drifted framework note, a local rule worth sharing), not deliberate framework
-# work. It reads like the maintainer's own PR, so this check fails until the
-# maintainer adds `impact-reviewed` after weighing what it changes for every
-# workspace on `cg sync`. PRs without the label pass. Labels come from the event
-# payload, so nothing is checked out and no token is needed.
+# Every PR changes what every workspace gets on `cg sync`, whoever opens it: an agent
+# session in a workspace (an upstream proposal), a community contributor, or the
+# maintainer. So every PR except the release and dependency bots needs the
+# maintainer's impact review, marked by the `impact-reviewed` label (CONTRIBUTING.md
+# "Impact review").
+#
+# New commits reset the review: the gate fails on `synchronize` whatever the labels
+# say, because the event payload still carries `impact-reviewed`, and the label
+# removal below uses GITHUB_TOKEN, whose events start no workflow runs. Re-adding the
+# label fires `labeled`, which re-runs the gate on the new head.
+#
+# Labels and the author come from the event payload: nothing is checked out, and no
+# PR-controlled text (title, body, branch name) reaches a shell.
 on:
   pull_request_target:
     types:
@@ -19,15 +26,46 @@ permissions: {}
 
 jobs:
   gate:
+    # The job name is the required status check on main; keep it.
     name: Upstream proposal reviewed
     runs-on: ubuntu-latest
     steps:
       - env:
-          PROPOSAL: ${{ contains(github.event.pull_request.labels.*.name, 'upstream-proposal') }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          ACTION: ${{ github.event.action }}
           REVIEWED: ${{ contains(github.event.pull_request.labels.*.name, 'impact-reviewed') }}
         run: |
-          if [ "$PROPOSAL" = "true" ] && [ "$REVIEWED" != "true" ]; then
-            echo "::error::upstream-proposal PR: review its impact on every workspace, then add the impact-reviewed label."
+          case "$AUTHOR" in
+            'consigliere-release-bot[bot]' | 'dependabot[bot]' | 'renovate[bot]')
+              echo "ok (bot PR by $AUTHOR: no impact review)"
+              exit 0
+              ;;
+          esac
+          if [ "$ACTION" = "synchronize" ]; then
+            echo "::error::New commits since the impact review. Review the new commits' impact, then add the impact-reviewed label again."
             exit 1
           fi
-          echo "ok (upstream-proposal=$PROPOSAL, impact-reviewed=$REVIEWED)"
+          if [ "$REVIEWED" != "true" ]; then
+            echo "::error::Review this PR's impact on every workspace, then add the impact-reviewed label."
+            exit 1
+          fi
+          echo "ok (impact-reviewed)"
+
+  drop-review-label:
+    # Makes the reset visible: the label goes when new commits arrive.
+    name: Drop impact-reviewed on new commits
+    if: >-
+      github.event.action == 'synchronize' &&
+      contains(github.event.pull_request.labels.*.name, 'impact-reviewed') &&
+      !contains(fromJSON('["consigliere-release-bot[bot]","dependabot[bot]","renovate[bot]"]'), github.event.pull_request.user.login)
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh api -X DELETE "repos/$REPO/issues/$PR/labels/impact-reviewed" >/dev/null \
+            || echo "impact-reviewed was already removed"

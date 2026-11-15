@@ -87,16 +87,21 @@ When a test can't apply on one platform, skip it there with a reason (`t.Skip("â
 - CI (lint, including a Windows build, tests on Linux, macOS and Windows, cross-platform build) must be green.
 - No DCO sign-off is required.
 
+### Impact review
+
+Every PR changes what every workspace gets on `cg sync`, so every PR gets an **impact review** by the maintainer before it can merge, whoever opened it. The release and dependency bots (`consigliere-release-bot`, Dependabot, Renovate) are exempt.
+
+- **The Upstream Proposal Gate check** (required) fails until the PR has the `impact-reviewed` label. Only the maintainer adds it, after reviewing what the PR changes for every workspace.
+- **New commits reset it.** A push fails the gate and removes `impact-reviewed`; the maintainer reviews the new commits and adds the label again.
+- **Fill in "Impact on workspaces"** in the PR template: what changes on `cg sync` for workspaces that never edited the affected files, which edited files will show as drifted, and how Claude behaves differently.
+
 ### Upstream proposals
 
-A change that comes out of a workspace, such as a framework note a workspace edited or a local rule worth sharing, is an **upstream proposal**, not deliberate framework work. Opened by an agent under the maintainer's account, it looks like the maintainer's own PR, so it is marked and gated:
+A change that comes out of a workspace, such as a framework note a workspace edited or a local rule worth sharing, is an **upstream proposal**, not deliberate framework work. Opened by an agent under the maintainer's account, it looks like the maintainer's own PR, so it is also marked:
 
 - **Label `upstream-proposal`**, set when the PR is opened.
 - **Opened as a draft**, so it cannot be merged until someone marks it ready.
 - **Body from the upstream-proposal template**: `gh pr create --draft --label upstream-proposal --template upstream-proposal.md`. Its Origin and Impact sections say where the change comes from and what it changes for every workspace on `cg sync`.
-- **The Upstream Proposal Gate check** fails while the PR has `upstream-proposal` and not `impact-reviewed`. Only the maintainer adds `impact-reviewed`, after reviewing the impact.
-
-Community PRs from other accounts can take the same label to get the same review.
 
 ## Release process
 
