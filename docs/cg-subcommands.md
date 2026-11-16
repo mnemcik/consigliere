@@ -207,9 +207,11 @@ path and the `cg session set-context` command that creates the badge. The binary
 adds it to every gate, whatever the template says, because the template is
 user-owned and never updated. A template places it with `{{set_context}}` (at
 the first one, if there are several); without the placeholder it goes on its own
-lines before `{{worktree_warning}}`, or at the end. A template that already runs
-the command (contains `set-context --session-id`) and has no `{{set_context}}` is
-left as it is; a mention of the command in prose doesn't count. Otherwise, lines of the block the template already has are not
+lines before `{{worktree_warning}}`, or at the end. A template that contains
+`set-context --session-id` (the command with its flag, as the 2026-09-25 default
+has it) and no `{{set_context}}` is left as it is; a mention of the command
+without that flag doesn't count. A template whose command puts `--session-id`
+after other flags gets the block as well, so the command appears twice. Otherwise, lines of the block the template already has are not
 repeated (a line counts as present only when its text matches exactly).
 
 ## Session badge file
