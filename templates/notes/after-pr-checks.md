@@ -51,9 +51,13 @@ Each iteration:
   3. Fetch every new comment and review since the last iteration. Classify each: fix / reply with reasoning / escalate.
   4. Apply uncontroversial fixes (lint, type errors, validated suggested diffs) in a new commit. Push.
   5. Reply with reasoning to every finding you reject; never resolve a thread without a commit or a reply.
-  6. Re-fetch; repeat from 2 until all CI is green AND every comment is addressed AND no requested
-     review is still pending (`gh pr view <N> --json reviewRequests`, or a review bot that hasn't posted
-     on the current head). A review still pending well past its usual time counts as blocked, (b).
+  6. Re-fetch; repeat from 2 until all CI is green AND every comment is addressed AND no review is
+     still pending on the current head:
+     - A person or team review that was requested (`gh pr view <N> --json reviewRequests`) and not given
+       yet: you are blocked, (b). Report "awaiting review by <who>".
+     - A review bot that hasn't posted on the current head (bots don't appear in reviewRequests): wait
+       about 5 minutes between re-fetches; if it still hasn't posted 30 minutes after your last push, you
+       are blocked, (b).
   7. Report ready-to-merge to the supervisor and stop. Never merge; merging is the user's call.
 
 Never force-push or amend: every round is a new commit. If a comment disagrees with a recorded decision
@@ -66,7 +70,7 @@ After every CI poll, write a checkpoint line to your own output. It does not end
 
 Where the supervisor can read the subagent's output while it runs (a background subagent's transcript or log), the checkpoint line doubles as a stall signal. Because it comes with every poll, a slow pipeline still produces checkpoints; no checkpoint for several poll intervals means the loop has dropped and needs a nudge. A foreground subagent's output is visible only when it returns, so there is no stall signal then.
 
-The subagent doesn't wait for the merge. The supervising session follows the PR from its report on: it watches the PR until it merges, offers the session-end `/schedule` step (5 above) if the merge is still pending when the session ends, and removes the branch and worktree once the PR has merged.
+The subagent doesn't wait for the merge. The supervising session follows the PR from its report on: it watches the PR until it merges, offers the session-end `/schedule` step (5 above, naming the action: "check whether PR #<N> merged; if so, remove its branch and worktree") if the merge is still pending when the session ends, and removes the branch and worktree once the PR has merged.
 
 ## Guardrails
 
