@@ -4,19 +4,23 @@ What this PR changes in the framework.
 
 ## Origin
 
-- **Workspace:** which workspace the change comes from
-- **Source:** the file or rule there (e.g. a drifted `notes/<name>.md`), and the incident or reason behind it
+- **Workspace:** which kind of workspace the change comes from ("a personal workspace"; no names)
+- **Source:** the file or rule there (e.g. a drifted `notes/<name>.md`), and the reason behind it, described generically (no incident details, dates or internal names)
 - **Why upstream:** why every workspace benefits, not only this one
 
 ## Impact on workspaces
 
 - **On `cg sync`:** what changes for a workspace that never edited the affected files (updated automatically)
-- **Drift:** which workspaces edited the same files and will see them as drifted, if known
+- **Drift:** which edited files will show as drifted, and what kind of workspaces edited them, if known (no names)
 - **Behaviour:** how Claude acts differently after the change, and in which situations
 
 ## Test plan
 
 - [ ] `make check` passes locally (lint + test + fmt + tidy)
-- [ ] Opened as a draft with the `upstream-proposal` label; `impact-reviewed` is added by the maintainer only
+- [ ] Opened as a draft with the `upstream-proposal` label; the `impact-review` status is set by the maintainer only
 
-See [CONTRIBUTING.md](https://github.com/mnemcik/consigliere/blob/main/CONTRIBUTING.md#upstream-proposals) for what the label and the gate do.
+Don't mark this PR ready or merge it without the maintainer's go-ahead for it. When changes are requested, the session or project that opened it makes them.
+
+The description becomes the squash commit message: keep it current after each push, and keep private details (people, companies, internal systems, incidents) out of it and out of commit messages.
+
+See [CONTRIBUTING.md](https://github.com/mnemcik/consigliere/blob/main/CONTRIBUTING.md#upstream-proposals) for the label, [How a PR gets to merge](https://github.com/mnemcik/consigliere/blob/main/CONTRIBUTING.md#how-a-pr-gets-to-merge) for what the impact review checks, and [Impact review](https://github.com/mnemcik/consigliere/blob/main/CONTRIBUTING.md#impact-review) for the required check.

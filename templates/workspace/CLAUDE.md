@@ -261,12 +261,12 @@ When the user asks to share, send, export or publish a project, or before runnin
 <!-- cg:section:start=continuous-improvement -->
 ## Continuous Improvement
 
-Actively look for opportunities to improve how this workspace works — rules, structure, workflows, templates, conventions. Scope is **meta-framework** (`CLAUDE.md` rules, templates, notes, area files, project structure, workflows), NOT project content or note-style refactors.
+Actively look for opportunities to improve how this workspace works — rules, structure, workflows, templates, conventions — and for shortfalls in the skills, plugins and tools the work relies on. Scope is the **way of working** (`CLAUDE.md` rules, templates, notes, area files, project structure, workflows, skills, plugins and tools), NOT project content or note-style refactors.
 
 - **Prefer structural fixes over behavioural rules.** When a reliability gap depends on Claude remembering to do something, prefer a structural fix (skill, hook, script, settings) over a behavioural rule — behavioural rules fail on the very turn they're most needed; structures don't. Reserve behavioural rules for judgment calls that genuinely can't be automated.
 - **Prefer extending existing axes over adding new ones.** When a requirement seems to demand a new dimension (tag, field, category, flag, status, area), first ask whether an existing dimension in the same layer could absorb it. New axes are permanent cost — documentation, migration, tooling, *"which value?"* dilemmas. Surface the tradeoff explicitly when proposing either path.
 
-For the what-to-look-for catalogue and the in-session vs. end-of-session sequencing, load [`notes/continuous-improvement.md`](notes/continuous-improvement.md). When a proposal is worth persisting, it MUST land somewhere with a lifecycle — load [`notes/capturing-improvement-proposals.md`](notes/capturing-improvement-proposals.md) (default: a `meta-framework`-tagged idea file + an `ideas/BACKLOG.md` row). Use [`notes/claude-md-hygiene.md`](notes/claude-md-hygiene.md) to decide whether a promoted rule belongs inline or in a note.
+For the what-to-look-for catalogue and the in-session vs. end-of-session sequencing, load [`notes/continuous-improvement.md`](notes/continuous-improvement.md). When a proposal is worth persisting, it MUST land somewhere with a lifecycle — load [`notes/capturing-improvement-proposals.md`](notes/capturing-improvement-proposals.md) (the owner of its surface, or by default an idea file tagged `meta-framework` and one `surface-` tag + an `ideas/BACKLOG.md` row). Use [`notes/claude-md-hygiene.md`](notes/claude-md-hygiene.md) to decide whether a promoted rule belongs inline or in a note.
 <!-- cg:section:end=continuous-improvement -->
 
 <!-- cg:section:start=dry-principle -->
