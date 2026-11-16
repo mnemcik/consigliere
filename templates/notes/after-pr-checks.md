@@ -4,11 +4,11 @@
 
 - **Category:** process
 - **Tags:** `pr-review-loop`, `pull-requests`, `workflow`, `ai-instructions`
-- **Framework note:** shipped by Consigliere and loaded on demand after opening a pull request. Safe to edit for your workspace.
+- **Framework note:** shipped by Consigliere and loaded on demand after opening a pull request, and before delegating PR work to a subagent. Safe to edit for your workspace.
 
 ## Summary
 
-After opening a PR, the work isn't done until CI is green and every review comment has been addressed (fixed or answered with reasoning). This note holds the fetch probes, the per-comment outcome taxonomy, the CI-failure handling, and the guardrails. The "MUST enter the loop" rule + the bot/silent-dismissal headline stay inline in `CLAUDE.md`.
+After opening a PR, the work isn't done until CI is green and every review comment has been addressed (fixed or answered with reasoning). This note holds the fetch probes, the per-comment outcome taxonomy, the CI-failure handling, the contract to give a subagent that works a PR, and the guardrails. The "MUST enter the loop" rule + the bot/silent-dismissal headline stay inline in `CLAUDE.md`.
 
 ## Procedure
 
@@ -51,14 +51,22 @@ Each iteration:
   3. Fetch every new comment and review since the last iteration. Classify each: fix / reply with reasoning / escalate.
   4. Apply uncontroversial fixes (lint, type errors, validated suggested diffs) in a new commit. Push.
   5. Reply with reasoning to every finding you reject; never resolve a thread without a commit or a reply.
-  6. Re-fetch; repeat from 2 until all CI is green AND every comment is addressed.
+  6. Re-fetch; repeat from 2 until all CI is green AND every comment is addressed AND no requested
+     review is still pending (`gh pr view <N> --json reviewRequests`, or a review bot that hasn't posted
+     on the current head). A review still pending well past its usual time counts as blocked, (b).
   7. Report ready-to-merge to the supervisor and stop. Never merge; merging is the user's call.
 
-Report a checkpoint to the supervisor after every CI poll:
+Never force-push or amend: every round is a new commit. If a comment disagrees with a recorded decision
+(decisions.md, an area file), cite the decision in your reply.
+
+After every CI poll, write a checkpoint line to your own output. It does not end your run; only (a) or
+(b) does:
   PR #<N> | round <K> | CI: <green|pending|failing checks> | open comments: <count> | last commit: <sha> | next: <action>
 ```
 
-The checkpoint line doubles as the supervisor's stall signal. Because it comes with every poll, a slow pipeline still produces checkpoints; no checkpoint for several poll intervals means the loop has dropped and needs a nudge. The subagent doesn't wait for the merge: the supervising session follows the PR from there, and it (or wrap) cleans up the branch and worktree after the merge. A long wait is what the session-end `/schedule` step (5 above) is for.
+Where the supervisor can read the subagent's output while it runs (a background subagent's transcript or log), the checkpoint line doubles as a stall signal. Because it comes with every poll, a slow pipeline still produces checkpoints; no checkpoint for several poll intervals means the loop has dropped and needs a nudge. A foreground subagent's output is visible only when it returns, so there is no stall signal then.
+
+The subagent doesn't wait for the merge. The supervising session follows the PR from its report on: it watches the PR until it merges, offers the session-end `/schedule` step (5 above) if the merge is still pending when the session ends, and removes the branch and worktree once the PR has merged.
 
 ## Guardrails
 
