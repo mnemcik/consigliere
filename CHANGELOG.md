@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.31.0](https://github.com/mnemcik/consigliere/compare/v1.30.2...v1.31.0) (2026-11-16)
+
+
+### Features
+
+* **wrap:** capture improvement findings across everything a session touched ([#233](https://github.com/mnemcik/consigliere/issues/233)) ([772f199](https://github.com/mnemcik/consigliere/commit/772f199c2ff0d7c6e5fbefd95978bda1708931f0))
+
 ## [1.30.2](https://github.com/mnemcik/consigliere/compare/v1.30.1...v1.30.2) (2026-11-13)
 
 

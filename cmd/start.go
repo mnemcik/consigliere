@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,7 +61,7 @@ func init() {
 
 // noAgentHint is what bare `cg` prints after the help when the workspace's
 // agent can't be started; `cg start` shows the reason.
-const noAgentHint = "cg: no agent started: set session.agent in .cg.json, or run `cg start` to see the error"
+const noAgentHint = "cg: no agent started: run `cg start` to see why (the agent comes from session.agent in .cg.json)"
 
 // runRoot is bare `cg`: start the session when inside a workspace and attached
 // to a terminal, otherwise print help as before. The terminal check keeps
@@ -253,13 +254,15 @@ func sameLauncher(a, b extension.LauncherContribution) bool {
 	return len(a.Args) == 0 || reflect.DeepEqual(a.Args, b.Args)
 }
 
-// argsForStart handles root persistent flags given before the `start` verb
+// argsForStart handles root flags given before the `start` verb
 // (`cg --no-auto-update start …`). startCmd disables flag parsing so that every
 // argument after `start` reaches the agent unchanged, which also leaves such
-// leading flags unparsed. argsForStart parses them into the root flag set and
-// returns the arguments without them; a leading flag that doesn't parse is an
-// error (it belongs to cg, not the agent). Any other argument list is returned
-// unchanged.
+// leading flags unparsed. argsForStart parses them (root persistent and local
+// flags) and returns the arguments without them; a leading flag that doesn't
+// parse is an error (it belongs to cg, not the agent). A help request
+// (`cg --help start`) becomes `help start`, and `cg --version start` prints the
+// version, since handing either to cobra as is would run start and pass the
+// flag to the agent. Any other argument list is returned unchanged.
 func argsForStart(args []string) ([]string, error) {
 	i := 0
 	for i < len(args) && args[i] != "" && args[i][0] == '-' {
@@ -268,14 +271,18 @@ func argsForStart(args []string) ([]string, error) {
 	if i == 0 || i == len(args) || args[i] != startCmd.Name() {
 		return args, nil
 	}
-	if err := rootCmd.PersistentFlags().Parse(args[:i]); err != nil {
+	fs := pflag.NewFlagSet("cg", pflag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.AddFlagSet(rootCmd.PersistentFlags())
+	version := fs.BoolP("version", "v", false, "")
+	if err := fs.Parse(args[:i]); err != nil {
 		if errors.Is(err, pflag.ErrHelp) {
-			// `cg --help start`: a help request. Handing the arguments to cobra
-			// as they are would run start, whose disabled flag parsing passes
-			// --help to the agent, so ask for start's help explicitly.
 			return []string{cmdHelp, startCmd.Name()}, nil
 		}
 		return nil, cgerr.New(cgerr.ExitUsage, "%v", err)
+	}
+	if *version {
+		return []string{"--" + cmdVersion}, nil
 	}
 	return args[i:], nil
 }

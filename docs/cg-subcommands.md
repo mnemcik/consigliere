@@ -44,11 +44,11 @@ template.
 `cg start [args…]` runs the workspace's AI session: the argv in `.cg.json` `session.agent` (default `["claude"]`) in the current directory, with `args` appended. Bare `cg` does the same when it runs inside a workspace or worktree with stdin and stdout on a terminal; otherwise it prints help, as before.
 
 - **The command comes from the workspace.** `session.agent` is read from the workspace's own `.cg.json`, so typing `cg` in a workspace you cloned runs whatever that file names, before the agent's own folder-trust prompt. Check `session.agent` in a workspace you didn't create.
-- **No agent, no error.** When the agent can't be started (not on `PATH`, an empty program name), bare `cg` prints help plus a one-line hint and exits 0; `cg start` prints the error and exits 1.
+- **No agent, no error.** When the agent can't be started (not on `PATH`, an empty program name, or it is found but fails to start), bare `cg` prints help plus a one-line hint and exits 0; `cg start` prints the error and exits 1.
 - **Exit code and output.** On Unix the agent replaces the cg process, so its exit code and signals are its own. On Windows cg waits for it and exits with its code, printing nothing of its own.
-- **Root hooks.** Bare `cg` now runs the root pre-run hook (the one-time "cg updated" notice and the background update check), also when it falls back to help; once the agent replaces cg, the post-run notice does not run.
+- **Root hooks.** Bare `cg` now runs the root pre-run hook (the one-time "cg updated" notice and the background update check), also when it falls back to help. The post-run notice (a new major version) runs only when cg is still there afterwards: not on Unix, where the agent replaces cg, but on Windows it can print after the session ends.
 - **`start` is a built-in verb.** It takes precedence over an extension subcommand with the namespace `start` and over a `cg-start` executable on `PATH`.
-- **Flags.** Root flags go before `start` (`cg --no-auto-update start`); everything after `start` goes to the agent unchanged. A root flag before `start` that doesn't parse is an error.
+- **Flags.** Root flags go before `start` (`cg --no-auto-update start`); everything after `start` goes to the agent unchanged. A root flag before `start` that doesn't parse is an error; `cg --help start` shows `start`'s help and `cg --version start` the version.
 
 ## Exit-code contract
 
