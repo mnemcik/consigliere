@@ -193,9 +193,8 @@ forbids cross-extension dependencies (declare none).
 4. **`subcommands`** — `[{ namespace, binary }]`. Declares that the extension
    ships an external binary `bin/<binary>` exposed as `cg <namespace> …` via the
    external-subcommand resolver (below). Install symlinks/records the binary;
-   it is **not** copied into the workspace. The binary is looked up by its
-   exact name, with no `.exe` added, also on Windows; a Windows build must be
-   committed under the declared name.
+   it is **not** copied into the workspace. Not supported on Windows yet
+   ([#239](https://github.com/mnemcik/consigliere/issues/239)).
 
 5. **`templates`** — `[{ src, dest }]`. Copies template files into the
    workspace `templates/` tree (same copy semantics as notes, including
@@ -273,13 +272,17 @@ forbids cross-extension dependencies (declare none).
    ledger. Because the ledger is committed in the workspace, `cg start` doesn't
    trust it alone: it runs a launcher only when the extension's own manifest,
    in its tree at the recorded commit, validates and declares the same entry,
-   and the binary exists there (looked up by its exact name, as for
-   `subcommands`). Otherwise it warns, naming the extension, and starts the
-   agent directly; `cg init` restores a missing tree. When two installed
-   extensions contribute a launcher, `cg start` refuses and names them (bare
-   `cg` prints help instead), and a launcher that fails to start is named in
-   the error. A cg older than this contribution point ignores the key, so the
-   extension still installs and `cg` keeps its older behaviour.
+   and the binary exists there. Otherwise it warns, naming the extension, and
+   starts the agent directly; `cg init` restores a missing tree. When two
+   installed extensions contribute a launcher, `cg start` refuses and names
+   them (bare `cg` prints help instead), and a launcher that fails to start is
+   named in the error. Not supported on Windows yet
+   ([#239](https://github.com/mnemcik/consigliere/issues/239)).
+
+   A cg older than this contribution point ignores the key, so the extension
+   still installs and `cg` keeps its older behaviour; it records no launcher in
+   the ledger either. After upgrading cg, run `cg extension update <name>` to
+   get the launcher. That also moves the extension to its latest version.
 
 ## `cg extension` subcommand suite
 
@@ -447,10 +450,11 @@ diff. Not user-edited.
   "hooks": [{ "event": "SessionStart", "wrapper": ".claude/hooks/credentials-gate.sh" }],
   "templates": ["templates/credential-request.md"],
   "subcommands": [{ "namespace": "secret", "binary": "cg-1password" }],
-  "launcher": [{ "binary": "cg-1password", "args": ["launch"] }], // only when the manifest declares one
   "indexRows": [{ "file": "notes/INDEX.md", "marker": "ext:1password:index" }],
   "gitHooks": [".cg/git-hooks/post-commit.d/1password-check.sh"],
   "gitignore": ["1password-cache"],
+  // an extension that declares a launcher also gets:
+  //   "launcher": [{ "binary": "cg-tmux", "args": ["launch"] }],
   // the git blob id of each copied file as cg last wrote it (see Files you change)
   "files": {
     "notes/credentials-policy.md": "3b18e512dba79e4c8300dd08aeb37f8e728b8dad",

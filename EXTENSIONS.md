@@ -145,8 +145,10 @@ One `{ binary, args? }` entry makes `cg start` (and bare `cg` in a workspace) ru
 Your binary receives the agent command after `--` and should `exec` it, for
 example inside tmux. Only one installed extension per workspace may contribute a
 launcher; with two, `cg start` refuses and names them. cg runs the binary only
-when your manifest declares it (not just the workspace's ledger), and looks it up
-by its exact name, with no `.exe` added on Windows.
+when your manifest declares it (not just the workspace's ledger). Not supported
+on Windows yet ([#239](https://github.com/mnemcik/consigliere/issues/239)).
+Workspaces that installed your extension with an older cg get the launcher after
+upgrading cg and running `cg extension update <name>`.
 
 ### `templates` — ship workspace templates
 
