@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -526,5 +527,41 @@ func TestLauncherFailureNamesTheExtension(t *testing.T) {
 	var ce *cgerr.CodedError
 	if !errors.As(err, &ce) || ce.Code != 5 || stderr != "" {
 		t.Errorf("want exit 5 passed on silently, got %v, stderr %q", err, stderr)
+	}
+}
+
+// A legacy workspace has the structural markers but no .cg.json, so Detect
+// returns a nil config; cg start must run the default agent, not panic.
+func TestStartInLegacyWorkspaceWithoutConfig(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a fake claude script on PATH")
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	ws := t.TempDir()
+	for _, m := range []string{"CLAUDE.md", filepath.Join("areas", "INDEX.md"), filepath.Join("projects", "TODO.md")} {
+		p := filepath.Join(ws, m)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("# x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Chdir(ws)
+	if l, err := findLauncher(ws, nil); l != nil || err != nil {
+		t.Fatalf("findLauncher(nil config) = %v, %v; want nil, nil", l, err)
+	}
+	s := newStubStart(t, true)
+
+	if err := startCmd.RunE(startCmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"claude"}; !s.called || !reflect.DeepEqual(s.argv, want) {
+		t.Errorf("want the default agent started directly, got %+v", s)
 	}
 }

@@ -196,6 +196,11 @@ type launcher struct {
 // starts. Two or more launchers is an error naming them: which one wraps the
 // agent must be a choice, not install order.
 func findLauncher(root string, cfg *workspace.Config) (*launcher, error) {
+	if cfg == nil {
+		// A legacy workspace (structural markers, no .cg.json) has no
+		// extensions, so no launcher: the agent starts directly.
+		return nil, nil
+	}
 	var found []launcher
 	for i := range cfg.Extensions {
 		e := &cfg.Extensions[i]
