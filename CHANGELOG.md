@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.32.0](https://github.com/mnemcik/consigliere/compare/v1.31.0...v1.32.0) (2026-11-16)
+
+
+### Features
+
+* cg start and bare cg start the workspace's AI session ([#235](https://github.com/mnemcik/consigliere/issues/235)) ([7349761](https://github.com/mnemcik/consigliere/commit/73497615a13bc96b98d9d9f3e57992592bdedad9))
+* **extension:** launcher contribution wraps the agent cg start runs ([#237](https://github.com/mnemcik/consigliere/issues/237)) ([12b199f](https://github.com/mnemcik/consigliere/commit/12b199f22fdc5568e16f858d130d9abf13eaa2b5))
+
+## [1.31.0](https://github.com/mnemcik/consigliere/compare/v1.30.2...v1.31.0) (2026-11-16)
+
+
+### Features
+
+* **wrap:** capture improvement findings across everything a session touched ([#233](https://github.com/mnemcik/consigliere/issues/233)) ([772f199](https://github.com/mnemcik/consigliere/commit/772f199c2ff0d7c6e5fbefd95978bda1708931f0))
+
+## [1.30.2](https://github.com/mnemcik/consigliere/compare/v1.30.1...v1.30.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **extension:** resolve a co-located extension's subcommand under its subdir ([#210](https://github.com/mnemcik/consigliere/issues/210)) ([aefadc5](https://github.com/mnemcik/consigliere/commit/aefadc529e11c37a7d0654a202515a76efd2e5ce))
+
+## [1.30.1](https://github.com/mnemcik/consigliere/compare/v1.30.0...v1.30.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **session:** find a paused project's resume.md from any worktree ([#208](https://github.com/mnemcik/consigliere/issues/208)) ([28d6bf7](https://github.com/mnemcik/consigliere/commit/28d6bf7a8e456065606f021ed7adb31dfaf61633))
+
 ## [1.30.0](https://github.com/mnemcik/consigliere/compare/v1.29.0...v1.30.0) (2026-10-16)
 
 

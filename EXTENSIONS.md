@@ -138,6 +138,19 @@ Build your binary for the platforms you support and commit it to `bin/`, or ship
 it via your release assets (a future manifest version may fetch release
 binaries; v1 expects `bin/`).
 
+### `launcher` — wrap how the AI session starts
+
+One `{ binary, args? }` entry makes `cg start` (and bare `cg` in a workspace) run
+`bin/<binary> <args…> -- <agent…>` instead of the agent from `session.agent`.
+Your binary receives the agent command after `--` and should `exec` it, for
+example inside tmux. Only one installed extension per workspace may contribute a
+launcher; with two, `cg start` refuses and names them. cg runs the binary only
+when your manifest declares it (not just the workspace's ledger). Not supported
+on Windows yet ([#239](https://github.com/mnemcik/consigliere/issues/239)).
+Workspaces that installed your extension with an older cg get the launcher after
+upgrading cg and running `cg extension update <name>`, which also moves your
+extension to its latest version.
+
 ### `templates` — ship workspace templates
 
 Each `{ src, dest }` copies a template into the workspace `templates/` tree.

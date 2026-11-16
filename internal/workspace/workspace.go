@@ -18,13 +18,15 @@ const TypeConsigliere = "consigliere"
 // binary so an absent or pre-1.1 .cg.json behaves exactly as before: the
 // *Settings() accessors fill any zero field with these.
 const (
-	DefaultBranchPrefix     = "session/"
-	DefaultLandingBranch    = "main"
-	DefaultLandingStrategy  = "direct-to-main"
-	DefaultActiveWindowMin  = 240  // 4h — clean-session liveness window
-	DefaultDirtyWindowMin   = 2880 // 48h — dirty-session liveness window
-	DefaultPruneDays        = 7
-	DefaultBadgeFormat      = "[{area}/{project}]"
+	DefaultBranchPrefix    = "session/"
+	DefaultLandingBranch   = "main"
+	DefaultLandingStrategy = "direct-to-main"
+	DefaultActiveWindowMin = 240  // 4h — clean-session liveness window
+	DefaultDirtyWindowMin  = 2880 // 48h — dirty-session liveness window
+	DefaultPruneDays       = 7
+	DefaultBadgeFormat     = "[{area}/{project}]"
+	// DefaultAgentCommand is the program `cg start` runs when session.agent is unset.
+	DefaultAgentCommand     = "claude"
 	DefaultPushPolicySource = "areas"
 )
 
@@ -180,6 +182,10 @@ type SessionConfig struct {
 	// user's prior statusLine command. Empty = badge only.
 	StatuslineUpstream string `json:"statuslineUpstream,omitempty"`
 	BadgeFormat        string `json:"badgeFormat,omitempty"`
+	// Agent is the command `cg start` (and bare `cg` in a workspace) runs to
+	// start the workspace's AI session, as an argv array: the program, then its
+	// arguments. Empty = [DefaultAgentCommand].
+	Agent []string `json:"agent,omitempty"`
 }
 
 // PushPolicyConfig tunes `cg push-policy`.
@@ -243,6 +249,9 @@ func (c *Config) SessionSettings() SessionConfig {
 	}
 	if s.BadgeFormat == "" {
 		s.BadgeFormat = DefaultBadgeFormat
+	}
+	if len(s.Agent) == 0 {
+		s.Agent = []string{DefaultAgentCommand}
 	}
 	return s
 }
