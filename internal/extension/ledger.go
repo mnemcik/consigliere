@@ -27,7 +27,10 @@ type Ledger struct {
 	Hooks            []LedgerHook             `json:"hooks,omitempty"`
 	Templates        []string                 `json:"templates,omitempty"`
 	Subcommands      []SubcommandContribution `json:"subcommands,omitempty"`
-	IndexRows        []LedgerIndexRow         `json:"indexRows,omitempty"`
+	// Launcher is the manifest's launcher entry (not file-backed, like
+	// Subcommands); `cg start` reads it to find the binary to run.
+	Launcher  []LauncherContribution `json:"launcher,omitempty"`
+	IndexRows []LedgerIndexRow       `json:"indexRows,omitempty"`
 	// GitHooks are the workspace-relative paths of installed git-hook scripts.
 	GitHooks []string `json:"gitHooks,omitempty"`
 	// Gitignore are the ids of the ext:<name>:gitignore blocks in .gitignore.
