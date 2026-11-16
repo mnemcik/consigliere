@@ -148,7 +148,8 @@ launcher; with two, `cg start` refuses and names them. cg runs the binary only
 when your manifest declares it (not just the workspace's ledger). Not supported
 on Windows yet ([#239](https://github.com/mnemcik/consigliere/issues/239)).
 Workspaces that installed your extension with an older cg get the launcher after
-upgrading cg and running `cg extension update <name>`.
+upgrading cg and running `cg extension update <name>`, which also moves your
+extension to its latest version.
 
 ### `templates` — ship workspace templates
 
