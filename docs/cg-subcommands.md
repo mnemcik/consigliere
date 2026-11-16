@@ -20,7 +20,7 @@ template.
 
 | Subcommand | Promotes | Status |
 |------------|----------|--------|
-| `cg start [agent args…]`; bare `cg` in a workspace from a terminal | none | **shipped** |
+| `cg start [agent args…]`; bare `cg` in a workspace from a terminal (through an extension's `launcher` when one is installed) | none | **shipped** |
 | `cg worktree create <slug> [--force]` | `create-session-worktree.sh` | **shipped** |
 | `cg worktree land [<sha>] [--strategy …]` | `land-worktree-commit.sh` | **shipped** |
 | `cg worktree remove <slug> [--force]` | `remove-session-worktree.sh` | **shipped** |

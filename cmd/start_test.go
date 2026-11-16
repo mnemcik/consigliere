@@ -2,13 +2,17 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/mnemcik/consigliere/internal/cgerr"
+	"github.com/mnemcik/consigliere/internal/extension"
 	"github.com/mnemcik/consigliere/internal/workspace"
 )
 
@@ -360,5 +364,204 @@ func TestLeadingVersionBeforeStartPrintsTheVersion(t *testing.T) {
 		if err != nil || s.called || !strings.Contains(stdout, "version") {
 			t.Errorf("%s start: want the version and no agent; err %v called %v stdout %q", flag, err, s.called, stdout)
 		}
+	}
+}
+
+// installLauncher records extension name in the workspace at ws with a launcher
+// in its ledger (ledgerBin) and writes its tree: a manifest declaring a launcher
+// with manifestBin ("" = none) and, when withBinary, the binary itself. It
+// returns the binary's path.
+func installLauncher(t *testing.T, ws, name, ledgerBin, manifestBin string, args []string, withBinary bool) string {
+	t.Helper()
+	ref := &workspace.ExtensionRef{Name: name, Version: "0.1.0", Source: "direct",
+		Repo: "https://example.com/" + name, Commit: "0123456789abcdef0123456789abcdef01234567"}
+	cfg, err := workspace.Detect(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.UpsertExtension(ref)
+	if err := cfg.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	led := &extension.Ledger{Name: name, Version: "0.1.0",
+		Launcher: []extension.LauncherContribution{{Binary: ledgerBin, Args: args}}}
+	if err := led.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	tree := extension.SourceRoot(ref)
+	if err := os.MkdirAll(filepath.Join(tree, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := extension.Manifest{Manifest: extension.SchemaVersion, Name: name, Version: "0.1.0", Description: "d"}
+	if manifestBin != "" {
+		m.Contributes.Launcher = []extension.LauncherContribution{{Binary: manifestBin, Args: args}}
+	}
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tree, extension.ManifestFile), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(tree, "bin", manifestBin)
+	if withBinary {
+		// Both the declared binary and whatever the ledger points at exist, so
+		// only the manifest check can keep cg from running the ledger's choice.
+		for _, b := range []string{manifestBin, ledgerBin} {
+			if b == "" {
+				continue
+			}
+			p := filepath.Join(tree, "bin", b)
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(p, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	return bin
+}
+
+// launcherWorkspace is a workspace whose agent is the test binary, as cwd, with
+// a private extension store.
+func launcherWorkspace(t *testing.T, agent ...string) (ws, exe string) {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	exe = testAgent(t)
+	workspaceWithAgent(t, append([]string{exe}, agent...))
+	ws, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ws, exe
+}
+
+func TestStartRunsLauncherWithAgent(t *testing.T) {
+	ws, exe := launcherWorkspace(t, "--flag")
+	bin := installLauncher(t, ws, "tmux", "cg-tmux", "cg-tmux", []string{"launch"}, true)
+	s := newStubStart(t, true)
+
+	if err := startCmd.RunE(startCmd, []string{"--resume", "abc"}); err != nil {
+		t.Fatal(err)
+	}
+	if s.path != bin {
+		t.Fatalf("ran %q, want the launcher %q", s.path, bin)
+	}
+	if want := []string{bin, "launch", "--", exe, "--flag", "--resume", "abc"}; !reflect.DeepEqual(s.argv, want) {
+		t.Errorf("argv = %q, want %q", s.argv, want)
+	}
+}
+
+// The ledger is committed in the workspace, so it can't make cg run a
+// launcher the extension's manifest doesn't declare, or a binary outside it.
+func TestStartIgnoresLedgerLauncherTheManifestDoesNotDeclare(t *testing.T) {
+	for _, tc := range []struct{ name, ledgerBin, manifestBin string }{
+		{"manifest declares none", "cg-tmux", ""},
+		{"ledger points elsewhere", "../../../evil", "cg-tmux"},
+		{"different binary", "cg-other", "cg-tmux"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ws, exe := launcherWorkspace(t)
+			installLauncher(t, ws, "tmux", tc.ledgerBin, tc.manifestBin, nil, true)
+			s := newStubStart(t, true)
+
+			if err := startCmd.RunE(startCmd, nil); err != nil {
+				t.Fatal(err)
+			}
+			if s.path != exe || !reflect.DeepEqual(s.argv, []string{exe}) {
+				t.Errorf("want the agent directly, got %+v", s)
+			}
+		})
+	}
+}
+
+func TestStartWithMissingLauncherBinaryStartsAgent(t *testing.T) {
+	ws, exe := launcherWorkspace(t)
+	installLauncher(t, ws, "tmux", "cg-tmux", "cg-tmux", nil, false)
+	s := newStubStart(t, true)
+
+	if err := startCmd.RunE(startCmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	if s.path != exe || !reflect.DeepEqual(s.argv, []string{exe}) {
+		t.Errorf("want the agent directly, got %+v", s)
+	}
+}
+
+func TestStartRefusesTwoLaunchers(t *testing.T) {
+	ws, _ := launcherWorkspace(t)
+	installLauncher(t, ws, "tmux", "cg-tmux", "cg-tmux", nil, true)
+	installLauncher(t, ws, "zellij", "cg-zellij", "cg-zellij", nil, true)
+	s := newStubStart(t, true)
+
+	err := startCmd.RunE(startCmd, nil)
+	var ce *cgerr.CodedError
+	if !errors.As(err, &ce) || ce.Code != cgerr.ExitUsage || !strings.Contains(err.Error(), "tmux, zellij") {
+		t.Errorf("want ExitUsage naming both extensions, got %v", err)
+	}
+	if s.called {
+		t.Error("nothing may start when two launchers are installed")
+	}
+
+	// Bare cg falls back to help instead.
+	stdout, stderr, err := executeRoot(t, []string{"--no-auto-update"})
+	if err != nil || !strings.Contains(stdout, "Usage:") || !strings.Contains(stderr, noAgentHint) {
+		t.Errorf("bare cg: err %v stdout %q stderr %q", err, stdout, stderr)
+	}
+}
+
+func TestLauncherFailureNamesTheExtension(t *testing.T) {
+	ws, _ := launcherWorkspace(t)
+	installLauncher(t, ws, "tmux", "cg-tmux", "cg-tmux", nil, true)
+	newStubStart(t, true)
+	runAgent = func(string, []string) error { return errors.New("exec format error") }
+
+	err := startCmd.RunE(startCmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "launcher of extension tmux") || !strings.Contains(err.Error(), "exec format error") {
+		t.Errorf("want the error to name the extension, got %v", err)
+	}
+	// An exit code passed through from the launcher stays silent.
+	runAgent = func(string, []string) error { return cgerr.New(5, "") }
+	_, stderr, err := executeRoot(t, []string{"start"})
+	var ce *cgerr.CodedError
+	if !errors.As(err, &ce) || ce.Code != 5 || stderr != "" {
+		t.Errorf("want exit 5 passed on silently, got %v, stderr %q", err, stderr)
+	}
+}
+
+// A legacy workspace has the structural markers but no .cg.json, so Detect
+// returns a nil config; cg start must run the default agent, not panic.
+func TestStartInLegacyWorkspaceWithoutConfig(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a fake claude script on PATH")
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	ws := t.TempDir()
+	for _, m := range []string{"CLAUDE.md", filepath.Join("areas", "INDEX.md"), filepath.Join("projects", "TODO.md")} {
+		p := filepath.Join(ws, m)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("# x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Chdir(ws)
+	if l, err := findLauncher(ws, nil); l != nil || err != nil {
+		t.Fatalf("findLauncher(nil config) = %v, %v; want nil, nil", l, err)
+	}
+	s := newStubStart(t, true)
+
+	if err := startCmd.RunE(startCmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"claude"}; !s.called || !reflect.DeepEqual(s.argv, want) {
+		t.Errorf("want the default agent started directly, got %+v", s)
 	}
 }

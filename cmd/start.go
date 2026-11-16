@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -14,6 +15,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/mnemcik/consigliere/internal/cgerr"
+	"github.com/mnemcik/consigliere/internal/extension"
 	"github.com/mnemcik/consigliere/internal/workspace"
 )
 
@@ -26,7 +28,8 @@ var startCmd = &cobra.Command{
 	Short: "Start this workspace's AI session (session.agent, default claude)",
 	Long: "Start this workspace's AI session: run the command in .cg.json session.agent\n" +
 		"(an argv array, default [\"claude\"]) in the current directory, with any\n" +
-		"arguments passed on to it, e.g. `cg start --resume <id>`.\n\n" +
+		"arguments passed on to it, e.g. `cg start --resume <id>`. An installed\n" +
+		"extension can contribute a launcher that wraps the agent (e.g. in tmux).\n\n" +
 		"Bare `cg` does the same inside a workspace when run from a terminal; outside a\n" +
 		"workspace, without a terminal, or when the agent can't be started, it prints\n" +
 		"this help instead.\n\n" +
@@ -42,12 +45,12 @@ var startCmd = &cobra.Command{
 			cwd, _ := os.Getwd()
 			return cgerr.New(cgerr.ExitUsage, "cg start: not inside a Consigliere workspace: %s", cwd)
 		}
-		path, argv, err := resolveAgent(root, args)
+		run, err := resolveAgent(root, args)
 		if err != nil {
 			cmd.SilenceUsage = true
 			return err
 		}
-		return finishAgent(cmd, runAgent(path, argv))
+		return finishAgent(cmd, run.exec())
 	},
 }
 
@@ -71,9 +74,9 @@ func runRoot(cmd *cobra.Command, _ []string) error {
 	if root == "" || !isInteractive() {
 		return cmd.Help()
 	}
-	path, argv, err := resolveAgent(root, nil)
+	run, err := resolveAgent(root, nil)
 	if err == nil {
-		err = runAgent(path, argv)
+		err = run.exec()
 		if err == nil || isExitCode(err) {
 			return finishAgent(cmd, err)
 		}
@@ -120,28 +123,140 @@ var isInteractive = func() bool {
 // start_exec_*.go. A variable so tests can capture the call instead.
 var runAgent = execAgent
 
+// agentRun is what `cg start` runs: the program path and its argv, and the
+// extension whose launcher wraps the agent ("" when none does).
+type agentRun struct {
+	path     string
+	argv     []string
+	launcher string
+}
+
+// exec runs it. A launcher that fails to start is named in the error; an exit
+// code passed through from the agent or launcher (a CodedError without a
+// message) is returned as is, so cg prints nothing of its own.
+func (r agentRun) exec() error {
+	err := runAgent(r.path, r.argv)
+	if err == nil || r.launcher == "" {
+		return err
+	}
+	if isExitCode(err) {
+		return err
+	}
+	return fmt.Errorf("cg start: launcher of extension %s (%s): %w", r.launcher, r.path, err)
+}
+
 // resolveAgent works out what `cg start` runs for the workspace at root with
-// extra appended: the resolved program path and the full argv. An error means
-// the agent can't be started (bare `cg` then falls back to help).
-func resolveAgent(root string, extra []string) (path string, argv []string, err error) {
+// extra appended: the agent from session.agent, wrapped by an installed
+// extension's launcher when there is one. An error means nothing can be
+// started (bare `cg` then falls back to help).
+func resolveAgent(root string, extra []string) (agentRun, error) {
 	cfg, err := workspace.Detect(root)
 	if err != nil {
-		return "", nil, err
+		return agentRun{}, err
 	}
 	agent := cfg.SessionSettings().Agent
 	// Only the program must be named; later elements are passed verbatim (an
 	// empty string is a valid argument).
 	if strings.TrimSpace(agent[0]) == "" {
-		return "", nil, cgerr.New(cgerr.ExitUsage, "cg start: session.agent in %s has an empty program name: %q", filepath.Join(root, ".cg.json"), agent)
+		return agentRun{}, cgerr.New(cgerr.ExitUsage, "cg start: session.agent in %s has an empty program name: %q", filepath.Join(root, ".cg.json"), agent)
 	}
-	path, err = exec.LookPath(agent[0])
+	path, err := exec.LookPath(agent[0])
 	if err != nil {
-		return "", nil, cgerr.New(cgerr.ExitUsage,
+		return agentRun{}, cgerr.New(cgerr.ExitUsage,
 			"cg start: %q not found on PATH (the agent comes from session.agent in .cg.json, default %q)",
 			agent[0], workspace.DefaultAgentCommand)
 	}
-	argv = append(append([]string{agent[0]}, agent[1:]...), extra...)
-	return path, argv, nil
+	argv := append(append([]string{agent[0]}, agent[1:]...), extra...)
+	l, err := findLauncher(root, cfg)
+	if err != nil {
+		return agentRun{}, err
+	}
+	if l == nil {
+		return agentRun{path: path, argv: argv}, nil
+	}
+	// The launcher gets its own args, "--", then the agent argv as configured
+	// (agent[0] as written, not the resolved path, so it can name sessions).
+	largv := append(append(append([]string{l.bin}, l.args...), "--"), argv...)
+	return agentRun{path: l.bin, argv: largv, launcher: l.ext}, nil
+}
+
+// launcher is an installed extension's launcher contribution, resolved.
+type launcher struct {
+	ext  string
+	bin  string
+	args []string
+}
+
+// findLauncher returns the launcher contributed by the workspace's installed
+// extensions, nil when none contributes one. The ledger under .cg/ext/ is
+// committed in the workspace, so it is not trusted on its own: a launcher runs
+// only when the extension's own manifest, in its tree at the recorded commit,
+// validates and declares the same launcher. A mismatch, a tree that can't be
+// read or a missing binary is skipped with a warning, so the session still
+// starts. Two or more launchers is an error naming them: which one wraps the
+// agent must be a choice, not install order.
+func findLauncher(root string, cfg *workspace.Config) (*launcher, error) {
+	if cfg == nil {
+		// A legacy workspace (structural markers, no .cg.json) has no
+		// extensions, so no launcher: the agent starts directly.
+		return nil, nil
+	}
+	var found []launcher
+	for i := range cfg.Extensions {
+		e := &cfg.Extensions[i]
+		led, err := extension.LoadLedger(root, e.Name)
+		if err != nil || led == nil || len(led.Launcher) == 0 {
+			continue
+		}
+		warn := func(format string, a ...any) {
+			_, _ = fmt.Fprintf(os.Stderr, "cg start: extension %s: "+format+"; starting the agent without it\n", append([]any{e.Name}, a...)...)
+		}
+		sub, err := extension.CleanSubdir(e.Path)
+		if err != nil {
+			warn("invalid path %q", e.Path)
+			continue
+		}
+		dir := filepath.Join(extension.SourceRoot(e), sub)
+		m, err := extension.LoadManifest(dir)
+		if err == nil {
+			err = m.Validate()
+		}
+		if err != nil {
+			warn("can't read its manifest (%v); `cg init` restores the recorded version", err)
+			continue
+		}
+		if len(m.Contributes.Launcher) == 0 || !sameLauncher(led.Launcher[0], m.Contributes.Launcher[0]) {
+			warn("the launcher in .cg/ext/%s.json doesn't match the extension's manifest", e.Name)
+			continue
+		}
+		lc := m.Contributes.Launcher[0]
+		bin := filepath.Join(dir, "bin", lc.Binary)
+		if info, serr := os.Stat(bin); serr != nil || info.IsDir() {
+			warn("launcher %s is missing; `cg init` restores the recorded version", bin)
+			continue
+		}
+		found = append(found, launcher{ext: e.Name, bin: bin, args: lc.Args})
+	}
+	switch len(found) {
+	case 0:
+		return nil, nil
+	case 1:
+		return &found[0], nil
+	}
+	names := make([]string, len(found))
+	for i, l := range found {
+		names[i] = l.ext
+	}
+	return nil, cgerr.New(cgerr.ExitUsage, "cg start: more than one installed extension contributes a launcher (%s); remove all but one", strings.Join(names, ", "))
+}
+
+// sameLauncher compares two launcher entries, treating absent and empty args
+// as equal.
+func sameLauncher(a, b extension.LauncherContribution) bool {
+	if a.Binary != b.Binary || len(a.Args) != len(b.Args) {
+		return false
+	}
+	return len(a.Args) == 0 || reflect.DeepEqual(a.Args, b.Args)
 }
 
 // argsForStart handles root flags given before the `start` verb
