@@ -1,0 +1,46 @@
+name: Impact Review
+
+# Every PR changes what every workspace gets on `cg sync`, whoever opens it, so every
+# PR needs the maintainer's impact review before it can merge (CONTRIBUTING.md
+# "Impact review"). The review is recorded as the commit status `impact-review` on the
+# PR's head commit, which is a required check on main. A status belongs to one commit,
+# so new commits need a new review: nothing has to be reset.
+#
+# A commit with no `impact-review` status can't merge (the required check shows as
+# expected), so this workflow posts nothing for ordinary PRs and so can never replace
+# the maintainer's `success`. It only posts `success` for PRs opened by the release and
+# dependency bots, which need no impact review. Nothing is checked out, and no
+# PR-controlled text (title, body, branch name) reaches a shell: only the author
+# login, the repo and the head SHA.
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+permissions: {}
+
+jobs:
+  status:
+    name: Report impact-review status for bot PRs
+    if: >-
+      contains(fromJSON('["consigliere-release-bot[bot]","dependabot[bot]","renovate[bot]"]'), github.event.pull_request.user.login)
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          case "$AUTHOR" in
+            'consigliere-release-bot[bot]' | 'dependabot[bot]' | 'renovate[bot]') ;;
+            *) echo "::error::not a bot PR: $AUTHOR"; exit 1 ;;
+          esac
+          gh api -X POST "repos/$REPO/statuses/$SHA" \
+            -f state=success -f context=impact-review \
+            -f description="Bot PR: no impact review needed" >/dev/null
+          echo "impact-review: success (bot PR by $AUTHOR)"

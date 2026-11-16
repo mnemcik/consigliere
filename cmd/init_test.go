@@ -414,7 +414,7 @@ func TestInitForcePreservesConfiguredSettings(t *testing.T) {
 		t.Errorf("worktree = %+v, want %+v", got.Worktree, wantWT)
 	}
 	wantSess := workspace.SessionConfig{ActiveWindowMin: 7, PruneDays: 3, GateTemplate: "my/gate.md", BadgeFormat: "{project}", StatuslineUpstream: "bash ~/mine.sh"}
-	if got.Session == nil || *got.Session != wantSess {
+	if got.Session == nil || !reflect.DeepEqual(*got.Session, wantSess) {
 		t.Errorf("session = %+v, want %+v", got.Session, wantSess)
 	}
 	if got.PushPolicy == nil || got.PushPolicy.Source != "my/policy.json" {
