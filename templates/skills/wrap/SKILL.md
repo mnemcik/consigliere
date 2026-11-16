@@ -136,8 +136,8 @@ For each finding worth capturing:
 
 Review the session for **observations about how the user prefers to work with Claude** — communication preferences, decision-making patterns, collaboration style, prompting patterns.
 
-1. Read `insights/DRAFTS.md` to check for existing insights on the same theme
-2. If the observation is already captured, skip or add new evidence to the existing file
+1. Check `insights/DRAFTS.md` for an existing insight on the same point, as `notes/session-end-capture.md` (Insights, step 1) describes: read that step first, since it says how to record a re-observation and what to do when a `promoted` rule was re-observed
+2. If the observation is already captured, handle it as that step says
 3. If it's new, create a draft insight in `insights/YYYY-MM-DD/` using `templates/insight.md`
 4. Add a row to `insights/DRAFTS.md`
 
