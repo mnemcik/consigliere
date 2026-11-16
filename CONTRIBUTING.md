@@ -92,14 +92,15 @@ When a test can't apply on one platform, skip it there with a reason (`t.Skip("â
 1. **Impact review.** The maintainer reviews what the PR changes for every workspace (the `impact-review` status is described in the next section). It checks:
    - **No private data** in the diff, the description or the commit messages: no names of people or companies, internal hosts or paths, ticket keys, incidents. The repository is public.
    - **Fit and layer:** the change belongs in core (the binary, or the framework templates every workspace gets) rather than in an extension or a single workspace. Third-party tools, a specific review bot for example, go in an extension, not in core.
-   - **Real and current:** the problem exists on `main`, no other open PR or issue already covers it, and it doesn't go against a recorded decision.
+   - **Real and current:** the problem exists on `main`, no other open PR or issue already covers it, and it doesn't conflict with an earlier maintainer decision (the review comment says which, if one applies).
    - **Impact stated and true:** the "Impact on workspaces" section matches the diff. Additions to the CLAUDE.md template keep every-session rules short and put trigger-only detail in a note. A rule that hands a step to a skill or hook still works in workspaces that don't install the Claude Code integration.
-   - **Shape:** one concern per PR, tests for code, docs where behaviour changes, works on Windows, and the title's type matches the change.
-2. **The outcome comes as a PR comment:** agreed (and `impact-review` is set), or changes requested.
-3. **The PR's author carries it from there:** makes the requested changes, updates the branch from `main`, and runs the review loop until CI is green and every review comment is answered. For an upstream proposal, that is the workspace session or project that opened it.
-4. **After a push, the whole PR is reviewed again** at its new head, not only the new commits, and `impact-review` is set again on that head.
-5. **One approving review** is required by branch protection.
-6. **Only the maintainer merges**, or authorises a merge: an agent merges only on the maintainer's explicit go-ahead for that PR.
+   - **Shape:** one concern per PR, tests for code, docs where behaviour changes, works on Windows, and the title's type matches the change. Copied content needs a compatible licence and attribution.
+   - **Safety:** changes to workflows, `install.sh`, release config, hooks or settings get extra scrutiny. A workflow job named like a required check (`impact-review` above all) is rejected, since its result would satisfy that check without a review.
+2. **The outcome comes as a PR comment:** agreed (and `impact-review` is set), or changes requested. A plain agree on the maintainer's own PR may come without a comment.
+3. **The PR's author carries it from there:** makes the requested changes, updates the branch from `main`, and runs the review loop until CI is green and every review comment is answered. For an upstream proposal, that is the workspace session or project that opened it. On a PR from a fork, CI runs only after the maintainer approves the workflow run, so a waiting CI isn't a stalled PR.
+4. **A push leaves the new head without `impact-review`** (see [Impact review](#impact-review)). Before merge, the maintainer reviews the PR again at its final head: the whole PR, not only the new commits. A change in scope can mean a new review rather than a quick re-check.
+5. **One approving review** is required by branch protection, from the maintainer or an automated reviewer. Later pushes don't dismiss it.
+6. **Marking a draft ready, and merging, are the maintainer's calls.** An agent does either only on the maintainer's explicit go-ahead for that PR.
 
 **The description becomes the commit message.** PRs are squash-merged with the PR description as the commit body, so it ends up in `main`'s history. Keep it current, updating it after every push that changes what the PR does, and keep private details out of it, including an upstream proposal's Origin section ("a personal workspace", not whose).
 
@@ -114,7 +115,7 @@ Every PR changes what every workspace gets on `cg sync`, so every PR gets an **i
     -f state=success -f context=impact-review -f description="Impact reviewed"
   ```
 
-- **New commits need a new review.** A status belongs to one commit, so a push leaves the new head without `success` until the maintainer reviews the new commits. That includes updating the branch from `main` (branch protection requires up-to-date branches): the maintainer re-marks the new head once the update is checked to add nothing beyond `main`.
+- **New commits need a new review.** A status belongs to one commit, so a push leaves the new head without `success` until the maintainer reviews the PR again at its new head. That includes updating the branch from `main` (branch protection requires up-to-date branches): the maintainer re-marks the new head once the update is checked to add nothing beyond `main`.
 - **Who can set it:** any account or app with write access to statuses. Fork contributors can't. An agent running under the maintainer's account can, so an agent sets `success` only on the maintainer's explicit go-ahead for that commit, never on its own judgement.
 - **Bot PRs are exempt by who opened them.** Commits a person pushes to a bot's PR get `success` too, so don't push to bot branches; open a separate PR.
 - **Fill in "Impact on workspaces"** in the PR template: what changes on `cg sync` for workspaces that never edited the affected files, which edited files will show as drifted, and how Claude behaves differently.
