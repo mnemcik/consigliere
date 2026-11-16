@@ -179,17 +179,19 @@ Area files (`areas/`) are the reference hubs for the entire knowledge base. Ever
 
 ### Phase 6: Continuous improvement check
 
-Briefly review the session for improvement opportunities to the knowledge base system itself:
+Briefly review the session for improvement opportunities in everything it touched, not only the knowledge base system itself:
 
-- Rules that were violated or hard to follow
-- Missing rules that would have prevented a mistake
-- Stale or contradictory rules
-- Template gaps
-- Workflow friction
+- **Framework and workspace rules:** rules that were violated, hard to follow, missing, stale or contradictory; template gaps
+- **Skills and plugins:** a skill or plugin that got something wrong, skipped a step or missed something
+- **Built-in tools:** a tool that misbehaved or made the work harder
+- **Workflows run in the session:** friction, unnecessary steps, repeated manual lookups
+
+Before capturing anything, load `notes/capturing-improvement-proposals.md` (the surface tags and the capture procedure) and, if the workspace has one, `notes/improvement-routing.md` (which project or place owns which surface).
 
 If you spot something:
-- **Small obvious fixes** (typos, broken links, stale dates): fix directly
-- **Substantive improvements**: mention them to the user with a one-line proposal. Don't implement without confirmation.
+- **Small obvious fixes** (typos, broken links, stale dates): fix directly.
+- **Findings:** capture each one where its owner will see it, following the proposals note: the destination the routing note gives for its surface; otherwise the `todo.md` of a project that owns that surface; otherwise an idea with its `surface-` tag. If an item for the same miss already exists, add the new evidence to it instead of creating another. List every capture on the summary's **Improvements** line.
+- **Changes to rules, skills, hooks or code:** propose them to the user in one line. Don't implement them without confirmation.
 
 ---
 
