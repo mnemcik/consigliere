@@ -39,7 +39,7 @@ Every project folder contains these files:
 6. **Move external links to `references.md`** rather than accumulating them in README.md. Create the file on first use.
 7. **Project-specific files** can be added freely. Reference them from README.md with relative links.
 8. **One project owns each piece of work.** A project's implementation work, bugs, plans and roadmap live only in that project's folder. Another project may name it as a dependency and say how it uses it, but doesn't track its work. Work found in one project that belongs to another moves there (as an item in that project's `todo.md`); it isn't kept as a shared todo in both.
-9. **Before starting an old todo item, check the live system first.** Work tracked in another project may already have done it, and its session may not have ticked it here. If it is done, tick it with a pointer to the evidence instead of doing it again.
+9. **Before starting an old todo item, check the live system first.** Work tracked in another project may already have done it, and its session may not have ticked it here. If it is done, tick it, pointing to the evidence (commit, decision or log entry), instead of doing it again.
 
 ## Projects With No Finish Line — `## Standard to Maintain`
 

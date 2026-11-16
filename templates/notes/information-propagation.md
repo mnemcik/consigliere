@@ -37,10 +37,10 @@ After any session where new information is discussed or identified, existing tra
 | Scope change | Project Scope, area Overview |
 | Blocker or risk | Project `README.md` Dependencies, project `todo.md`, area Architecture & Constraints |
 | Meeting notes | All areas mentioned, project `log.md` for session record |
-| Work that finishes another project's todo item | That project's `todo.md`: tick the item there, with a pointer to the commit or log entry |
+| Work that finishes another project's todo item | That project's `todo.md` (search other projects' todos for the work's key terms): tick the item there, pointing to the evidence (commit, decision or log entry) |
 
 ### Known miss — another project's todo item
 
-Work in one project often completes an item that sits in a *different* project's `todo.md`: a shared service gets configured, a credential gets set up, a check gets added along the way. The item lives only in the project that owns the work (rule 8 in [`project-structure.md`](project-structure.md)), and the "check off every copy" rule only searches the current project's folder, so the owner's item stays open and keeps advertising work that is done, and a later session re-plans it. When a session finishes something another project lists, tick it in that project, pointing to the evidence.
+Work in one project often completes an item that sits in a *different* project's `todo.md`: a shared service gets configured, a credential gets set up, a check gets added along the way. The item lives only in the project that owns the work (rule 8 in [`project-structure.md`](project-structure.md)), and the "check off every copy" rule only searches the current project's folder, so the owner's item stays open and keeps advertising work that is done, and a later session re-plans it. So when a session finishes work, it searches the other projects' `todo.md` files for the work's key terms (a service name, a setting, an ID), as rule 4 does within one project, and ticks each open item the work completed in the project that owns it, pointing to the evidence (commit, decision or log entry).
 
 **This is not optional.** Stale information in areas and projects leads to duplicated or contradictory context across sessions.
