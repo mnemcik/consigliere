@@ -198,7 +198,7 @@ A project's README carries `## Goals` when it terminates, or `## Standard to Mai
 
 ### 💡 Ideas
 
-Lightweight captures: `raw` → `exploring` → `ready` → project (or `parked` / `rejected`). Low friction to capture, structured enough to act on.
+Lightweight captures: `raw` → `exploring` → `ready` → `promoted` once acted on, as a project or a direct change (or `parked` / `rejected`). Low friction to capture, structured enough to act on.
 
 ### 📝 Notes
 

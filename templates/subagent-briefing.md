@@ -33,7 +33,7 @@ Relevant excerpts from the project file and area file(s). Not the whole file —
 What the subagent should produce:
 - A structured report (for review tasks)
 - A commit with specific changes (for write tasks)
-- A PR (for changes that need team review)
+- A PR (for changes that need team review); paste the PR-loop contract from `notes/after-pr-checks.md` into the prompt
 - A diff for human review before committing
 
 ## Report Back (optional)

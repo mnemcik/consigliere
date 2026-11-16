@@ -135,7 +135,7 @@ For the trigger list, the step-by-step propagation procedure, and the new-inform
 <!-- cg:section:start=idea-workflow -->
 ## Workflow: Idea → Project
 
-When an idea is captured, explored, turned into a project, parked, or rejected, load [`notes/idea-to-project-workflow.md`](notes/idea-to-project-workflow.md) for the lifecycle steps and status vocabulary (`raw → exploring → ready → parked | rejected`).
+When an idea is captured, explored, turned into a project, parked, or rejected, load [`notes/idea-to-project-workflow.md`](notes/idea-to-project-workflow.md) for the lifecycle steps and status vocabulary (`raw → exploring → ready → promoted | parked | rejected`).
 <!-- cg:section:end=idea-workflow -->
 
 <!-- cg:section:start=session-end -->
@@ -161,7 +161,7 @@ For the notes-capture procedure (category + tags + INDEX), the insights-draft pr
 
 **Every time Claude opens a PR (in any repo), Claude MUST enter a review-resolution loop before considering the work done.** The PR is not "shipped" at `gh pr create`; it is shipped when CI is green and every open review comment has been either fixed in a follow-up commit or answered with a reasoning reply — never silently dismissed. Bot reviews (CodeRabbit, Copilot, dependabot) count the same as human reviews.
 
-For the fetch probes, the per-comment outcome taxonomy (fix / reply / escalate), the CI-failure handling, the guardrails (no amend/force-push on a review branch), and the session-end `/schedule` handoff, load [`notes/after-pr-checks.md`](notes/after-pr-checks.md).
+For the fetch probes, the per-comment outcome taxonomy (fix / reply / escalate), the CI-failure handling, the guardrails (no amend/force-push on a review branch), the session-end `/schedule` handoff and the contract a PR subagent gets, load [`notes/after-pr-checks.md`](notes/after-pr-checks.md); also load it before delegating PR work to a subagent.
 <!-- cg:section:end=pr-review-loop -->
 
 <!-- cg:section:start=confidence-gate -->
@@ -247,9 +247,9 @@ For the per-finding validation checklist, when to push back instead of applying,
 <!-- cg:section:start=bulk-ops-preflight -->
 ## Bulk / Destructive Ops — Pre-flight
 
-For any command that iterates over many entities (bulk permission changes, mass invitations, multi-repo edits, remote-URL rewrites, multi-file rename/`sed` sweeps, `--paginate` API mutations, `for X in $(...)` loops), state **target set + exclusion set + single-sample dry-run + quoting/arity check, then wait for approval** before running the full batch. Threshold: more than ~5 entities, or any set you can't visually enumerate before the command runs.
+For any command that iterates over many entities (bulk permission changes, mass invitations, multi-repo edits, remote-URL rewrites, multi-file rename/`sed` sweeps, `--paginate` API mutations, `for X in $(...)` loops), state **target set + exclusion set + single-sample dry-run + quoting/arity check, then wait for approval** before running the full batch. Threshold: more than ~5 entities, or any set you can't visually enumerate before the command runs, or any write of credential values to more than one item.
 
-For the per-step pre-flight, the default exclusion set, the shell-splitting tells, the post-state-first check for re-runnable splices, and the reversibility carve-out, load [`notes/bulk-ops-preflight.md`](notes/bulk-ops-preflight.md).
+For the per-step pre-flight, the default exclusion set, the secret-provenance check, the shell-splitting tells, backup → verify → overwrite, the post-state-first check for re-runnable splices, and the reversibility carve-out, load [`notes/bulk-ops-preflight.md`](notes/bulk-ops-preflight.md).
 <!-- cg:section:end=bulk-ops-preflight -->
 
 <!-- cg:section:start=sharing-projects -->
@@ -306,7 +306,7 @@ For the full preference order, the gap-handling rule, and the reasoning, load [`
 <!-- cg:section:start=conventions -->
 ## Conventions
 
-- Idea statuses: `raw` → `exploring` → `ready` → `parked` | `rejected`
+- Idea statuses: `raw` → `exploring` → `ready` → `promoted` | `parked` | `rejected`
 - Project statuses: `defining` → `in-progress` → `done` | `on-hold`
 - Project priorities: `high` | `medium` | `low` — stored in each project's README.md frontmatter (`priority:`) and in `projects/TODO.md` (sorted by priority)
 - **Rank within a priority bucket** in `projects/TODO.md` is the row order and is **user-owned** — suggest re-ranking, but never silently reorder rows.
