@@ -9,7 +9,7 @@ promoted_to: ""  # set with status: promoted — projects/<slug>/README.md, or t
 
 # {Idea Title}
 
-<!-- When status reaches "ready", create a project from templates/project/ -->
+<!-- When status reaches "ready", create a project from templates/project/, or make a small change directly -->
 
 ## What
 

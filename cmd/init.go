@@ -720,7 +720,7 @@ Each area carries free-form **tags** describing what kind of domain it covers (e
 
 const indexIdeas = `# Ideas Backlog
 
-Ideas captured here. When an idea reaches **ready**, create a project in ` + "`projects/`" + ` using ` + "`templates/project/`" + `.
+Ideas captured here. When an idea reaches **ready**, create a project in ` + "`projects/`" + ` using ` + "`templates/project/`" + `, or make a small change directly.
 
 ## Index
 
