@@ -17,4 +17,6 @@ Brief description of what this PR does.
 - [ ] `make check` passes locally (lint + test + fmt + tidy)
 - [ ] Tested manually with `cg <command>`
 
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for development setup and PR title conventions.
+The description becomes the squash commit message: keep it current after each push, and keep private details (people, companies, internal systems, incidents) out of it.
+
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for development setup, PR title conventions, and [how a PR gets to merge](../CONTRIBUTING.md#how-a-pr-gets-to-merge), including what the impact review checks.
