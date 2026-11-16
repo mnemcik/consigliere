@@ -44,6 +44,7 @@ make check      # Run everything
 - Sentinel comments in `templates/workspace/CLAUDE.md` use `cg:section` / `user:section` prefixes.
 - **Windows is a supported platform**, alongside Linux and macOS; CI runs the tests on all three. Check every change against the Windows rules in [CONTRIBUTING.md](CONTRIBUTING.md#supported-platforms): paths, line endings, file modes, open files, locks, shelling out.
 - Follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
+- **Pull requests** follow [How a PR gets to merge](CONTRIBUTING.md#how-a-pr-gets-to-merge): keep the description current after every push (it becomes the squash commit message) and free of private details; never set the `impact-review` status without the maintainer's explicit go-ahead for that commit, and never mark a draft ready or merge without it for that PR.
 
 ## Release Process
 
