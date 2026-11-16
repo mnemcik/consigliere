@@ -97,6 +97,10 @@ func TestGateAddsSetContext(t *testing.T) {
 		// Placeholder added to a template that keeps its own session ID line.
 		"placeholder and own lines": "Gate\nSession ID: {{session_id}}\n{{set_context}}\n{{worktree_warning}}\n",
 		"no token":                  "CUSTOM gate\r\nwith CRLF\r\n",
+		// Mentions the command in prose but gives no session ID to run it with.
+		"prose mention":     "Gate\nTip: for a paused project, cg session set-context prints where it is.\n{{worktree_warning}}\n",
+		"placeholder twice": "Gate\n{{set_context}}\n{{set_context}}\n{{worktree_warning}}\n",
+		"inline warning":    "Gate\nNote: {{worktree_warning}}\n",
 		"crlf original": "Gate\r\nSession ID: {{session_id}}\r\n" +
 			"Badge state file for this session: {{badge_file}}\r\n{{worktree_warning}}\r\n",
 	}
@@ -129,6 +133,15 @@ func TestGateSetContextBeforeWorktreeWarning(t *testing.T) {
 	got := withSetContext("Gate\n{{worktree_warning}}")
 	if !strings.HasSuffix(got, setContextBlock+"\n{{worktree_warning}}") {
 		t.Errorf("block should sit right before the worktree warning:\n%s", got)
+	}
+}
+
+// TestGateSetContextAfterInlineWarningText keeps the block on its own lines
+// when {{worktree_warning}} follows text on the same line.
+func TestGateSetContextAfterInlineWarningText(t *testing.T) {
+	got := withSetContext("Gate\nNote: {{worktree_warning}}")
+	if !strings.Contains(got, "Note: \n"+setContextBlock+"\n{{worktree_warning}}") {
+		t.Errorf("block should start on its own line:\n%s", got)
 	}
 }
 

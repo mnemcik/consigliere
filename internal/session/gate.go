@@ -42,8 +42,10 @@ Once the area and project are confirmed, record them for the status line:
 const setContextPlaceholder = "{{set_context}}"
 
 // setContextCommand marks a template that already carries its own set-context
-// instruction, such as a copy of the default template from before cg added it.
-const setContextCommand = "cg session set-context"
+// instruction, such as a copy of the 2026-09-25 default template. It includes
+// the flag, so a template that only mentions the command in prose still gets
+// the block (and with it the session ID the command needs).
+const setContextCommand = "set-context --session-id"
 
 // defaultWorktreeWarning is appended (as the {{worktree_warning}} token) when
 // the session runs in the main worktree, where the git index is shared with
@@ -108,10 +110,10 @@ func Gate(ctx context.Context, root string, in GateInput, gateTemplatePath strin
 	return "<user-prompt-submit-hook>\n" + body + "\n</user-prompt-submit-hook>", true
 }
 
-// withSetContext puts the set-context block in body: at {{set_context}} when
-// the template has it, otherwise before {{worktree_warning}}, otherwise at the
-// end. A template that already names the command (and has no placeholder) is
-// left as it is, and lines of the block the template already has are not
+// withSetContext puts the set-context block in body: at the first
+// {{set_context}} when the template has it, otherwise on its own lines before
+// {{worktree_warning}}, otherwise at the end. A template that already runs the
+// command (setContextCommand, and no placeholder) is left as it is, and lines of the block the template already has are not
 // repeated (the original default template had the session ID and badge file
 // lines but not the command).
 func withSetContext(body string) string {
@@ -132,9 +134,17 @@ func withSetContext(body string) string {
 	block := strings.Join(add, "\n")
 	switch {
 	case placed:
-		return strings.ReplaceAll(body, setContextPlaceholder, block)
+		// The block goes in once, at the first placeholder; any others are dropped.
+		i := strings.Index(body, setContextPlaceholder)
+		rest := strings.ReplaceAll(body[i+len(setContextPlaceholder):], setContextPlaceholder, "")
+		return body[:i] + block + rest
 	case strings.Contains(body, "{{worktree_warning}}"):
-		return strings.Replace(body, "{{worktree_warning}}", block+"\n{{worktree_warning}}", 1)
+		// Start the block on its own line when the placeholder follows text.
+		i := strings.Index(body, "{{worktree_warning}}")
+		if i > 0 && body[i-1] != '\n' {
+			block = "\n" + block
+		}
+		return body[:i] + block + "\n" + body[i:]
 	case strings.TrimSpace(body) == "":
 		return block
 	default:
