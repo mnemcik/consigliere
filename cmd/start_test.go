@@ -248,6 +248,12 @@ func executeRoot(t *testing.T, args []string) (stdout, stderr string, err error)
 		rootCmd.SilenceErrors, rootCmd.SilenceUsage = false, false
 		startCmd.SilenceErrors, startCmd.SilenceUsage = false, false
 		noAutoUpdate = false
+		for _, name := range []string{"version", cmdHelp} {
+			if f := rootCmd.Flags().Lookup(name); f != nil {
+				_ = f.Value.Set("false")
+				f.Changed = false
+			}
+		}
 	})
 	err = rootCmd.Execute()
 	return out.String(), errOut.String(), err
@@ -338,6 +344,21 @@ func TestLeadingHelpBeforeStartIsAHelpRequest(t *testing.T) {
 		stdout, _, err := executeRoot(t, got)
 		if err != nil || s.called || !strings.Contains(stdout, "cg start [agent args") {
 			t.Errorf("%s start: want help and no agent; err %v called %v stdout %.60q", flag, err, s.called, stdout)
+		}
+	}
+}
+
+func TestLeadingVersionBeforeStartPrintsTheVersion(t *testing.T) {
+	for _, flag := range []string{"--version", "-v"} {
+		got, err := argsForStart([]string{"--no-auto-update", flag, "start", "x"})
+		if err != nil || !reflect.DeepEqual(got, []string{"--version"}) {
+			t.Fatalf("argsForStart(%s start) = %q, %v; want [--version]", flag, got, err)
+		}
+		workspaceWithAgent(t, []string{testAgent(t)})
+		s := newStubStart(t, true)
+		stdout, _, err := executeRoot(t, got)
+		if err != nil || s.called || !strings.Contains(stdout, "version") {
+			t.Errorf("%s start: want the version and no agent; err %v called %v stdout %q", flag, err, s.called, stdout)
 		}
 	}
 }
