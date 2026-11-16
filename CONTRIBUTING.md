@@ -117,7 +117,7 @@ Every PR changes what every workspace gets on `cg sync`, so every PR gets an **i
 
 - **New commits need a new review.** A status belongs to one commit, so a push leaves the new head without `success` until the maintainer reviews the PR again at its new head. That includes updating the branch from `main` (branch protection requires up-to-date branches): the maintainer re-marks the new head once the update is checked to add nothing beyond `main`.
 - **Who can set it:** any account or app with write access to statuses. Fork contributors can't. An agent running under the maintainer's account can, so an agent sets `success` only on the maintainer's explicit go-ahead for that commit, never on its own judgement.
-- **Bot PRs are exempt by who opened them.** Commits a person pushes to a bot's PR get `success` too, so don't push to bot branches; open a separate PR.
+- **Bot PRs are exempt by who opened them.** Commits a person pushes to a bot's PR get `success` too, so don't push changes to bot branches; open a separate PR. Updating a bot's branch from `main` by a merge (GitHub's **Update branch**, `gh pr update-branch`) is fine: it brings in only what is already on `main`, which had its own impact review. Check that the new head adds nothing beyond `main` and the bot's own changes. A release PR needs this when a commit `release-please` doesn't release (`docs:`, `ci:`) lands on `main`, because `release-please` then leaves its branch behind.
 - **Fill in "Impact on workspaces"** in the PR template: what changes on `cg sync` for workspaces that never edited the affected files, which edited files will show as drifted (and, if known, what kind of workspaces edited them), and how Claude behaves differently.
 
 ### Upstream proposals
