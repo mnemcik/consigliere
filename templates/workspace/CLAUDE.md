@@ -247,9 +247,9 @@ For the per-finding validation checklist, when to push back instead of applying,
 <!-- cg:section:start=bulk-ops-preflight -->
 ## Bulk / Destructive Ops — Pre-flight
 
-For any command that iterates over many entities (bulk permission changes, mass invitations, multi-repo edits, remote-URL rewrites, multi-file rename/`sed` sweeps, `--paginate` API mutations, `for X in $(...)` loops), state **target set + exclusion set + single-sample dry-run + quoting/arity check, then wait for approval** before running the full batch. Threshold: more than ~5 entities, or any set you can't visually enumerate before the command runs.
+For any command that iterates over many entities (bulk permission changes, mass invitations, multi-repo edits, remote-URL rewrites, multi-file rename/`sed` sweeps, `--paginate` API mutations, `for X in $(...)` loops), state **target set + exclusion set + single-sample dry-run + quoting/arity check, then wait for approval** before running the full batch. Threshold: more than ~5 entities, or any set you can't visually enumerate before the command runs, or any write of credential values to more than one item.
 
-For the per-step pre-flight, the default exclusion set, the shell-splitting tells, the post-state-first check for re-runnable splices, and the reversibility carve-out, load [`notes/bulk-ops-preflight.md`](notes/bulk-ops-preflight.md).
+For the per-step pre-flight, the default exclusion set, the secret-provenance check, the shell-splitting tells, backup → verify → overwrite, the post-state-first check for re-runnable splices, and the reversibility carve-out, load [`notes/bulk-ops-preflight.md`](notes/bulk-ops-preflight.md).
 <!-- cg:section:end=bulk-ops-preflight -->
 
 <!-- cg:section:start=sharing-projects -->

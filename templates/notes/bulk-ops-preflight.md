@@ -8,11 +8,13 @@
 
 ## Summary
 
-Before running a single command (or short loop) that touches **many entities**, state the target set, the exclusion set, a single-sample dry-run, the shell quoting/arity hazard you handled, and wait for explicit approval. This is the iterative-bulk axis; it pairs with **Shared-State Actions Require Per-Action Authorisation** (the merge / push / release axis). For multi-file content splices, it also holds the idempotence check: test whether the edit is already applied before matching its target. The headline trigger stays inline in `CLAUDE.md`; this note holds the pre-flight.
+Before running a single command (or short loop) that touches **many entities**, state the target set, the exclusion set, a single-sample dry-run, the shell quoting/arity hazard you handled, and wait for explicit approval. This is the iterative-bulk axis; it pairs with **Shared-State Actions Require Per-Action Authorisation** (the merge / push / release axis). Writes of credential values to more than one item get the pre-flight at any count, plus a provenance check, and overwrites of live files go backup → verify → overwrite as separate steps. For multi-file content splices, it also holds the idempotence check: test whether the edit is already applied before matching its target. The headline trigger stays inline in `CLAUDE.md`; this note holds the pre-flight.
 
 ## When to load
 
 About to run a command (or `for`/`xargs` loop) that touches many entities — bulk permission changes, mass invitations, mass repo/resource creation, remote-URL rewrites, multi-file rename/`sed` sweeps, `--paginate` API mutations, anything iterating over a `for X in $(...)`. Threshold is approximate: **more than ~5 entities, or any set you can't visually enumerate before the command runs.**
+
+**Secret writes have no threshold.** A command or script that writes credential values to **more than one** item (password-manager items, `.env` files, service or device config files that hold credentials) gets the pre-flight at any count, plus one step: **verify each item's provenance**. Read the item's notes and its consumers' docs, without printing the value, to confirm what it actually holds, not just that the field labels match. Two items with the same field name can hold different per-device values, and overwriting them with an assumed shared value is only recoverable from the store's item history.
 
 ## Why this exists
 
@@ -36,6 +38,17 @@ Only then run the full batch.
 - `for X in $(...)` splits differently across shells (notably bash vs zsh) — test on the actual shell, and prefer a quoted array / `mapfile` / `--jq`.
 - Mass-edit verbs — repo/membership edits, `git remote set-url`, `find -exec`, `sed -i` over a glob — all qualify as bulk-op vectors.
 - A `--dry-run` flag in your own scripts is cheap insurance even for one-shot scripts.
+
+## Back up, verify, then overwrite: separate steps
+
+When a batch overwrites or deletes live files, **back up in one command, verify the backup, and only then overwrite in a second command.** Don't put backup and overwrite in the same loop body, and don't start a script by `rm -rf`-ing an earlier backup.
+
+1. **Backup step:** copy every target to a dated backup folder **outside any repository working tree and any synced folder**, readable only by you (`mkdir -m 700` on Unix; a folder in your user profile on Windows), keeping each file's permissions (`cp -p` on Unix). Nothing else. The targets are often the files that hold secrets: a backup inside a repository can be committed, and one in a synced folder leaves the machine.
+2. **Verify step:** count the backup files against the target list, and compare checksums against the live files (or their known-good source, such as the deploy source). A wrong path or a glob that didn't expand shows up here as a count or hash mismatch.
+3. **Overwrite step:** only after 2 passes. Check each file's existing owner and permissions first instead of assuming them, and write so they're kept (on Unix, writing in place with `cat new > live` keeps them; replacing the file doesn't). Writing in place isn't atomic, and a plain file may have no history to recover from, so the verified backup is what covers a failed write.
+4. **Clean-up:** remove backups only in a later, explicit step, after the change is verified (or leave them in the user-only folder from step 1, if it is a temp folder that expires).
+
+The failure this prevents: a file list that didn't split (an unquoted `$FILES` in zsh) makes the backup copy nothing, or copy to the wrong place, while reporting success, and the overwrite that follows in the same loop then runs with no backup behind it.
 
 ## Re-runnable content edits — test the post-state first
 
@@ -62,7 +75,7 @@ Checking only the target count is what fails. A plain substitution whose target 
 
 ## Reversibility note
 
-If the op is **irreversible** (message sent, invite sent, file deleted with no VCS, key rotated, role downgraded with an audit-log gap), the steps above are non-negotiable. If it's reversible (a commit on a feature branch, config you can re-apply), the user may shortcut steps 3–4 by saying "just run it" — note in your response that you're skipping under their direction.
+If the op is **irreversible** (message sent, invite sent, file deleted with no VCS, key rotated, role downgraded with an audit-log gap), the steps above are non-negotiable. If it's reversible (a commit on a feature branch, config you can re-apply), the user may shortcut pre-flight steps 3–4 (the dry-run and the quoting check) by saying "just run it" — note in your response that you're skipping under their direction. The secret-provenance check and backup → verify aren't covered by the shortcut.
 
 ## Related
 
