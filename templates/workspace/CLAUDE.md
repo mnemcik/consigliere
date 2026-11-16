@@ -47,9 +47,9 @@ Every session that involves meaningful work (code changes, research, analysis, d
 
 1. **Identify the area.** From the user's request, determine which area(s) from `areas/INDEX.md` the work relates to. If the request mentions a repository, tool, service, or domain, match it to an area.
 2. **Read the area file.** Before doing anything else, read the matched area file(s) to load context, constraints, and repo conventions.
-3. **Identify the project.** Check `projects/TODO.md` for an existing project that covers this work. If no project exists, create one using the standard project creation workflow (see "Creating a New Project" below).
+3. **Identify the project.** Check `projects/TODO.md` for an existing project that covers this work, and the paused projects the session-start gate lists: a project created in a session that was then paused exists only on its unlanded branch, so it is not in `TODO.md` here. If no project exists, create one using the standard project creation workflow (see "Creating a New Project" below).
 4. **Read the project files.** Read the project's `README.md` and `todo.md` to understand current state and pending work.
-5. **Check for paused state.** If `projects/<slug>/resume.md` exists, the project was paused mid-work by `/wrap pause`. Read it as the authoritative pickup context, surface it to the user, and delete it once they confirm work has resumed.
+5. **Check for paused state.** A project paused mid-work by `/wrap pause` has a `projects/<slug>/resume.md` in its session worktree, on a branch that is not landed, so it is usually **not** in the checkout you started in. The session-start gate lists paused projects, and `cg session set-context` prints, for a paused project, the `cg worktree create <session-slug>` command that re-enters its worktree (the session slug can differ from the project slug; never land the WIP to get in) and the path of its `resume.md`. Work in that worktree, read `resume.md` as the authoritative pickup context, and surface it to the user. Once they confirm work has resumed, delete it **and commit the deletion** (`git rm -f projects/<slug>/resume.md`; `-f` because the pause edits it after its WIP commit); `cg worktree land` refuses to land a pause cursor.
 6. **Proceed with work.** Only after steps 1–5 are complete.
 
 ### When identification fails
@@ -261,12 +261,12 @@ When the user asks to share, send, export or publish a project, or before runnin
 <!-- cg:section:start=continuous-improvement -->
 ## Continuous Improvement
 
-Actively look for opportunities to improve how this workspace works — rules, structure, workflows, templates, conventions. Scope is **meta-framework** (`CLAUDE.md` rules, templates, notes, area files, project structure, workflows), NOT project content or note-style refactors.
+Actively look for opportunities to improve how this workspace works — rules, structure, workflows, templates, conventions — and for shortfalls in the skills, plugins and tools the work relies on. Scope is the **way of working** (`CLAUDE.md` rules, templates, notes, area files, project structure, workflows, skills, plugins and tools), NOT project content or note-style refactors.
 
 - **Prefer structural fixes over behavioural rules.** When a reliability gap depends on Claude remembering to do something, prefer a structural fix (skill, hook, script, settings) over a behavioural rule — behavioural rules fail on the very turn they're most needed; structures don't. Reserve behavioural rules for judgment calls that genuinely can't be automated.
 - **Prefer extending existing axes over adding new ones.** When a requirement seems to demand a new dimension (tag, field, category, flag, status, area), first ask whether an existing dimension in the same layer could absorb it. New axes are permanent cost — documentation, migration, tooling, *"which value?"* dilemmas. Surface the tradeoff explicitly when proposing either path.
 
-For the what-to-look-for catalogue and the in-session vs. end-of-session sequencing, load [`notes/continuous-improvement.md`](notes/continuous-improvement.md). When a proposal is worth persisting, it MUST land somewhere with a lifecycle — load [`notes/capturing-improvement-proposals.md`](notes/capturing-improvement-proposals.md) (default: a `meta-framework`-tagged idea file + an `ideas/BACKLOG.md` row). Use [`notes/claude-md-hygiene.md`](notes/claude-md-hygiene.md) to decide whether a promoted rule belongs inline or in a note.
+For the what-to-look-for catalogue and the in-session vs. end-of-session sequencing, load [`notes/continuous-improvement.md`](notes/continuous-improvement.md). When a proposal is worth persisting, it MUST land somewhere with a lifecycle — load [`notes/capturing-improvement-proposals.md`](notes/capturing-improvement-proposals.md) (the owner of its surface, or by default an idea file tagged `meta-framework` and one `surface-` tag + an `ideas/BACKLOG.md` row). Use [`notes/claude-md-hygiene.md`](notes/claude-md-hygiene.md) to decide whether a promoted rule belongs inline or in a note.
 <!-- cg:section:end=continuous-improvement -->
 
 <!-- cg:section:start=dry-principle -->

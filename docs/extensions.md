@@ -377,7 +377,7 @@ Modelled on git's `git foo` → `git-foo` pattern. When `cg <verb> …` is not a
 known built-in subcommand, the resolver looks for an executable named
 `cg-<verb>`:
 
-1. in each installed extension's `bin/`, in the tree at the commit the workspace's `.cg.json` records, then
+1. in each installed extension's `bin/` (under its subdir for a co-located extension), in the tree at the commit the workspace's `.cg.json` records, then
 2. on `$PATH`.
 
 If found, `cg` `exec`s it with the remaining arguments and forwards the exit
