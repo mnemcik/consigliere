@@ -14,7 +14,7 @@ Before running a single command (or short loop) that touches **many entities**, 
 
 About to run a command (or `for`/`xargs` loop) that touches many entities — bulk permission changes, mass invitations, mass repo/resource creation, remote-URL rewrites, multi-file rename/`sed` sweeps, `--paginate` API mutations, anything iterating over a `for X in $(...)`. Threshold is approximate: **more than ~5 entities, or any set you can't visually enumerate before the command runs.**
 
-**Secret writes have no threshold.** A command or script that writes credential values to **more than one** item (password-manager items, `secrets.yaml` files, broker password files, device configs) gets the pre-flight at any count, plus one step: **verify each item's provenance**. Read the item's notes and its consumers' docs to confirm what it actually holds, not just that the field labels match. Two items with the same field name can hold different per-device values, and overwriting them with an assumed shared value is only recoverable from the store's item history.
+**Secret writes have no threshold.** A command or script that writes credential values to **more than one** item (password-manager items, `.env` files, service or device config files that hold credentials) gets the pre-flight at any count, plus one step: **verify each item's provenance**. Read the item's notes and its consumers' docs, without printing the value, to confirm what it actually holds, not just that the field labels match. Two items with the same field name can hold different per-device values, and overwriting them with an assumed shared value is only recoverable from the store's item history.
 
 ## Why this exists
 
@@ -43,10 +43,10 @@ Only then run the full batch.
 
 When a batch overwrites or deletes live files, **back up in one command, verify the backup, and only then overwrite in a second command.** Don't put backup and overwrite in the same loop body, and don't start a script by `rm -rf`-ing an earlier backup.
 
-1. **Backup step:** copy every target to a dated backup folder. Nothing else.
+1. **Backup step:** copy every target to a dated backup folder **outside any repository working tree and any synced folder**, keeping each file's permissions (`cp -p` on Unix). Nothing else. The targets are often the files that hold secrets: a backup inside a repository can be committed, and one in a synced folder leaves the machine.
 2. **Verify step:** count the backup files against the target list, and compare checksums against the live files (or their known-good source, such as the repo's `HEAD`). A wrong path or a glob that didn't expand shows up here as a count or hash mismatch.
-3. **Overwrite step:** only after 2 passes. Write in place (`cat new > live`) when the existing owner and mode should be kept; check the existing ownership first instead of assuming it.
-4. **Clean-up:** remove backups only in a later, explicit step, after the change is verified (or leave them in a temp folder that expires).
+3. **Overwrite step:** only after 2 passes. Check each file's existing owner and permissions first instead of assuming them, and write so they're kept (on Unix, writing in place with `cat new > live` keeps them; replacing the file doesn't). Writing in place isn't atomic, and a plain file may have no history to recover from, so the verified backup is what covers a failed write.
+4. **Clean-up:** remove backups only in a later, explicit step, after the change is verified (or leave them in a temp folder, outside any repository, that expires).
 
 The failure this prevents: a file list that didn't split (an unquoted `$FILES` in zsh) makes the backup copy nothing, or copy to the wrong place, while reporting success, and the overwrite that follows in the same loop then runs with no backup behind it.
 
