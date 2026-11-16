@@ -14,6 +14,7 @@ var Version = "dev"
 const (
 	cmdUpdate  = "update"
 	cmdVersion = "version"
+	cmdHelp    = "help"
 	cmdCheck   = "check"
 )
 
@@ -60,7 +61,7 @@ func autoUpdateDisabled(cmd *cobra.Command) bool {
 		return true
 	}
 	switch cmd.Name() {
-	case cmdVersion, "help", cmdUpdate:
+	case cmdVersion, cmdHelp, cmdUpdate:
 		return true
 	}
 	if p := cmd.Parent(); p != nil && p.Name() == cmdUpdate {
@@ -82,5 +83,11 @@ func Execute() error {
 	if path, rest, ok := externalDispatch(os.Args[1:]); ok {
 		return runExternal(path, rest)
 	}
+	args, err := argsForStart(os.Args[1:])
+	if err != nil {
+		rootCmd.PrintErrln("Error:", err)
+		return err
+	}
+	rootCmd.SetArgs(args)
 	return rootCmd.Execute()
 }

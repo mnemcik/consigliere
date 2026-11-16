@@ -93,6 +93,7 @@ my-workspace/
 1. ✏️ Edit `PROFILE.md` — tell your AI assistant who you are
 2. 🏛️ Define your first **area** (a domain you're responsible for)
 3. 💡 Create your first **project** or capture an **idea**
+4. 🤖 Run `cg` in the workspace to start your AI session there (`claude` by default; set `session.agent` in `.cg.json` for another tool)
 
 ## ⚙️ How It Works
 
@@ -130,6 +131,7 @@ The CLAUDE.md rules instruct AI assistants to:
 |---|---|
 | `cg init` | 🏗️ Bootstrap a new workspace |
 | `cg init --force` | 🔄 Re-initialize (preserves CLAUDE.md and PROFILE.md) |
+| `cg` / `cg start [args…]` | 🤖 Start the workspace's AI session (`session.agent`, default `claude`); bare `cg` does this only inside a workspace from a terminal, otherwise prints help |
 | `cg match <prompt>` | 🔍 Find a project matching your description |
 | `cg status` | 📊 Workspace overview |
 | `cg migrate [--apply]` | 🗂️ Convert items from `## Meta` blocks to YAML frontmatter; dry run unless `--apply`, and refreshes unedited item templates |
