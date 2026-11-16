@@ -46,7 +46,7 @@ When a batch overwrites or deletes live files, **back up in one command, verify 
 1. **Backup step:** copy every target to a dated backup folder **outside any repository working tree and any synced folder**, readable only by you (`mkdir -m 700` on Unix; a folder in your user profile on Windows), keeping each file's permissions (`cp -p` on Unix). Nothing else. The targets are often the files that hold secrets: a backup inside a repository can be committed, and one in a synced folder leaves the machine.
 2. **Verify step:** count the backup files against the target list, and compare checksums against the live files (or their known-good source, such as the deploy source). A wrong path or a glob that didn't expand shows up here as a count or hash mismatch.
 3. **Overwrite step:** only after 2 passes. Check each file's existing owner and permissions first instead of assuming them, and write so they're kept (on Unix, writing in place with `cat new > live` keeps them; replacing the file doesn't). Writing in place isn't atomic, and a plain file may have no history to recover from, so the verified backup is what covers a failed write.
-4. **Clean-up:** remove backups only in a later, explicit step, after the change is verified (or leave them in a temp folder, outside any repository, that expires).
+4. **Clean-up:** remove backups only in a later, explicit step, after the change is verified (or leave them in the user-only folder from step 1, if it is a temp folder that expires).
 
 The failure this prevents: a file list that didn't split (an unquoted `$FILES` in zsh) makes the backup copy nothing, or copy to the wrong place, while reporting success, and the overwrite that follows in the same loop then runs with no backup behind it.
 
