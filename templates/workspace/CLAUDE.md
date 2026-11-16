@@ -306,7 +306,7 @@ For the full preference order, the gap-handling rule, and the reasoning, load [`
 <!-- cg:section:start=conventions -->
 ## Conventions
 
-- Idea statuses: `raw` → `exploring` → `ready` → `parked` | `rejected`
+- Idea statuses: `raw` → `exploring` → `ready` → `promoted` | `parked` | `rejected`
 - Project statuses: `defining` → `in-progress` → `done` | `on-hold`
 - Project priorities: `high` | `medium` | `low` — stored in each project's README.md frontmatter (`priority:`) and in `projects/TODO.md` (sorted by priority)
 - **Rank within a priority bucket** in `projects/TODO.md` is the row order and is **user-owned** — suggest re-ranking, but never silently reorder rows.

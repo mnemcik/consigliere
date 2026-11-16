@@ -727,7 +727,7 @@ Ideas captured here. When an idea reaches **ready**, create a project in ` + "`p
 | # | Idea | Status | Areas | Tags | One-liner |
 |---|------|--------|-------|------|-----------|
 
-<!-- Statuses: raw, exploring, ready, parked, rejected -->
+<!-- Statuses: raw, exploring, ready, promoted, parked, rejected -->
 `
 
 const indexNotes = `# Notes Index

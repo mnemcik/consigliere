@@ -4,12 +4,12 @@ status: raw  # raw → exploring → ready → promoted | parked | rejected
 areas: [area-slug]
 tags: [tag1, tag2]
 created: YYYY-MM-DD
+promoted_to: ""  # set with status: promoted — projects/<slug>/README.md, or the PR / commit of a direct change
 ---
 
 # {Idea Title}
 
 <!-- When status reaches "ready", create a project from templates/project/ -->
-<!-- When the project exists, set status: promoted and link it here: **Project:** [Name](../projects/slug/README.md) -->
 
 ## What
 
