@@ -161,7 +161,7 @@ For the notes-capture procedure (category + tags + INDEX), the insights-draft pr
 
 **Every time Claude opens a PR (in any repo), Claude MUST enter a review-resolution loop before considering the work done.** The PR is not "shipped" at `gh pr create`; it is shipped when CI is green and every open review comment has been either fixed in a follow-up commit or answered with a reasoning reply — never silently dismissed. Bot reviews (CodeRabbit, Copilot, dependabot) count the same as human reviews.
 
-For the fetch probes, the per-comment outcome taxonomy (fix / reply / escalate), the CI-failure handling, the guardrails (no amend/force-push on a review branch), and the session-end `/schedule` handoff, load [`notes/after-pr-checks.md`](notes/after-pr-checks.md).
+For the fetch probes, the per-comment outcome taxonomy (fix / reply / escalate), the CI-failure handling, the guardrails (no amend/force-push on a review branch), the session-end `/schedule` handoff and the contract a PR subagent gets, load [`notes/after-pr-checks.md`](notes/after-pr-checks.md); also load it before delegating PR work to a subagent.
 <!-- cg:section:end=pr-review-loop -->
 
 <!-- cg:section:start=confidence-gate -->
