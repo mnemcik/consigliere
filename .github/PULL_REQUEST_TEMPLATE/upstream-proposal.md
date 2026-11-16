@@ -11,7 +11,7 @@ What this PR changes in the framework.
 ## Impact on workspaces
 
 - **On `cg sync`:** what changes for a workspace that never edited the affected files (updated automatically)
-- **Drift:** what kind of workspaces edited the same files and will see them as drifted, if known (no names)
+- **Drift:** which edited files will show as drifted, and what kind of workspaces edited them, if known (no names)
 - **Behaviour:** how Claude acts differently after the change, and in which situations
 
 ## Test plan
@@ -21,6 +21,6 @@ What this PR changes in the framework.
 
 Don't mark this PR ready or merge it without the maintainer's go-ahead for it. When changes are requested, the session or project that opened it makes them.
 
-The description becomes the squash commit message: keep it current after each push, and keep private details (people, companies, internal systems, incidents) out of it.
+The description becomes the squash commit message: keep it current after each push, and keep private details (people, companies, internal systems, incidents) out of it and out of commit messages.
 
 See [CONTRIBUTING.md](https://github.com/mnemcik/consigliere/blob/main/CONTRIBUTING.md#upstream-proposals) for the label, [How a PR gets to merge](https://github.com/mnemcik/consigliere/blob/main/CONTRIBUTING.md#how-a-pr-gets-to-merge) for what the impact review checks, and [Impact review](https://github.com/mnemcik/consigliere/blob/main/CONTRIBUTING.md#impact-review) for the required check.
