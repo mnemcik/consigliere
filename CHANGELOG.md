@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.32.1](https://github.com/mnemcik/consigliere/compare/v1.32.0...v1.32.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **session:** add the set-context instruction to every session gate ([#202](https://github.com/mnemcik/consigliere/issues/202)) ([77bef82](https://github.com/mnemcik/consigliere/commit/77bef824d92a2b0ba36f0e5b0b7038238b707778))
+
 ## [1.32.0](https://github.com/mnemcik/consigliere/compare/v1.31.0...v1.32.0) (2026-11-16)
 
 
