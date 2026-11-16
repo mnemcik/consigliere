@@ -13,6 +13,7 @@ import (
 
 	"github.com/mnemcik/consigliere/internal/cgerr"
 	"github.com/mnemcik/consigliere/internal/gitx"
+	"github.com/mnemcik/consigliere/internal/pause"
 	"github.com/mnemcik/consigliere/internal/workspace"
 )
 
@@ -112,6 +113,30 @@ func Land(ctx context.Context, opt *LandOptions, logw io.Writer) (LandResult, er
 			return LandResult{}, cgerr.New(cgerr.ExitAssertFail,
 				"%s is not reachable from HEAD (%s)", opt.TargetSHA, branch)
 		}
+	}
+
+	// A /wrap pause cursor must never land: on the landing branch it would
+	// mark the project paused from every checkout, for good. The session that
+	// resumed the project deletes it, and the deletion has to be committed.
+	landingRef := "origin/" + landingBranch
+	if strategy == workspace.StrategyLocal {
+		landingRef = "refs/heads/" + landingBranch
+	}
+	if cursors := pause.OnRev(ctx, dir, "HEAD", landingRef); len(cursors) > 0 {
+		// ":/" makes each path top-level relative, so the suggested command
+		// works from any directory of the worktree; the commit pathspec keeps
+		// anything else that is staged out of it.
+		specs := make([]string, len(cursors))
+		for i, c := range cursors {
+			specs[i] = `":/` + c + `"`
+		}
+		paths := strings.Join(specs, " ")
+		return LandResult{}, cgerr.New(cgerr.ExitDirty,
+			"HEAD carries the /wrap pause cursor %s, so the project is still paused. "+
+				"If the work has resumed, delete it and commit only the deletion "+
+				"(git rm -f -- %s && git commit -m \"Drop pause cursor\" -- %s), then land; "+
+				"to stop mid-work again, pause instead of landing",
+			strings.Join(cursors, ", "), paths, paths)
 	}
 
 	retries := opt.MaxRetries

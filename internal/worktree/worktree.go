@@ -10,9 +10,11 @@ import (
 	"io"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/mnemcik/consigliere/internal/cgerr"
 	"github.com/mnemcik/consigliere/internal/gitx"
+	"github.com/mnemcik/consigliere/internal/pause"
 	"github.com/mnemcik/consigliere/internal/workspace"
 )
 
@@ -122,8 +124,11 @@ func requireOrigin(ctx context.Context, dir, what string) error {
 // to stdout. It mirrors the four scenarios of create-session-worktree.sh:
 //
 //  1. Worktree already exists, clean → reuse, exit 0.
-//  2. Worktree exists with unlanded commits → ExitDirty unless Force.
-//  3. Orphan branch without a worktree → attach (ExitDirty if ahead and !Force).
+//  2. Worktree exists with unlanded commits → ExitDirty unless Force, or unless
+//     it is paused (a /wrap pause left a resume.md in it): its WIP commits are
+//     meant to stay unlanded, so it is reused.
+//  3. Orphan branch without a worktree → attach (ExitDirty if ahead and !Force,
+//     unless the branch is paused, i.e. it carries a resume.md).
 //  4. Fresh → create branch + worktree off the landing ref.
 func Create(ctx context.Context, slug string, opt Options, logw io.Writer) (string, error) {
 	if !ValidSlug(slug) {
@@ -155,6 +160,11 @@ func Create(ctx context.Context, slug string, opt Options, logw io.Writer) (stri
 			return "", err
 		}
 		if unlanded != "" && !opt.Force {
+			if cursors := pause.InWorktree(ctx, worktreePath, landing); len(cursors) > 0 {
+				logf("resuming paused worktree at %s; its WIP commits stay unlanded until the work is finished:\n%s\n", worktreePath, unlanded)
+				logf("pickup context: %s\n", strings.Join(cursors, ", "))
+				return worktreePath, nil
+			}
 			logf("worktree exists at %s with unlanded commits:\n%s\n", worktreePath, unlanded)
 			logf("land them (cd %s && cg worktree land) or re-run with --force to reuse as-is\n", worktreePath)
 			return "", cgerr.New(cgerr.ExitDirty, "unlanded commits in existing worktree %s", worktreePath)
@@ -167,7 +177,13 @@ func Create(ctx context.Context, slug string, opt Options, logw io.Writer) (stri
 	branchRef := "refs/heads/" + branch
 	if gitx.RefExists(ctx, opt.Root, branchRef) {
 		if !gitx.IsAncestor(ctx, opt.Root, branchRef, landing) {
-			if !opt.Force {
+			switch cursors := pause.OnRev(ctx, opt.Root, branchRef, landing); {
+			case opt.Force:
+				logf("attaching worktree to branch %s, which is ahead of %s (--force)\n", branch, landing)
+			case len(cursors) > 0:
+				logf("attaching worktree to paused branch %s; its WIP commits stay unlanded until the work is finished\n", branch)
+				logf("pickup context: %s\n", strings.Join(cursors, ", "))
+			default:
 				unlanded, err := gitx.LogOneline(ctx, opt.Root, landing+".."+branchRef)
 				if err != nil {
 					return "", err
@@ -176,7 +192,6 @@ func Create(ctx context.Context, slug string, opt Options, logw io.Writer) (stri
 				logf("delete the branch (git branch -D %s) or re-run with --force to attach anyway\n", branch)
 				return "", cgerr.New(cgerr.ExitDirty, "unlanded commits on orphan branch %s", branch)
 			}
-			logf("attaching worktree to branch %s, which is ahead of %s (--force)\n", branch, landing)
 		} else {
 			logf("attaching worktree to existing branch %s (at/behind %s)\n", branch, landing)
 		}
