@@ -9,7 +9,7 @@ Brief description of what this PR does.
 ## Impact on workspaces
 
 - **On `cg sync`:** what changes for a workspace that never edited the affected files (updated automatically), or "none" for a binary-only change
-- **Drift:** which edited files will show as drifted, if any
+- **Drift:** which edited files will show as drifted, if any, and what kind of workspaces edited them, if known
 - **Behaviour:** how `cg` or Claude acts differently after the change, and in which situations
 
 ## Test plan

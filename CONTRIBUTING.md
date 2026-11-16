@@ -90,7 +90,7 @@ When a test can't apply on one platform, skip it there with a reason (`t.Skip("â
 ### How a PR gets to merge
 
 1. **Impact review.** The maintainer reviews what the PR changes for every workspace (the `impact-review` status is described in the next section). It checks:
-   - **No private data** in the diff, the description or the commit messages: no private names of people or companies (attribution for copied content excepted), internal hosts or paths, ticket keys, incidents. The repository is public.
+   - **No private data** in the diff, the description or the commit messages: no names of people, or of the employers, clients or customers behind a workspace (attribution for copied content excepted), and no internal hosts or paths, ticket keys or incidents. The repository is public.
    - **Fit and layer:** the change belongs in core (the binary, or the framework templates every workspace gets) rather than in an extension or a single workspace. Third-party tools, a specific review bot for example, go in an extension, not in core.
    - **Real and current:** the problem exists on `main`, no other open PR or issue already covers it, and it doesn't conflict with an earlier maintainer decision (the review comment says which, if one applies).
    - **Impact stated and true:** the "Impact on workspaces" section matches the diff. Additions to the CLAUDE.md template keep every-session rules short and put trigger-only detail in a note. A rule that hands a step to a skill or hook still works in workspaces that don't install the Claude Code integration.
