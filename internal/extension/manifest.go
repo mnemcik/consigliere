@@ -45,7 +45,7 @@ type Manifest struct {
 	Contributes Contributions `json:"contributes"`
 }
 
-// Contributions are the six contribution points an extension can declare. Each
+// Contributions are the contribution points an extension can declare. Each
 // is optional; an absent or empty array means the extension contributes nothing
 // of that type.
 type Contributions struct {
@@ -56,6 +56,8 @@ type Contributions struct {
 	Templates        []CopyContribution       `json:"templates,omitempty"`
 	GitHooks         []GitHookContribution    `json:"git-hooks,omitempty"`
 	Gitignore        []SectionContribution    `json:"gitignore,omitempty"`
+	// Launcher wraps the agent command `cg start` runs (at most one entry).
+	Launcher []LauncherContribution `json:"launcher,omitempty"`
 }
 
 // SectionContribution inserts the body of Path into the workspace CLAUDE.md as
@@ -94,6 +96,15 @@ type GitHookContribution struct {
 type SubcommandContribution struct {
 	Namespace string `json:"namespace"`
 	Binary    string `json:"binary"`
+}
+
+// LauncherContribution makes `cg start` (and bare `cg`) run the extension's
+// bin/<Binary> with Args, then "--", then the agent command and the user's
+// arguments, instead of the agent directly. The binary is expected to exec the
+// agent itself (for example inside a terminal multiplexer).
+type LauncherContribution struct {
+	Binary string   `json:"binary"`
+	Args   []string `json:"args,omitempty"`
 }
 
 // ParseManifest decodes manifest bytes. It does not validate; call Validate.
@@ -177,6 +188,19 @@ func (m *Manifest) Validate() error {
 		}
 		if !nameRe.MatchString(s.Binary) {
 			return fmt.Errorf("subcommands[%d]: invalid binary %q: must match %s", i, s.Binary, nameRe.String())
+		}
+	}
+	if len(m.Contributes.Launcher) > 1 {
+		return fmt.Errorf("launcher: at most one entry, got %d", len(m.Contributes.Launcher))
+	}
+	for i, l := range m.Contributes.Launcher {
+		if !nameRe.MatchString(l.Binary) {
+			return fmt.Errorf("launcher[%d]: invalid binary %q: must match %s", i, l.Binary, nameRe.String())
+		}
+		for j, a := range l.Args {
+			if a == "" {
+				return fmt.Errorf("launcher[%d]: args[%d] is empty", i, j)
+			}
 		}
 	}
 	for i, c := range m.Contributes.Templates {

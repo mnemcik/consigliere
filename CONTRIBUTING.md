@@ -87,16 +87,46 @@ When a test can't apply on one platform, skip it there with a reason (`t.Skip("â
 - CI (lint, including a Windows build, tests on Linux, macOS and Windows, cross-platform build) must be green.
 - No DCO sign-off is required.
 
+### How a PR gets to merge
+
+1. **Impact review.** The maintainer reviews what the PR changes for every workspace (the `impact-review` status is described in the next section). It checks:
+   - **No private data** in the diff, the description or the commit messages: no names of people, or of the employers, clients or customers behind a workspace (attribution for copied content excepted), and no internal hosts or paths, ticket keys or incidents. The repository is public.
+   - **Fit and layer:** the change belongs in core (the binary, or the framework templates every workspace gets) rather than in an extension or a single workspace. Third-party tools, a specific review bot for example, go in an extension, not in core.
+   - **Real and current:** the problem exists on `main`, no other open PR or issue already covers it, and it doesn't conflict with an earlier maintainer decision (the review comment says which, if one applies).
+   - **Impact stated and true:** the "Impact on workspaces" section matches the diff. Additions to the CLAUDE.md template keep every-session rules short and put trigger-only detail in a note. A rule that hands a step to a skill or hook still works in workspaces that don't install the Claude Code integration.
+   - **Shape:** one concern per PR, tests for code, docs where behaviour changes, works on Windows, and the title's type matches the change. Copied content needs a compatible licence and attribution.
+   - **Safety:** changes to workflows, `install.sh`, release config, hooks or settings get extra scrutiny. A workflow job named like a required check (`impact-review` above all) is rejected, since its result would satisfy that check without a review.
+2. **The outcome comes as a PR comment:** agreed (and `impact-review` is set), or changes requested. A plain agree on the maintainer's own PR may come without a comment.
+3. **The PR's author carries it from there:** makes the requested changes, updates the branch from `main`, and runs the review loop until CI is green and every review comment is answered. For an upstream proposal, that is the workspace session or project that opened it. On a PR from a fork, CI runs only after the maintainer approves the workflow run, so a waiting CI isn't a stalled PR.
+4. **A push leaves the new head without `impact-review`** (see [Impact review](#impact-review)). Before merge, the maintainer reviews the PR again at its final head: the whole PR, not only the new commits. A change in scope can mean a new review rather than a quick re-check; a push that only updates the branch from `main` needs just the check described there.
+5. **One approving review** is required by branch protection, from the maintainer or an automated reviewer; on PRs opened under the maintainer's account, GitHub allows only the automated reviewer. Later pushes don't dismiss it.
+6. **Merging is the maintainer's call.** An agent marks a draft ready or merges only on the maintainer's explicit go-ahead for that PR.
+
+**The description becomes the commit message.** PRs are squash-merged with the PR description as the commit body, so it ends up in `main`'s history. Keep it current, updating it after every push that changes what the PR does, and keep private details out of it, including an upstream proposal's Origin section ("a personal workspace", not whose).
+
+### Impact review
+
+Every PR changes what every workspace gets on `cg sync`, so every PR gets an **impact review** by the maintainer before it can merge, whoever opened it. PRs opened by the release and dependency bots (`consigliere-release-bot`, Dependabot, Renovate) are exempt.
+
+- **The `impact-review` check** (required) is a commit status on the PR's head commit. Until it is `success`, the PR shows it as expected and can't merge. The Impact Review workflow sets it to `success` for the bots and posts nothing for other PRs, so it can't replace an approval. After reviewing what the PR changes for every workspace, the maintainer sets it to `success` on that commit:
+
+  ```bash
+  gh api -X POST repos/mnemcik/consigliere/statuses/<head-sha> \
+    -f state=success -f context=impact-review -f description="Impact reviewed"
+  ```
+
+- **New commits need a new review.** A status belongs to one commit, so a push leaves the new head without `success` until the maintainer reviews the PR again at its new head. That includes updating the branch from `main` (branch protection requires up-to-date branches): the maintainer re-marks the new head after checking that the PR's own change is unchanged and that nothing which landed on `main` since the last reviewed head contradicts it, already covers it, or removes what it builds on. If resolving conflicts changed the PR's own change, the resolution is reviewed too, and a larger change can mean a new review; if something that landed clashes with it, the maintainer comments as in step 2 of [How a PR gets to merge](#how-a-pr-gets-to-merge).
+- **Who can set it:** any account or app with write access to statuses. Fork contributors can't. An agent running under the maintainer's account can, so an agent sets `success` only on the maintainer's explicit go-ahead for that commit, never on its own judgement.
+- **Bot PRs are exempt by who opened them.** Commits a person pushes to a bot's PR get `success` too, so don't push changes to bot branches; open a separate PR. Updating a bot's branch from `main` by a **clean** merge (GitHub's **Update branch** when it reports no conflicts, or `gh pr update-branch`, which refuses on a conflict) is fine: it brings in only what is already on `main`, which was reviewed, or exempt, when it landed. The maintainer's re-check after an update from `main` (the bullet above) doesn't apply to bot PRs: the bot's own change is exempt from the impact review, so the only check left is the one at the end of this bullet. If the update conflicts, don't resolve it on the bot's branch: a conflict resolution is a person's edit, and it would get `success` unreviewed. Let the bot regenerate its branch, or open a separate PR. The exemption still sets `success` on the new head, so whoever updates the branch, and the maintainer before merging, checks that it adds nothing beyond `main` and the bot's own changes. A release PR needs this when a commit `release-please` doesn't release (`docs:`, `ci:`) lands on `main`, because `release-please` then leaves its branch behind.
+- **Fill in "Impact on workspaces"** in the PR template: what changes on `cg sync` for workspaces that never edited the affected files, which edited files will show as drifted (and, if known, what kind of workspaces edited them), and how Claude behaves differently.
+
 ### Upstream proposals
 
-A change that comes out of a workspace, such as a framework note a workspace edited or a local rule worth sharing, is an **upstream proposal**, not deliberate framework work. Opened by an agent under the maintainer's account, it looks like the maintainer's own PR, so it is marked and gated:
+A change that comes out of a workspace, such as a framework note a workspace edited or a local rule worth sharing, is an **upstream proposal**, not deliberate framework work. Opened by an agent under the maintainer's account, it looks like the maintainer's own PR, so it is also marked:
 
 - **Label `upstream-proposal`**, set when the PR is opened.
 - **Opened as a draft**, so it cannot be merged until someone marks it ready.
 - **Body from the upstream-proposal template**: `gh pr create --draft --label upstream-proposal --template upstream-proposal.md`. Its Origin and Impact sections say where the change comes from and what it changes for every workspace on `cg sync`.
-- **The Upstream Proposal Gate check** fails while the PR has `upstream-proposal` and not `impact-reviewed`. Only the maintainer adds `impact-reviewed`, after reviewing the impact.
-
-Community PRs from other accounts can take the same label to get the same review.
 
 ## Release process
 
