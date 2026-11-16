@@ -52,12 +52,14 @@ Each iteration:
   4. Apply uncontroversial fixes (lint, type errors, validated suggested diffs) in a new commit. Push.
   5. Reply with reasoning to every finding you reject; never resolve a thread without a commit or a reply.
   6. Re-fetch; repeat from 2 until all CI is green AND every comment is addressed AND no review is
-     still pending on the current head:
+     still pending on the current head. Once CI is green and every comment is addressed, a review still
+     pending means:
      - A person or team review that was requested (`gh pr view <N> --json reviewRequests`) and not given
        yet: you are blocked, (b). Report "awaiting review by <who>".
-     - A review bot that hasn't posted on the current head (bots don't appear in reviewRequests): wait
-       about 5 minutes between re-fetches; if it still hasn't posted 30 minutes after your last push, you
-       are blocked, (b).
+     - A review bot that hasn't posted a review on the current head (bots don't appear in
+       reviewRequests): wait about 5 minutes between re-fetches; if it still hasn't reviewed 30 minutes
+       after the current head was pushed, you are blocked, (b). A rate-limit or "review skipped" notice
+       is not a review: you are blocked, (b); report it.
   7. Report ready-to-merge to the supervisor and stop. Never merge; merging is the user's call.
 
 Never force-push or amend: every round is a new commit. If a comment disagrees with a recorded decision
