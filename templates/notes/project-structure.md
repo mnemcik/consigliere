@@ -38,6 +38,7 @@ Every project folder contains these files:
 5. **Log session activity in `log.md`** at the end of any session that produced meaningful progress, findings, or outcomes for the project. Keep entries brief — bullet points, not essays.
 6. **Move external links to `references.md`** rather than accumulating them in README.md. Create the file on first use.
 7. **Project-specific files** can be added freely. Reference them from README.md with relative links.
+8. **One project owns each piece of work.** A project's implementation work, bugs, plans and roadmap live only in that project's folder. Another project may name it as a dependency and say how it uses it, but doesn't track its work. Work found in one project that belongs to another moves there (as an item in that project's `todo.md`); it isn't kept as a shared todo in both.
 
 ## Projects With No Finish Line — `## Standard to Maintain`
 

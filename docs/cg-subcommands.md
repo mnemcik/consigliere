@@ -20,6 +20,7 @@ template.
 
 | Subcommand | Promotes | Status |
 |------------|----------|--------|
+| `cg start [agent args…]`; bare `cg` in a workspace from a terminal (through an extension's `launcher` when one is installed) | none | **shipped** |
 | `cg worktree create <slug> [--force]` | `create-session-worktree.sh` | **shipped** |
 | `cg worktree land [<sha>] [--strategy …]` | `land-worktree-commit.sh` | **shipped** |
 | `cg worktree remove <slug> [--force]` | `remove-session-worktree.sh` | **shipped** |
@@ -37,6 +38,17 @@ template.
 | `cg active [--slugs\|--json] [--session-id …]` | `active-projects.sh` | **shipped** |
 | `cg tags` | `area-tags.sh` | **shipped** |
 | `cg colors check` | `colors-check.sh` | **shipped** |
+
+## `cg start` and bare `cg`
+
+`cg start [args…]` runs the workspace's AI session: the argv in `.cg.json` `session.agent` (default `["claude"]`) in the current directory, with `args` appended. Bare `cg` does the same when it runs inside a workspace or worktree with stdin and stdout on a terminal; otherwise it prints help, as before.
+
+- **The command comes from the workspace.** `session.agent` is read from the workspace's own `.cg.json`, so typing `cg` in a workspace you cloned runs whatever that file names, before the agent's own folder-trust prompt. Check `session.agent` in a workspace you didn't create.
+- **No agent, no error.** When the agent can't be started (not on `PATH`, an empty program name, or it is found but fails to start), bare `cg` prints help plus a one-line hint and exits 0; `cg start` prints the error and exits 1.
+- **Exit code and output.** On Unix the agent replaces the cg process, so its exit code and signals are its own. On Windows cg waits for it and exits with its code, printing nothing of its own.
+- **Root hooks.** Bare `cg` now runs the root pre-run hook (the one-time "cg updated" notice and the background update check), also when it falls back to help. The post-run notice (a new major version) runs only when cg is still there afterwards: not on Unix, where the agent replaces cg, but on Windows it can print after the session ends.
+- **`start` is a built-in verb.** It takes precedence over an extension subcommand with the namespace `start` and over a `cg-start` executable on `PATH`.
+- **Flags.** Root flags go before `start` (`cg --no-auto-update start`); everything after `start` goes to the agent unchanged. A root flag before `start` that doesn't parse is an error; `cg --help start` shows `start`'s help and `cg --version start` the version.
 
 ## Exit-code contract
 
@@ -157,7 +169,9 @@ unchanged.
                                           //   stdout is prepended to the badge; `cg
                                           //   init` seeds it from the user's prior
                                           //   statusLine command. "" = badge only
-    "badgeFormat": "[{area}/{project}]"  // status-line badge format
+    "badgeFormat": "[{area}/{project}]", // status-line badge format
+    "agent": ["claude"]                  // argv `cg start` / bare `cg` runs to start the
+                                          //   workspace's AI session (program, then its args)
   },
 
   "pushPolicy": {
@@ -179,6 +193,7 @@ unchanged.
 | `session.dirtyWindowMin` | `2880` |
 | `session.pruneDays` | `7` |
 | `session.badgeFormat` | `[{area}/{project}]` |
+| `session.agent` | `["claude"]` |
 | `pushPolicy.source` | `areas` |
 
 Workspace-specific gate wording and status-line behavior stay **out of the
