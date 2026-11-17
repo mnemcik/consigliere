@@ -79,6 +79,70 @@ cg supports **Linux, macOS and Windows**, and CI runs the tests on all three. A 
 
 When a test can't apply on one platform, skip it there with a reason (`t.Skip("…on Windows: …")`) rather than leaving it to fail.
 
+## Issues and priority
+
+The open issues in this repository and in [cg-extensions](https://github.com/mnemcik/cg-extensions) are the backlog for cg and its extensions. Problems with the extension registry are filed in cg-extensions. Report a security problem privately through [Security Advisories](https://github.com/mnemcik/consigliere/security/advisories/new), not in a public issue.
+
+### Type
+
+Each issue gets a GitHub issue type:
+
+- **Bug:** cg or an extension doesn't do what its documentation says, or the documentation is wrong.
+- **Feature:** a new capability, or a change in behaviour.
+- **Task:** work with no user-visible change, such as CI, refactoring, dependencies or missing documentation.
+
+Documentation issues also carry the `documentation` label. In this repository the issue templates set the type and add `needs-triage`, which stays until the maintainer has triaged the issue. cg-extensions has no issue templates. In either repository, an issue with no type or no priority hasn't been triaged yet.
+
+### Priority
+
+Priority is set in the issue's **Priority** field: High, Medium or Low. The field's Urgent option is not used.
+
+Priority is how badly an issue hurts multiplied by how many it hurts, and lower when there is a workaround. The effort to fix it doesn't count. "The usual setup" means a supported platform with the default configuration that `cg init` sets up.
+
+- **High:**
+  - a security problem;
+  - data loss, or a workspace left broken;
+  - upgrade, sync or session start fails in the usual setup, with no workaround;
+  - the issue blocks another High issue.
+- **Medium:**
+  - a bug with a workaround;
+  - a bug only on one supported platform or in a non-default setup;
+  - a well-defined feature for the usual setup, meaning its scope and expected behaviour are clear;
+  - documentation that is wrong or misleading.
+- **Low:**
+  - cosmetic issues and wording;
+  - narrow edge cases, such as a rare combination of inputs or settings in any setup;
+  - features that are still ideas, with scope or behaviour not yet settled;
+  - missing documentation for something that works.
+
+A bug starts at Medium. A feature starts at Medium if it is well defined and at Low if it is still an idea. The criteria above then move it up or down.
+
+### Order
+
+Both repositories form one queue, worked in this order:
+
+1. pinned issues, first;
+2. then by priority, higher before lower;
+3. within the same priority, bugs before other types;
+4. then oldest first.
+
+Pinned issues follow the same rules among themselves. The maintainer changes the order by pinning an issue; GitHub allows up to three pinned issues per repository. An issue that hasn't been triaged has no priority yet and isn't in the queue. To find the next issues across both repositories, search for:
+
+```text
+is:issue is:open (repo:mnemcik/consigliere OR repo:mnemcik/cg-extensions) field.priority:high sort:created-asc
+```
+
+Then search with `medium`, then `low`. The results come oldest first; pinned issues, and bugs within a priority, are picked out by eye.
+
+### Triage
+
+The maintainer triages each new issue in one of two ways:
+
+- **Keep it:** set the type and the priority, and remove `needs-triage`.
+- **Close it:** as a duplicate (with a link to the issue that stays), or as not planned, with a short reason.
+
+If an issue is missing details, such as steps to reproduce, the cg version or the platform, the maintainer asks for them in a comment.
+
 ## Submitting changes
 
 - Open a pull request against `main`.

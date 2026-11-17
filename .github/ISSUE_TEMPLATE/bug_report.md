@@ -2,7 +2,8 @@
 name: Bug report
 about: Report a bug in Consigliere
 title: ""
-labels: bug
+type: Bug
+labels: needs-triage
 ---
 
 ## Describe the bug
