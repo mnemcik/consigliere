@@ -327,3 +327,20 @@ func TestMissingTreeWarnsOnce(t *testing.T) {
 	}
 	_ = exe
 }
+
+// A workspace that adds no entries still drops the ones an outer `cg start`
+// left in cg's store (e.g. after its last subcommand extension was removed),
+// and leaves every other entry as it was.
+func TestStartDropsInheritedStoreEntryWithoutSubcommands(t *testing.T) {
+	launcherWorkspace(t) // private store via XDG_CONFIG_HOME; no extensions
+	stale := filepath.Join(extension.ExtensionsDir(), "trees", "old@0000", "live-runs", "bin")
+	user := t.TempDir()
+	seen := stubPathAtStart(t, user+string(filepath.ListSeparator)+stale)
+
+	if err := startCmd.RunE(startCmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	if *seen != user {
+		t.Errorf("agent's PATH = %q, want %q (inherited store entry dropped)", *seen, user)
+	}
+}

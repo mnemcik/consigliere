@@ -147,12 +147,16 @@ type agentRun struct {
 // after leaving the workspace, e.g. to run in another repository. Appended, not
 // prepended: nothing in an extension's bin/ can shadow a command the user
 // already has. A launcher passes PATH on to the agent (tmux takes it from the
-// client that creates the session). An unset PATH stays unset: setting it to
-// just these directories would drop the system's default search path.
+// client that creates the session). Entries an outer `cg start` left in PATH
+// are dropped even when this workspace adds none, so a removed or replaced
+// extension's commands don't outlive it. An unset PATH stays unset: setting it
+// to just these directories would drop the system's default search path.
 func (r *agentRun) exec() error {
-	if cur, set := os.LookupEnv("PATH"); set && len(r.binDirs) > 0 {
-		if err := os.Setenv("PATH", appendPathDirs(cur, r.binDirs, extension.ExtensionsDir())); err != nil {
-			return fmt.Errorf("cg start: set PATH: %w", err)
+	if cur, set := os.LookupEnv("PATH"); set {
+		if next := appendPathDirs(cur, r.binDirs, extension.ExtensionsDir()); next != cur {
+			if err := os.Setenv("PATH", next); err != nil {
+				return fmt.Errorf("cg start: set PATH: %w", err)
+			}
 		}
 	}
 	err := runAgent(r.path, r.argv)
