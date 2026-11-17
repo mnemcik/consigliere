@@ -140,30 +140,73 @@ func TestStartWithoutSubcommandsLeavesPathAlone(t *testing.T) {
 func TestAppendPathDirs(t *testing.T) {
 	sep := string(filepath.ListSeparator)
 	a, b, c := filepath.Join("x", "a"), filepath.Join("x", "b"), filepath.Join("x", "c")
-	cases := []struct {
+	store := filepath.Join("cfg", "extensions")
+	oldTree := filepath.Join(store, "trees", "ext@1111", "live-runs", "bin")
+	newTree := filepath.Join(store, "trees", "ext@2222", "live-runs", "bin")
+	type tc struct {
 		name, cur string
 		dirs      []string
 		want      string
-	}{
+	}
+	cases := []tc{
 		{"empty PATH", "", []string{a}, a},
 		{"appended", a, []string{b}, a + sep + b},
-		{"already there (cg start inside a cg session)", a + sep + b, []string{b}, a + sep + b},
+		{"already there", a + sep + b, []string{b}, a + sep + b},
 		{"unclean duplicate", a + sep + b + string(filepath.Separator), []string{b}, a + sep + b + string(filepath.Separator)},
 		{"repeated in dirs", a, []string{b, c, b}, a + sep + b + sep + c},
+		// A cg start inside a session cg started, after an extension update:
+		// the outer start's older tree must not keep winning.
+		{"older store entry replaced", a + sep + oldTree + sep + b, []string{newTree}, a + sep + b + sep + newTree},
+		{"same store entry kept once", a + sep + newTree, []string{newTree}, a + sep + newTree},
+		{"user entry beside the store kept", a + sep + filepath.Join("cfg", "extensions-other"), []string{newTree},
+			a + sep + filepath.Join("cfg", "extensions-other") + sep + newTree},
 	}
 	if runtime.GOOS == "windows" {
-		cases = append(cases, struct {
-			name, cur string
-			dirs      []string
-			want      string
-		}{"case differs (Windows)", `C:\X\Bin`, []string{`c:\x\bin`}, `C:\X\Bin`})
+		cases = append(cases,
+			tc{"case differs (Windows)", `C:\X\Bin`, []string{`c:\x\bin`}, `C:\X\Bin`},
+			// A quoted entry with the separator is one directory and must stay one.
+			tc{"quoted entry kept (Windows)", `"C:\Tools;Stable";C:\Y`, []string{`C:\Z`}, `"C:\Tools;Stable";C:\Y;C:\Z`},
+			tc{"appended entry with separator quoted (Windows)", `C:\Y`, []string{`C:\A;B`}, `C:\Y;"C:\A;B"`},
+		)
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := appendPathDirs(tc.cur, tc.dirs); got != tc.want {
+			if got := appendPathDirs(tc.cur, tc.dirs, store); got != tc.want {
 				t.Errorf("appendPathDirs(%q, %q) = %q, want %q", tc.cur, tc.dirs, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSplitPathRaw(t *testing.T) {
+	sep := string(filepath.ListSeparator)
+	if got := splitPathRaw(""); got != nil {
+		t.Errorf("empty: got %q", got)
+	}
+	if got := splitPathRaw("a" + sep + sep + "b"); len(got) != 3 || got[1] != "" {
+		t.Errorf("empty entry must be kept as written: %q", got)
+	}
+	if runtime.GOOS == "windows" {
+		if got := splitPathRaw(`"C:\a;b";C:\c`); len(got) != 2 || got[0] != `"C:\a;b"` {
+			t.Errorf("quoted entry split: %q", got)
+		}
+	}
+}
+
+// End to end through cg start: an inherited entry for an older tree of the
+// same extension is replaced by the current one.
+func TestStartReplacesInheritedStoreEntry(t *testing.T) {
+	ws, _ := launcherWorkspace(t) // sets XDG_CONFIG_HOME, so the store is private
+	bin := installSubcommandExt(t, ws, liveSub, liveSub, "cg-live")
+	stale := filepath.Join(extension.ExtensionsDir(), "trees", "old@0000", "live-runs", "bin")
+	user := t.TempDir()
+	seen := stubPathAtStart(t, user+string(filepath.ListSeparator)+stale)
+
+	if err := startCmd.RunE(startCmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	if want := user + string(filepath.ListSeparator) + bin; *seen != want {
+		t.Errorf("agent's PATH = %q, want %q (stale store entry dropped)", *seen, want)
 	}
 }
 

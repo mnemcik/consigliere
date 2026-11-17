@@ -151,7 +151,7 @@ type agentRun struct {
 // just these directories would drop the system's default search path.
 func (r *agentRun) exec() error {
 	if cur, set := os.LookupEnv("PATH"); set && len(r.binDirs) > 0 {
-		if err := os.Setenv("PATH", appendPathDirs(cur, r.binDirs)); err != nil {
+		if err := os.Setenv("PATH", appendPathDirs(cur, r.binDirs, extension.ExtensionsDir())); err != nil {
 			return fmt.Errorf("cg start: set PATH: %w", err)
 		}
 	}
@@ -273,30 +273,87 @@ func extensionBinDirs(root string, cfg *workspace.Config) []string {
 	return dirs
 }
 
-// appendPathDirs appends dirs to the PATH value cur, skipping any already in it
-// (a `cg start` inside a session that cg started) or repeated.
-func appendPathDirs(cur string, dirs []string) string {
+// appendPathDirs returns the PATH value cur with dirs appended. Entries inside
+// managed (cg's extension store) are dropped first: they come from an outer
+// `cg start` (a `cg start` inside a session cg started), possibly for an older
+// tree, which would otherwise keep winning over the current one. Every other
+// entry is kept as written, in its place: the value is split without
+// unquoting (Windows allows "C:\a;b" as one entry), and an appended entry
+// that contains the list separator is quoted on Windows.
+func appendPathDirs(cur string, dirs []string, managed string) string {
 	var parts []string
-	if cur != "" {
-		parts = filepath.SplitList(cur)
-	}
-	seen := make(map[string]bool, len(parts)+len(dirs))
-	for _, p := range parts {
-		seen[pathKey(p)] = true
+	seen := map[string]bool{}
+	for _, raw := range splitPathRaw(cur) {
+		if managed != "" && pathWithin(unquotePathEntry(raw), managed) {
+			continue
+		}
+		parts = append(parts, raw)
+		seen[pathKey(unquotePathEntry(raw))] = true
 	}
 	for _, d := range dirs {
 		if k := pathKey(d); !seen[k] {
 			seen[k] = true
-			parts = append(parts, d)
+			parts = append(parts, quotePathEntry(d))
 		}
 	}
 	return strings.Join(parts, string(filepath.ListSeparator))
 }
 
-// pathKey is how appendPathDirs compares PATH entries: cleaned, and without
-// case on Windows, where paths are case-insensitive.
+// splitPathRaw splits a PATH value at the list separator, keeping each entry
+// exactly as written. On Windows a separator inside double quotes doesn't
+// split. An empty value has no entries.
+func splitPathRaw(v string) []string {
+	if v == "" {
+		return nil
+	}
+	sep := filepath.ListSeparator
+	var out []string
+	start, inQuote := 0, false
+	for i := 0; i < len(v); i++ {
+		switch {
+		case isWindows && v[i] == '"':
+			inQuote = !inQuote
+		case v[i] == byte(sep) && !inQuote:
+			out = append(out, v[start:i])
+			start = i + 1
+		}
+	}
+	return append(out, v[start:])
+}
+
+// unquotePathEntry removes the double quotes Windows allows in a PATH entry.
+func unquotePathEntry(e string) string {
+	if isWindows {
+		return strings.ReplaceAll(e, `"`, "")
+	}
+	return e
+}
+
+// quotePathEntry quotes a Windows PATH entry that contains the list separator.
+func quotePathEntry(d string) string {
+	if isWindows && strings.ContainsRune(d, filepath.ListSeparator) {
+		return `"` + d + `"`
+	}
+	return d
+}
+
+// pathWithin reports whether path p is dir or inside it.
+func pathWithin(p, dir string) bool {
+	if p == "" {
+		return false
+	}
+	rel, err := filepath.Rel(pathKey(dir), pathKey(p))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// isWindows selects the Windows PATH rules (quoted entries, case-insensitive
+// paths).
+const isWindows = runtime.GOOS == "windows"
+
+// pathKey is how PATH entries are compared: cleaned, and without case on
+// Windows, where paths are case-insensitive.
 func pathKey(p string) string {
-	if runtime.GOOS == "windows" {
+	if isWindows {
 		return strings.ToLower(filepath.Clean(p))
 	}
 	return filepath.Clean(p)

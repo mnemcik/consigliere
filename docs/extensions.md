@@ -435,8 +435,10 @@ finds the command. Rules:
   `bin/` to what the extension means to expose.
 - **Appended, not prepended,** so nothing in an extension's `bin/` shadows a
   command already on `PATH` (it can still provide a name nothing else on `PATH`
-  has); a directory already there isn't added again (a `cg start` inside a
-  session cg started). An unset `PATH` stays unset.
+  has). Entries inside cg's extension store left by an outer `cg start` (a
+  `cg start` inside a session cg started) are replaced by the current ones, so
+  an older tree doesn't keep winning; every other entry stays as written, in
+  its place, quotes included on Windows. An unset `PATH` stays unset.
 - The binary gets no workspace from cg, so a command that needs one (reading
   the workspace's files) still works only inside it.
 - Only sessions started with `cg` get the entries; a session started directly
