@@ -52,12 +52,12 @@ func Run() (Answers, error) {
 				Description("Areas are long-lived reference hubs (systems, practices, domains).\nYou can skip by leaving the slug empty."),
 			huh.NewInput().
 				Title("Area slug").
-				Description("Lowercase, dash-separated. e.g. `pension-calc`.").
+				Description("Lowercase, dash-separated. e.g. `order-service`.").
 				Value(&a.AreaSlug).
 				Validate(validateSlug),
 			huh.NewInput().
 				Title("Area display name").
-				Description("e.g., Pension Calculation Engine.").
+				Description("e.g., Order Service.").
 				Value(&a.AreaName),
 			huh.NewInput().
 				Title("Area tags").

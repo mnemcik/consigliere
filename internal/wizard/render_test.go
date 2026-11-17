@@ -11,7 +11,7 @@ import (
 
 func TestSanitizeSlug(t *testing.T) {
 	cases := map[string]string{
-		"Pension Calc":         "pension-calc",
+		"Order Service":        "order-service",
 		"  SPACES  ":           "spaces",
 		"foo/bar_baz":          "foo-bar-baz",
 		"--leading-trailing--": "leading-trailing",
@@ -85,17 +85,17 @@ func TestRenderProfile_EmptyAnswersFallsBackToPlaceholders(t *testing.T) {
 
 func TestRenderArea(t *testing.T) {
 	a := Answers{
-		AreaSlug:     "pension-calc",
-		AreaName:     "Pension Calculation",
+		AreaSlug:     "order-service",
+		AreaName:     "Order Processing",
 		AreaTags:     "microservice, compliance",
-		AreaOverview: "Computes pension benefits.",
+		AreaOverview: "Processes customer orders.",
 	}
 	got := RenderArea(&a, "2026-04-24")
 	for _, s := range []string{
-		"# Pension Calculation",
+		"# Order Processing",
 		"## Review History\n",
 		"- 2026-04-24 — created.",
-		"Computes pension benefits.",
+		"Processes customer orders.",
 	} {
 		if !strings.Contains(got, s) {
 			t.Errorf("RenderArea missing %q", s)
@@ -106,8 +106,8 @@ func TestRenderArea(t *testing.T) {
 	}
 	fm := areaFM(t, got)
 	want := map[string]any{
-		"title": "Pension Calculation",
-		"slug":  "pension-calc",
+		"title": "Order Processing",
+		"slug":  "order-service",
 		"tags":  []any{"microservice", "compliance"},
 		// Bare, so YAML reads them as dates, matching the templates.
 		"created":       time.Date(2026, 4, 24, 0, 0, 0, 0, time.UTC),
@@ -164,11 +164,11 @@ func TestInsertAreaIndexRow_EmptyTable(t *testing.T) {
 |------|------|------|-------------|
 `
 	a := Answers{
-		AreaSlug: "pension-calc", AreaName: "Pension Calc",
-		AreaTags: "microservice", AreaOverview: "Pensions. Done.",
+		AreaSlug: "order-service", AreaName: "Order Service",
+		AreaTags: "microservice", AreaOverview: "Orders. Done.",
 	}
 	got := InsertAreaIndexRow(index, &a)
-	wantRow := "| [Pension Calc](pension-calc.md) | `pension-calc` | microservice | Pensions |"
+	wantRow := "| [Order Service](order-service.md) | `order-service` | microservice | Orders |"
 	if !strings.Contains(got, wantRow) {
 		t.Errorf("expected row %q in output, got:\n%s", wantRow, got)
 	}
@@ -209,18 +209,18 @@ func TestInsertAreaIndexRow_Idempotent(t *testing.T) {
 
 | Area | Slug | Tags | Description |
 |------|------|------|-------------|
-| [Pension Calc](pension-calc.md) | ` + "`pension-calc`" + ` | microservice | First |
+| [Order Service](order-service.md) | ` + "`order-service`" + ` | microservice | First |
 `
 	a := Answers{
-		AreaSlug: "pension-calc", AreaName: "Pension Calc",
+		AreaSlug: "order-service", AreaName: "Order Service",
 		AreaTags: "microservice", AreaOverview: "Duplicate attempt",
 	}
 	got := InsertAreaIndexRow(index, &a)
 	if got != index {
 		t.Errorf("expected index unchanged when slug already present; got diff:\n%s", got)
 	}
-	if strings.Count(got, "pension-calc.md") != 1 {
-		t.Errorf("slug appears more than once: %d", strings.Count(got, "pension-calc.md"))
+	if strings.Count(got, "order-service.md") != 1 {
+		t.Errorf("slug appears more than once: %d", strings.Count(got, "order-service.md"))
 	}
 }
 

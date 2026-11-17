@@ -159,7 +159,7 @@ Area files (`areas/`) are the reference hubs for the entire knowledge base. Ever
 | Section | Update when... |
 |---------|---------------|
 | **Overview** | Scope or purpose of the system/practice changed |
-| **Architecture & Constraints** | New technical constraints, patterns, or limitations were discovered (e.g., "APIM uses header-based versioning") |
+| **Architecture & Constraints** | New technical constraints, patterns, or limitations were discovered (e.g., "the payments API paginates with cursors, not offsets") |
 | **Current State** | Deployment status, versions, migration state, or health changed |
 | **Key Contacts** | New people became relevant or roles shifted |
 | **Associated Items** | New projects, ideas, or notes now reference this area |
@@ -230,7 +230,7 @@ After all updates are written, commit in each repo you touched this session (the
 4. **Stage by name only.** Use `git add <path1> <path2> ...`. **Never `git add -A`, `git add .`, or `git add -u`** — those sweep up work you did not author this session.
 5. **Verify the staged set.** Run `git status --short` (or `git diff --cached --stat`) and confirm the list matches what you intended to stage, nothing more. If extras appeared between your staging command and this check, a parallel session probably staged them into the shared index — abort, unstage them, and revisit step 1.
 6. **Commit** with a clear message:
-   - **End mode:** summarize what was captured (e.g., `Wrap session: update versioning-guidelines log, add APIM header versioning todo`). If this session resumed a paused project, `projects/<slug>/resume.md` must be deleted by now and the deletion staged (`git rm -f projects/<slug>/resume.md`; `-f` because Phase 6.5 edits it after the WIP commit): `cg worktree land` refuses to land it, because on the landing branch it would mark the project paused for good.
+   - **End mode:** summarize what was captured (e.g., `Wrap session: update pagination-guidelines log, add cursor pagination todo`). If this session resumed a paused project, `projects/<slug>/resume.md` must be deleted by now and the deletion staged (`git rm -f projects/<slug>/resume.md`; `-f` because Phase 6.5 edits it after the WIP commit): `cg worktree land` refuses to land it, because on the landing branch it would mark the project paused for good.
    - **Pause mode:** prefix with `WIP pause:` followed by a one-line cursor (e.g., `WIP pause: half-finished IPv6 regex in api-logging-adr — next: test IPv6 case`). After the commit lands locally, **return to `resume.md` and replace the `<TBD>` Dirty-state SHA with the actual commit SHA**.
    - If the working tree was clean (no edits since the last commit) **and you are in pause mode**, skip the commit step. Note in `resume.md` Dirty state: `WIP commit SHA: none — worktree clean before pause`.
 7. **Push.**
@@ -336,11 +336,11 @@ Present a brief summary to the user. Sections shown are mode-dependent. Every ph
 - [project-name] — log.md (session entry), todo.md (2 items added, 1 checked off, 1 duplicate closed in design-notes.md)
 
 **Notes captured:**
-- Updated notes/azure-apim-gotchas.md with header versioning finding
+- Updated notes/payments-api-gotchas.md with cursor pagination finding
 
 **Insights:** None this session
 
-**Propagation:** Updated areas/api-management.md with header versioning detail
+**Propagation:** Updated areas/payments-api.md with cursor pagination detail
 
 **Improvements:** None found
 

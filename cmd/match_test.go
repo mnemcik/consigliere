@@ -14,7 +14,7 @@ func TestParseProjectIndex(t *testing.T) {
 
 | # | Project | Status | Areas | Folder |
 |---|---------|--------|-------|--------|
-| 1 | OAuth Strategy | In Progress | ` + "`identity-auth`" + ` | [oauth-strategy](oauth-strategy/) |
+| 1 | OAuth Strategy | In Progress | ` + "`auth`" + ` | [oauth-strategy](oauth-strategy/) |
 | 2 | Daily Tips | In Progress | ` + "`claude`" + ` | [daily-tips](daily-tips/) |
 | 3 | Git Branching | Defining | ` + "`devops`" + ` | [git-branching](git-branching/) |
 `
@@ -78,15 +78,15 @@ func TestExtractFolderSlug(t *testing.T) {
 }
 
 func TestExtractAreaSlugs(t *testing.T) {
-	result := extractAreaSlugs("`identity-auth`, `devops-release`")
+	result := extractAreaSlugs("`auth`, `release-eng`")
 	if len(result) != 2 {
 		t.Fatalf("expected 2 slugs, got %d", len(result))
 	}
-	if result[0] != "identity-auth" {
-		t.Errorf("expected 'identity-auth', got '%s'", result[0])
+	if result[0] != "auth" {
+		t.Errorf("expected 'auth', got '%s'", result[0])
 	}
-	if result[1] != "devops-release" {
-		t.Errorf("expected 'devops-release', got '%s'", result[1])
+	if result[1] != "release-eng" {
+		t.Errorf("expected 'release-eng', got '%s'", result[1])
 	}
 }
 

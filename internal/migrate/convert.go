@@ -299,7 +299,7 @@ func apply(root *yaml.Node, fields []field, res *Result) []string {
 			}
 		case listKeys[key]:
 			setNew(root, key, listNode(splitList(v)), f.comment, res)
-			// "`core-platform` (primary), `devops-release`": the annotations are
+			// "`core-platform` (primary), `release-eng`": the annotations are
 			// not slugs, so the whole value is kept beside the list.
 			if hasProse(v) {
 				setNew(root, key+"_note", strNode(v), "", res)
