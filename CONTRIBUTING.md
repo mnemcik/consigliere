@@ -85,13 +85,13 @@ The open issues in this repository and in [cg-extensions](https://github.com/mne
 
 ### Type
 
-Every issue has a GitHub issue type:
+Each issue gets a GitHub issue type:
 
-- **Bug:** cg doesn't do what its documentation says.
+- **Bug:** cg or an extension doesn't do what its documentation says, or the documentation is wrong.
 - **Feature:** a new capability, or a change in behaviour.
-- **Task:** work with no user-visible change, such as CI, refactoring or dependencies.
+- **Task:** work with no user-visible change, such as CI, refactoring, dependencies or missing documentation.
 
-A documentation issue also carries the `documentation` label. The issue templates set the type and add `needs-triage`, which stays until the maintainer has triaged the issue.
+Documentation issues also carry the `documentation` label. In this repository the issue templates set the type and add `needs-triage`, which stays until the maintainer has triaged the issue. cg-extensions has no issue templates, so an issue there with no type set is waiting for triage.
 
 ### Priority
 
@@ -121,12 +121,18 @@ A bug starts at Medium. A feature starts at Medium if it is well defined and at 
 
 Both repositories form one queue, worked in this order:
 
-1. pinned issues;
-2. higher priority before lower;
-3. bugs before everything else;
-4. oldest first.
+1. pinned issues, first;
+2. then by priority, higher before lower;
+3. within the same priority, bugs before other types;
+4. then oldest first.
 
-The maintainer changes the order by pinning an issue; GitHub allows up to three pinned issues per repository. The next issues to work on are `is:issue is:open field.priority:high`, then Medium, then Low.
+Pinned issues follow the same rules among themselves. The maintainer changes the order by pinning an issue; GitHub allows up to three pinned issues per repository. An issue that hasn't been triaged has no priority yet and isn't in the queue. To find the next issues across both repositories, search for:
+
+```text
+is:issue is:open (repo:mnemcik/consigliere OR repo:mnemcik/cg-extensions) field.priority:high
+```
+
+Then search with `medium`, then `low`.
 
 ### Triage
 
