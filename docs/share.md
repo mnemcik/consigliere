@@ -43,8 +43,8 @@ published is read from each share repo, never stored in the workspace.
       "authorEmail": "ada@example.com",
       "projects": {
         "orders-api": {
-          "include": ["value-serialization-analysis.md"],
-          "acknowledged": [{ "rule": "local-path", "hash": "6c54c54b471a3e54" }]
+          "include": ["design-notes.md"],
+          "acknowledged": [{ "rule": "local-path", "hash": "0f1e2d3c4b5a6978" }]
         },
         "orders-ui": {}
       }

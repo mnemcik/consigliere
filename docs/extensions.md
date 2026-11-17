@@ -507,13 +507,13 @@ qualified**:
 // .cg.json
 "registries": {
   "cg":    "https://raw.githubusercontent.com/mnemcik/cg-extensions-registry/main/index.json",
-  "work": "git@github-work:acme/cg-extensions-registry.git"
+  "work":  "git@github-work:acme/cg-extensions-registry.git"
 }
 ```
 
 ```console
 cg extension install cg/1password         # public catalogue
-cg extension install work/team-backlog  # private catalogue
+cg extension install work/team-backlog    # private catalogue
 ```
 
 - **Fully-qualified, never bare.** The alias names exactly one registry, so the
