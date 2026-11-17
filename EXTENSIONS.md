@@ -175,7 +175,7 @@ cg-extensions/
   1password/
     cg-extension.json
     fragments/ notes/ …
-  vpaas-backlog/
+  team-backlog/
     cg-extension.json
     notes/ …
 ```

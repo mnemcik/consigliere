@@ -21,7 +21,7 @@ priority: "high"
 
 - **Status:** in-progress
 - **Priority:** high
-- **Areas:** [` + "`product-config`" + `](../../areas/product-config.md)
+- **Areas:** [` + "`orders`" + `](../../areas/orders.md)
 - **Started:** 2025-11-09
 - **Origin:** [ideas/pilot.md](../../ideas/pilot.md)
 - **Output type:** documentation
@@ -31,7 +31,7 @@ priority: "high"
 
 ## Problem
 
-See the [area](../../areas/product-config.md), the [note](../../notes/naming.md#rules),
+See the [area](../../areas/orders.md), the [note](../../notes/naming.md#rules),
 the [sibling](../sibling/) and [its decisions](../sibling/decisions.md#dec-005).
 Our own [decisions](decisions.md#dec-001), the [analysis](analysis.md),
 the [spec](https://example.com/spec), [top](#problem) and ![diagram](diagram.png).
@@ -57,7 +57,7 @@ var pilotStamp = Stamp{Owner: "Ada Owner", SHA: "0123456789abcdef0123", Date: "2
 
 func pilotInput() *Input {
 	return &Input{
-		Project: Project{Slug: "pilot", Status: "In Progress", Areas: []string{"product-config"}},
+		Project: Project{Slug: "pilot", Status: "In Progress", Areas: []string{"orders"}},
 		Files: map[string]string{
 			"README.md":    pilotReadme,
 			"decisions.md": "# Decisions\n\n### DEC-001 — First\n",
@@ -95,7 +95,7 @@ func TestRenderPilot(t *testing.T) {
 		"> **Authority:** mirror — Ada Owner's workspace @ `0123456789ab` · **Verified:** 2026-09-02",
 		// Meta rebuilt from the index
 		"- **Status:** In Progress",
-		"- **Areas:** `product-config`",
+		"- **Areas:** `orders`",
 		"- **Started:** 2025-11-09",
 		"- **Output type:** documentation",
 		// private links de-linked, text kept
@@ -163,9 +163,9 @@ func TestRenderRewritesLinksToSharedProjects(t *testing.T) {
 
 func TestRenderKeepsExternalOrigin(t *testing.T) {
 	in := pilotInput()
-	in.Files["README.md"] = "# P\n\n## Meta\n\n- **Origin:** VPAAS-1068\n- **Started:** 2026-01-01\n\n## Problem\n"
+	in.Files["README.md"] = "# P\n\n## Meta\n\n- **Origin:** PROJ-1068\n- **Started:** 2026-01-01\n\n## Problem\n"
 	got := renderREADME(t, in)
-	if !strings.Contains(got, "- **Origin:** VPAAS-1068") {
+	if !strings.Contains(got, "- **Origin:** PROJ-1068") {
 		t.Errorf("external Origin dropped:\n%s", got)
 	}
 }
@@ -177,7 +177,7 @@ func TestRenderInsertsMetaWhenMissing(t *testing.T) {
 	if !strings.Contains(got, "# P\n\n## Meta\n\n- **Status:** In Progress\n") {
 		t.Errorf("Meta not inserted after the title:\n%s", got)
 	}
-	if !strings.Contains(got, "- **Areas:** `product-config`\n\nBody.") {
+	if !strings.Contains(got, "- **Areas:** `orders`\n\nBody.") {
 		t.Errorf("want exactly one blank line between the inserted Meta and the body:\n%s", got)
 	}
 }
@@ -282,13 +282,13 @@ func TestRenderRejectsUnsupportedLinkForm(t *testing.T) {
 // fields must come from frontmatter or they silently vanish from the export.
 func TestRenderReadsMigratedFrontmatter(t *testing.T) {
 	in := pilotInput()
-	in.Files["README.md"] = "---\ntitle: \"P\"\npriority: high\ncreated: 2026-01-01\noutput_type: tool\norigin: VPAAS-1068\n---\n\n# P\n\n## Problem\n"
+	in.Files["README.md"] = "---\ntitle: \"P\"\npriority: high\ncreated: 2026-01-01\noutput_type: tool\norigin: PROJ-1068\n---\n\n# P\n\n## Problem\n"
 	got := renderREADME(t, in)
 	for _, want := range []string{
 		"# P\n\n## Meta\n\n- **Status:** In Progress\n",
 		"- **Started:** 2026-01-01",
 		"- **Output type:** tool",
-		"- **Origin:** VPAAS-1068",
+		"- **Origin:** PROJ-1068",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q\n---\n%s", want, got)
@@ -301,7 +301,7 @@ func TestRenderReadsMigratedFrontmatter(t *testing.T) {
 
 func TestRenderFrontmatterWinsPerField(t *testing.T) {
 	in := pilotInput()
-	in.Files["README.md"] = "---\ncreated: 2026-01-01\norigin: ideas/x.md\n---\n\n# P\n\n## Meta\n\n- **Started:** 2026-02-02\n- **Output type:** documentation\n- **Origin:** VPAAS-1\n\n## Problem\n"
+	in.Files["README.md"] = "---\ncreated: 2026-01-01\norigin: ideas/x.md\n---\n\n# P\n\n## Meta\n\n- **Started:** 2026-02-02\n- **Output type:** documentation\n- **Origin:** PROJ-1\n\n## Problem\n"
 	got := renderREADME(t, in)
 	if !strings.Contains(got, "- **Started:** 2026-01-01") || strings.Contains(got, "2026-02-02") {
 		t.Errorf("frontmatter created did not win over Meta Started:\n%s", got)

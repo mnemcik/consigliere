@@ -60,7 +60,7 @@ func TestParseQualifiedName(t *testing.T) {
 		ok          bool
 	}{
 		{"cg/1password", "cg", "1password", true},
-		{"visma/vpaas-backlog", "visma", "vpaas-backlog", true},
+		{"work/team-backlog", "work", "team-backlog", true},
 		{"1password", "", "", false},                  // bare
 		{"git@github.com:o/r.git", "", "", false},     // repo url
 		{"https://example.com/x.json", "", "", false}, // url
@@ -95,7 +95,7 @@ func TestFetchIndexFromGitRepo(t *testing.T) {
 			t.Fatalf("git %v: %v", args, err)
 		}
 	}
-	const index = `{"version":1,"extensions":[{"name":"vpaas-backlog","description":"d","repo":"git@example:o/r.git","path":"vpaas-backlog","latestVersion":"0.1.0","manifestUrl":"x"}]}`
+	const index = `{"version":1,"extensions":[{"name":"team-backlog","description":"d","repo":"git@example:o/r.git","path":"team-backlog","latestVersion":"0.1.0","manifestUrl":"x"}]}`
 	if err := os.WriteFile(filepath.Join(dir, "index.json"), []byte(index), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -114,9 +114,9 @@ func TestFetchIndexFromGitRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchIndexFrom(git repo): %v", err)
 	}
-	e, ok := idx.Find("vpaas-backlog")
-	if !ok || e.Path != "vpaas-backlog" {
-		t.Errorf("Find(vpaas-backlog) = %+v ok=%v", e, ok)
+	e, ok := idx.Find("team-backlog")
+	if !ok || e.Path != "team-backlog" {
+		t.Errorf("Find(team-backlog) = %+v ok=%v", e, ok)
 	}
 }
 

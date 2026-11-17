@@ -14,7 +14,7 @@ the spec and `EXTENSIONS.md` is the tutorial; fix the tutorial.
 Consigliere is **domain-agnostic** framework scope: generic conventions
 (session-start gate, DRY, information propagation, worktree mechanics) ship in
 the framework; workspace- or domain-specific behaviour does not. But users still
-want to opt into domain rules — 1Password as the credential store, VPaaS backlog
+want to opt into domain rules — 1Password as the credential store, team backlog
 standards, a Gmail-digest workflow, a voice/drafting persona — without forking
 the framework or hand-editing their `CLAUDE.md` against the next `cg sync`.
 
@@ -507,13 +507,13 @@ qualified**:
 // .cg.json
 "registries": {
   "cg":    "https://raw.githubusercontent.com/mnemcik/cg-extensions-registry/main/index.json",
-  "visma": "git@github-work:acme/cg-extensions-registry.git"
+  "work": "git@github-work:acme/cg-extensions-registry.git"
 }
 ```
 
 ```console
 cg extension install cg/1password         # public catalogue
-cg extension install visma/vpaas-backlog  # private catalogue
+cg extension install work/team-backlog  # private catalogue
 ```
 
 - **Fully-qualified, never bare.** The alias names exactly one registry, so the

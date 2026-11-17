@@ -147,8 +147,8 @@ The CLAUDE.md rules instruct AI assistants to:
 ```bash
 $ cg match "OAuth identity provider"
 MATCH: OAuth & Identity Provider Strategy
-SLUG: oauth-idp-strategy
-PATH: projects/oauth-idp-strategy/
+SLUG: auth-strategy
+PATH: projects/auth-strategy/
 STATUS: In Progress
 ```
 

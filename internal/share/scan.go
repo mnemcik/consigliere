@@ -118,7 +118,7 @@ var authParamRe = regexp.MustCompile(`^[a-z_]+=`)
 var assignmentRe = regexp.MustCompile(`(?:^|[^A-Za-z0-9_-])([A-Za-z][A-Za-z0-9_-]*)["']?\s*[:=]\s*["']?`)
 
 // resourcePathRe matches a lowercase slash-separated resource path
-// (projects/idella-prod/secrets/db-2024): an identifier, not a credential.
+// (projects/acme-prod/secrets/db-2024): an identifier, not a credential.
 var resourcePathRe = regexp.MustCompile(`^[a-z0-9._-]+(?:/[a-z0-9._-]+)+/?$`)
 
 var uuidRe = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)

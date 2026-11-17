@@ -89,7 +89,7 @@ type GateInput struct {
 // emit=false to stay out of the way (non-push commands, undeclared repos).
 // areasDir is the workspace's areas directory (where policies live); the push
 // target repo is resolved from the command's cwd. Ports
-// external-repo-push-policy.sh (the workspace-specific personal-workspace skip
+// external-repo-push-policy.sh (the workspace-specific skip
 // is dropped — an undeclared repo already returns Unknown → no-op).
 func Gate(ctx context.Context, areasDir string, in GateInput) (string, bool) {
 	if in.ToolName != "Bash" || !gitPushRe.MatchString(in.Command) {

@@ -1,5 +1,5 @@
 // Package worktree implements the per-session git-worktree mechanics promoted
-// from the personal-workspace bash helpers (create-session-worktree.sh and
+// from an earlier workspace's bash helpers (create-session-worktree.sh and
 // friends). Each session works on an ephemeral branch "<prefix><slug>" in a
 // sibling worktree directory "<root>--<slug>", landing onto the landing branch.
 package worktree
