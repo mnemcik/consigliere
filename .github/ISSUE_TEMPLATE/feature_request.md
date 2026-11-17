@@ -2,7 +2,8 @@
 name: Feature request
 about: Suggest a new command or improvement
 title: ""
-labels: enhancement
+type: Feature
+labels: needs-triage
 ---
 
 ## Problem
