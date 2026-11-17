@@ -4,7 +4,7 @@ This document tracks the subcommands that promote an earlier workspace's bash
 helpers (`scripts/*.sh`, `.claude/hooks/*.sh`, `.claude/statusline.sh`) into the
 `cg` Go binary, and the `.cg.json` configuration they read. Promoting these into
 Go removes the Bash 3.2 portability constraint, drops the hardcoded
-hardcoded workspace-path assumptions, and makes the mechanics work on
+workspace-path assumptions, and makes the mechanics work on
 Windows.
 
 Hooks themselves ship as tiny bash **wrappers** that `exec cg …` (see the
