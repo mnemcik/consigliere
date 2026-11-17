@@ -9,6 +9,9 @@ import (
 // FirstWord returns the first word of s.
 func FirstWord(s string) string {
 	parts := strings.Fields(s)
+	if len(parts) == 0 {
+		return ""
+	}
 	return parts[0]
 }
 
