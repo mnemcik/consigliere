@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -29,7 +30,9 @@ var startCmd = &cobra.Command{
 	Long: "Start this workspace's AI session: run the command in .cg.json session.agent\n" +
 		"(an argv array, default [\"claude\"]) in the current directory, with any\n" +
 		"arguments passed on to it, e.g. `cg start --resume <id>`. An installed\n" +
-		"extension can contribute a launcher that wraps the agent (e.g. in tmux).\n\n" +
+		"extension can contribute a launcher that wraps the agent (e.g. in tmux).\n" +
+		"Installed extensions' commands are appended to the session's PATH, so\n" +
+		"`cg <namespace>` keeps working after the session leaves the workspace.\n\n" +
 		"Bare `cg` does the same inside a workspace when run from a terminal; outside a\n" +
 		"workspace, without a terminal, or when the agent can't be started, it prints\n" +
 		"this help instead.\n\n" +
@@ -123,18 +126,33 @@ var isInteractive = func() bool {
 // start_exec_*.go. A variable so tests can capture the call instead.
 var runAgent = execAgent
 
-// agentRun is what `cg start` runs: the program path and its argv, and the
-// extension whose launcher wraps the agent ("" when none does).
+// agentRun is what `cg start` runs: the program path and its argv, the
+// extension whose launcher wraps the agent ("" when none does), and the
+// extensions' bin directories to append to the session's PATH.
 type agentRun struct {
 	path     string
 	argv     []string
 	launcher string
+	binDirs  []string
 }
 
 // exec runs it. A launcher that fails to start is named in the error; an exit
 // code passed through from the agent or launcher (a CodedError without a
 // message) is returned as is, so cg prints nothing of its own.
-func (r agentRun) exec() error {
+//
+// Before it starts, the extensions' bin directories are appended to PATH, so
+// every process of the session (the agent, its shell commands, the runs it
+// starts) finds `cg <namespace>` through the cg-<namespace> PATH fallback even
+// after leaving the workspace, e.g. to run in another repository. Appended, not
+// prepended: nothing in an extension's bin/ can shadow a command the user
+// already has. A launcher passes PATH on to the agent (tmux takes it from the
+// client that creates the session).
+func (r *agentRun) exec() error {
+	if len(r.binDirs) > 0 {
+		if err := os.Setenv("PATH", appendPathDirs(os.Getenv("PATH"), r.binDirs)); err != nil {
+			return fmt.Errorf("cg start: set PATH: %w", err)
+		}
+	}
 	err := runAgent(r.path, r.argv)
 	if err == nil || r.launcher == "" {
 		return err
@@ -171,13 +189,99 @@ func resolveAgent(root string, extra []string) (agentRun, error) {
 	if err != nil {
 		return agentRun{}, err
 	}
+	dirs := extensionBinDirs(root, cfg)
 	if l == nil {
-		return agentRun{path: path, argv: argv}, nil
+		return agentRun{path: path, argv: argv, binDirs: dirs}, nil
 	}
 	// The launcher gets its own args, "--", then the agent argv as configured
 	// (agent[0] as written, not the resolved path, so it can name sessions).
 	largv := append(append(append([]string{l.bin}, l.args...), "--"), argv...)
-	return agentRun{path: l.bin, argv: largv, launcher: l.ext}, nil
+	return agentRun{path: l.bin, argv: largv, launcher: l.ext, binDirs: dirs}, nil
+}
+
+// trustedManifest loads extension e's own manifest from its tree at the
+// recorded commit and validates it. It returns the extension's directory in the
+// tree. The ledger under .cg/ext/ is committed in the workspace, so whatever it
+// claims is checked against this manifest before cg runs anything from it.
+func trustedManifest(e *workspace.ExtensionRef) (dir string, m *extension.Manifest, reason string) {
+	sub, err := extension.CleanSubdir(e.Path)
+	if err != nil {
+		return "", nil, fmt.Sprintf("invalid path %q", e.Path)
+	}
+	dir = filepath.Join(extension.SourceRoot(e), sub)
+	m, err = extension.LoadManifest(dir)
+	if err == nil {
+		err = m.Validate()
+	}
+	if err != nil {
+		return "", nil, fmt.Sprintf("can't read its manifest (%v); `cg init` restores the recorded version", err)
+	}
+	return dir, m, ""
+}
+
+// extensionBinDirs returns the bin directories of the installed extensions that
+// contribute a subcommand, for exec to append to PATH. An extension counts only
+// when its own manifest (trustedManifest) declares a subcommand its ledger
+// lists, and that binary exists. Anything else is skipped with a warning; the
+// session starts either way, without that extension's commands outside the
+// workspace.
+func extensionBinDirs(root string, cfg *workspace.Config) []string {
+	if cfg == nil {
+		return nil // a legacy workspace has no extensions
+	}
+	var dirs []string
+	for i := range cfg.Extensions {
+		e := &cfg.Extensions[i]
+		led, err := extension.LoadLedger(root, e.Name)
+		if err != nil || led == nil || len(led.Subcommands) == 0 {
+			continue
+		}
+		warn := func(format string, a ...any) {
+			_, _ = fmt.Fprintf(os.Stderr, "cg start: extension %s: "+format+"; its commands won't be on the session's PATH\n", append([]any{e.Name}, a...)...)
+		}
+		dir, m, reason := trustedManifest(e)
+		if reason != "" {
+			warn("%s", reason)
+			continue
+		}
+		bin := filepath.Join(dir, "bin")
+		ok := false
+		for _, sc := range led.Subcommands {
+			if !slices.Contains(m.Contributes.Subcommands, sc) {
+				continue
+			}
+			if info, serr := os.Stat(filepath.Join(bin, sc.Binary)); serr == nil && !info.IsDir() {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			warn("no subcommand in .cg/ext/%s.json is declared by the extension's manifest with its binary present", e.Name)
+			continue
+		}
+		dirs = append(dirs, bin)
+	}
+	return dirs
+}
+
+// appendPathDirs appends dirs to the PATH value cur, skipping any already in it
+// (a `cg start` inside a session that cg started) or repeated.
+func appendPathDirs(cur string, dirs []string) string {
+	var parts []string
+	if cur != "" {
+		parts = filepath.SplitList(cur)
+	}
+	seen := make(map[string]bool, len(parts)+len(dirs))
+	for _, p := range parts {
+		seen[filepath.Clean(p)] = true
+	}
+	for _, d := range dirs {
+		if c := filepath.Clean(d); !seen[c] {
+			seen[c] = true
+			parts = append(parts, d)
+		}
+	}
+	return strings.Join(parts, string(filepath.ListSeparator))
 }
 
 // launcher is an installed extension's launcher contribution, resolved.
@@ -211,18 +315,9 @@ func findLauncher(root string, cfg *workspace.Config) (*launcher, error) {
 		warn := func(format string, a ...any) {
 			_, _ = fmt.Fprintf(os.Stderr, "cg start: extension %s: "+format+"; starting the agent without it\n", append([]any{e.Name}, a...)...)
 		}
-		sub, err := extension.CleanSubdir(e.Path)
-		if err != nil {
-			warn("invalid path %q", e.Path)
-			continue
-		}
-		dir := filepath.Join(extension.SourceRoot(e), sub)
-		m, err := extension.LoadManifest(dir)
-		if err == nil {
-			err = m.Validate()
-		}
-		if err != nil {
-			warn("can't read its manifest (%v); `cg init` restores the recorded version", err)
+		dir, m, reason := trustedManifest(e)
+		if reason != "" {
+			warn("%s", reason)
 			continue
 		}
 		if len(m.Contributes.Launcher) == 0 || !sameLauncher(led.Launcher[0], m.Contributes.Launcher[0]) {
