@@ -438,7 +438,8 @@ finds the command. Rules:
   has). Entries inside cg's extension store left by an outer `cg start` (a
   `cg start` inside a session cg started) are dropped and replaced by the
   current ones, also when this workspace adds none, so an older tree, or a
-  removed extension, doesn't keep winning; every other entry stays as written, in
+  removed extension, doesn't keep winning (so don't add store directories to
+  `PATH` yourself: `cg start` drops them); every other entry stays as written, in
   its place, quotes included on Windows. An unset `PATH` stays unset.
 - The binary gets no workspace from cg, so a command that needs one (reading
   the workspace's files) still works only inside it.
