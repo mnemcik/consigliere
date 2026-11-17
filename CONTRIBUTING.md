@@ -91,7 +91,7 @@ Each issue gets a GitHub issue type:
 - **Feature:** a new capability, or a change in behaviour.
 - **Task:** work with no user-visible change, such as CI, refactoring, dependencies or missing documentation.
 
-Documentation issues also carry the `documentation` label. In this repository the issue templates set the type and add `needs-triage`, which stays until the maintainer has triaged the issue. cg-extensions has no issue templates, so an issue there with no type set is waiting for triage.
+Documentation issues also carry the `documentation` label. In this repository the issue templates set the type and add `needs-triage`, which stays until the maintainer has triaged the issue. cg-extensions has no issue templates. In either repository, an issue with no type or no priority hasn't been triaged yet.
 
 ### Priority
 
@@ -129,10 +129,10 @@ Both repositories form one queue, worked in this order:
 Pinned issues follow the same rules among themselves. The maintainer changes the order by pinning an issue; GitHub allows up to three pinned issues per repository. An issue that hasn't been triaged has no priority yet and isn't in the queue. To find the next issues across both repositories, search for:
 
 ```text
-is:issue is:open (repo:mnemcik/consigliere OR repo:mnemcik/cg-extensions) field.priority:high
+is:issue is:open (repo:mnemcik/consigliere OR repo:mnemcik/cg-extensions) field.priority:high sort:created-asc
 ```
 
-Then search with `medium`, then `low`.
+Then search with `medium`, then `low`. The results come oldest first; pinned issues, and bugs within a priority, are picked out by eye.
 
 ### Triage
 
