@@ -423,14 +423,20 @@ finds the command. Rules:
 - **Only what the extension's own manifest backs.** As for a launcher, the
   committed ledger isn't trusted alone: a `bin/` is added only when the manifest
   in the tree at the recorded commit validates and declares a subcommand the
-  ledger lists, and its binary exists. Otherwise `cg start` warns, naming the
-  extension, and starts without it.
+  ledger lists, named `bin/cg-<namespace>`, and that binary exists. Otherwise
+  `cg start` warns, naming the extension, and starts without it.
+- **Only a binary named `cg-<namespace>`** counts, because step 2 looks up that
+  name. An extension whose binary is named otherwise gets no `PATH` entry, and
+  its command works only inside the workspace.
+- **The whole `bin/` directory joins `PATH`,** not only the declared binary: any
+  executable in it (a helper script, another `cg-<name>`) can be run by name in
+  the session, and `cg <name>` finds an undeclared `cg-<name>` there. It is the
+  extension's own code, which cg already runs inside the workspace, but keep
+  `bin/` to what the extension means to expose.
 - **Appended, not prepended,** so nothing in an extension's `bin/` shadows a
-  command already on `PATH`; a directory already there isn't added again (a
-  `cg start` inside a session cg started).
-- **Only a binary named `cg-<namespace>`** is found this way, because step 2
-  looks up that name. An extension whose binary is named otherwise works only
-  inside the workspace.
+  command already on `PATH` (it can still provide a name nothing else on `PATH`
+  has); a directory already there isn't added again (a `cg start` inside a
+  session cg started). An unset `PATH` stays unset.
 - The binary gets no workspace from cg, so a command that needs one (reading
   the workspace's files) still works only inside it.
 - Only sessions started with `cg` get the entries; a session started directly
@@ -438,7 +444,9 @@ finds the command. Rules:
   (rather than adding to it) drops them in the agent's shell.
 - The entries point at the trees as they were when the session started; after
   `cg extension update`, runs outside the workspace use the old tree until the
-  next `cg start` (old trees are kept).
+  next `cg start` (old trees are kept), and after `cg extension remove` a
+  running session can still run the removed extension's commands outside the
+  workspace until then.
 
 ## `.cg.json` v1.2 additions
 

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -146,10 +147,11 @@ type agentRun struct {
 // after leaving the workspace, e.g. to run in another repository. Appended, not
 // prepended: nothing in an extension's bin/ can shadow a command the user
 // already has. A launcher passes PATH on to the agent (tmux takes it from the
-// client that creates the session).
+// client that creates the session). An unset PATH stays unset: setting it to
+// just these directories would drop the system's default search path.
 func (r *agentRun) exec() error {
-	if len(r.binDirs) > 0 {
-		if err := os.Setenv("PATH", appendPathDirs(os.Getenv("PATH"), r.binDirs)); err != nil {
+	if cur, set := os.LookupEnv("PATH"); set && len(r.binDirs) > 0 {
+		if err := os.Setenv("PATH", appendPathDirs(cur, r.binDirs)); err != nil {
 			return fmt.Errorf("cg start: set PATH: %w", err)
 		}
 	}
@@ -241,13 +243,20 @@ func extensionBinDirs(root string, cfg *workspace.Config) []string {
 		}
 		dir, m, reason := trustedManifest(e)
 		if reason != "" {
-			warn("%s", reason)
+			// findLauncher has already reported the same reason for an
+			// extension that also has a launcher.
+			if len(led.Launcher) == 0 {
+				warn("%s", reason)
+			}
 			continue
 		}
 		bin := filepath.Join(dir, "bin")
 		ok := false
 		for _, sc := range led.Subcommands {
-			if !slices.Contains(m.Contributes.Subcommands, sc) {
+			// Only a binary named cg-<namespace> is reachable through the PATH
+			// fallback; adding the directory for another name would expose
+			// its files without making the command work.
+			if sc.Binary != "cg-"+sc.Namespace || !slices.Contains(m.Contributes.Subcommands, sc) {
 				continue
 			}
 			if info, serr := os.Stat(filepath.Join(bin, sc.Binary)); serr == nil && !info.IsDir() {
@@ -256,7 +265,7 @@ func extensionBinDirs(root string, cfg *workspace.Config) []string {
 			}
 		}
 		if !ok {
-			warn("no subcommand in .cg/ext/%s.json is declared by the extension's manifest with its binary present", e.Name)
+			warn("no subcommand in .cg/ext/%s.json is declared by the extension's manifest as bin/cg-<namespace> with the binary present", e.Name)
 			continue
 		}
 		dirs = append(dirs, bin)
@@ -273,15 +282,24 @@ func appendPathDirs(cur string, dirs []string) string {
 	}
 	seen := make(map[string]bool, len(parts)+len(dirs))
 	for _, p := range parts {
-		seen[filepath.Clean(p)] = true
+		seen[pathKey(p)] = true
 	}
 	for _, d := range dirs {
-		if c := filepath.Clean(d); !seen[c] {
-			seen[c] = true
+		if k := pathKey(d); !seen[k] {
+			seen[k] = true
 			parts = append(parts, d)
 		}
 	}
 	return strings.Join(parts, string(filepath.ListSeparator))
+}
+
+// pathKey is how appendPathDirs compares PATH entries: cleaned, and without
+// case on Windows, where paths are case-insensitive.
+func pathKey(p string) string {
+	if runtime.GOOS == "windows" {
+		return strings.ToLower(filepath.Clean(p))
+	}
+	return filepath.Clean(p)
 }
 
 // launcher is an installed extension's launcher contribution, resolved.

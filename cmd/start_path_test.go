@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,12 +14,13 @@ import (
 	"github.com/mnemcik/consigliere/internal/workspace"
 )
 
-// installSubcommandExt records extension name in the workspace at ws with
+// installSubcommandExt records the extension live-runs in the workspace at ws with
 // ledgerSubs in its ledger and writes its tree: a manifest declaring
 // manifestSubs and the files in binaries under bin/. It returns the tree's bin
 // directory.
-func installSubcommandExt(t *testing.T, ws, name string, ledgerSubs, manifestSubs []extension.SubcommandContribution, binaries ...string) string {
+func installSubcommandExt(t *testing.T, ws string, ledgerSubs, manifestSubs []extension.SubcommandContribution, binaries ...string) string {
 	t.Helper()
+	const name = "live-runs"
 	ref := &workspace.ExtensionRef{Name: name, Version: "0.1.0", Source: "direct",
 		Repo: "https://example.com/" + name, Commit: "0123456789abcdef0123456789abcdef01234567"}
 	cfg, err := workspace.Detect(ws)
@@ -56,7 +58,10 @@ func installSubcommandExt(t *testing.T, ws, name string, ledgerSubs, manifestSub
 }
 
 // stubPathAtStart replaces the agent exec with one that records PATH as the
-// agent would see it. It sets PATH to a known value for the test.
+// agent would see it. It sets PATH to a known value for the test with
+// t.Setenv, which also restores it: exec sets PATH for real, so any test that
+// runs `cg start` with a subcommand-contributing extension must go through
+// this (or t.Setenv("PATH", …)) to keep PATH from leaking into later tests.
 func stubPathAtStart(t *testing.T, path string) *string {
 	t.Helper()
 	t.Setenv("PATH", path)
@@ -73,7 +78,7 @@ var liveSub = []extension.SubcommandContribution{{Namespace: "live", Binary: "cg
 
 func TestStartAppendsExtensionBinDirsToPath(t *testing.T) {
 	ws, _ := launcherWorkspace(t)
-	bin := installSubcommandExt(t, ws, "live-runs", liveSub, liveSub, "cg-live", "cg-live-tee")
+	bin := installSubcommandExt(t, ws, liveSub, liveSub, "cg-live", "cg-live-tee")
 	orig := t.TempDir()
 	seen := stubPathAtStart(t, orig)
 
@@ -97,10 +102,14 @@ func TestStartLeavesPathAloneForUntrustedSubcommands(t *testing.T) {
 		{"manifest declares none", liveSub, nil, []string{"cg-live"}},
 		{"different binary", liveSub, other, []string{"cg-live", "cg-other"}},
 		{"binary missing", liveSub, liveSub, nil},
+		// Declared, present, but not reachable through the cg-<namespace>
+		// fallback, so its directory must not be exposed.
+		{"binary not named cg-<namespace>", []extension.SubcommandContribution{{Namespace: "live", Binary: "live-runner"}},
+			[]extension.SubcommandContribution{{Namespace: "live", Binary: "live-runner"}}, []string{"live-runner"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ws, _ := launcherWorkspace(t)
-			installSubcommandExt(t, ws, "live-runs", tc.ledger, tc.manifest, tc.binaries...)
+			installSubcommandExt(t, ws, tc.ledger, tc.manifest, tc.binaries...)
 			orig := t.TempDir()
 			seen := stubPathAtStart(t, orig)
 
@@ -131,7 +140,7 @@ func TestStartWithoutSubcommandsLeavesPathAlone(t *testing.T) {
 func TestAppendPathDirs(t *testing.T) {
 	sep := string(filepath.ListSeparator)
 	a, b, c := filepath.Join("x", "a"), filepath.Join("x", "b"), filepath.Join("x", "c")
-	for _, tc := range []struct {
+	cases := []struct {
 		name, cur string
 		dirs      []string
 		want      string
@@ -141,7 +150,15 @@ func TestAppendPathDirs(t *testing.T) {
 		{"already there (cg start inside a cg session)", a + sep + b, []string{b}, a + sep + b},
 		{"unclean duplicate", a + sep + b + string(filepath.Separator), []string{b}, a + sep + b + string(filepath.Separator)},
 		{"repeated in dirs", a, []string{b, c, b}, a + sep + b + sep + c},
-	} {
+	}
+	if runtime.GOOS == "windows" {
+		cases = append(cases, struct {
+			name, cur string
+			dirs      []string
+			want      string
+		}{"case differs (Windows)", `C:\X\Bin`, []string{`c:\x\bin`}, `C:\X\Bin`})
+	}
+	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := appendPathDirs(tc.cur, tc.dirs); got != tc.want {
 				t.Errorf("appendPathDirs(%q, %q) = %q, want %q", tc.cur, tc.dirs, got, tc.want)
@@ -157,7 +174,7 @@ func TestExtensionCommandResolvesOutsideWorkspaceAfterStart(t *testing.T) {
 		t.Skip("extension subcommands don't run on Windows yet (#239)")
 	}
 	ws, _ := launcherWorkspace(t)
-	bin := installSubcommandExt(t, ws, "live-runs", liveSub, liveSub, "cg-live")
+	bin := installSubcommandExt(t, ws, liveSub, liveSub, "cg-live")
 	stubPathAtStart(t, t.TempDir())
 	if err := startCmd.RunE(startCmd, nil); err != nil {
 		t.Fatal(err)
@@ -190,4 +207,80 @@ func TestUnknownCommandHintOnlyOutsideWorkspace(t *testing.T) {
 	if !strings.Contains(extensionCommandHint, "`cg`") {
 		t.Error("hint should name `cg` as the way to start a session")
 	}
+}
+
+// An unset PATH must stay unset: setting it to just the extension dirs would
+// drop the system's default search path.
+func TestStartLeavesUnsetPathUnset(t *testing.T) {
+	ws, _ := launcherWorkspace(t)
+	installSubcommandExt(t, ws, liveSub, liveSub, "cg-live")
+	t.Setenv("PATH", "")
+	if err := os.Unsetenv("PATH"); err != nil {
+		t.Fatal(err)
+	}
+	newStubStart(t, true)
+	var set bool
+	runAgent = func(string, []string) error {
+		_, set = os.LookupEnv("PATH")
+		return nil
+	}
+	if err := startCmd.RunE(startCmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	if set {
+		t.Error("PATH was unset and must stay unset")
+	}
+}
+
+// captureStderr runs f with os.Stderr redirected and returns what it wrote.
+func captureStderr(t *testing.T, f func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stderr
+	os.Stderr = w
+	defer func() { os.Stderr = old }()
+	f()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
+// An extension with both a launcher and a subcommand whose tree is missing (a
+// fresh clone before `cg init`) is reported once, not once per contribution.
+func TestMissingTreeWarnsOnce(t *testing.T) {
+	ws, exe := launcherWorkspace(t)
+	ref := &workspace.ExtensionRef{Name: "both", Version: "0.1.0", Source: "direct",
+		Repo: "https://example.com/both", Commit: "0123456789abcdef0123456789abcdef01234567"}
+	cfg, err := workspace.Detect(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.UpsertExtension(ref)
+	if err := cfg.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	led := &extension.Ledger{Name: "both", Version: "0.1.0", Subcommands: liveSub,
+		Launcher: []extension.LauncherContribution{{Binary: "cg-tmux"}}}
+	if err := led.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	stubPathAtStart(t, t.TempDir())
+
+	var runErr error
+	stderr := captureStderr(t, func() { runErr = startCmd.RunE(startCmd, nil) })
+	if runErr != nil {
+		t.Fatal(runErr)
+	}
+	if n := strings.Count(stderr, "can't read its manifest"); n != 1 {
+		t.Errorf("want the missing tree reported once, got %d times:\n%s", n, stderr)
+	}
+	_ = exe
 }
