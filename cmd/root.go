@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"os"
+	"strings"
 
 	"github.com/mnemcik/consigliere/internal/autoupdate"
 	"github.com/spf13/cobra"
@@ -89,5 +90,24 @@ func Execute() error {
 		return err
 	}
 	rootCmd.SetArgs(args)
-	return rootCmd.Execute()
+	err = rootCmd.Execute()
+	if hint := unknownCommandHint(err, workspaceRootForDispatch()); hint != "" {
+		rootCmd.PrintErrln(hint)
+	}
+	return err
+}
+
+// extensionCommandHint follows cobra's "unknown command" error outside a
+// workspace: the verb may be an extension's command, which resolves only inside
+// the workspace that installed it or in a session started there with `cg`.
+const extensionCommandHint = "If it is an extension's command: those work inside the workspace that installed them, " +
+	"and in a session started there with `cg` (which puts them on PATH)."
+
+// unknownCommandHint returns extensionCommandHint when err is cobra's unknown
+// command error and cg runs outside any workspace (root ""), "" otherwise.
+func unknownCommandHint(err error, root string) string {
+	if err == nil || root != "" || !strings.HasPrefix(err.Error(), "unknown command ") {
+		return ""
+	}
+	return extensionCommandHint
 }

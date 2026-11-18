@@ -408,8 +408,49 @@ known built-in subcommand, the resolver looks for an executable named
 2. on `$PATH`.
 
 If found, `cg` `exec`s it with the remaining arguments and forwards the exit
-code. If not found, the normal "unknown command" cobra error is shown. Built-in
+code. If not found, the normal "unknown command" cobra error is shown; outside a
+workspace it adds a line saying where extension commands work. Built-in
 subcommands always win over external ones (no shadowing the framework).
+
+**Outside the workspace.** Step 1 needs the current directory to be inside the
+workspace. So that a session can still run its workspace's extension commands
+after it moves to another directory (for example a headless run in another
+repository), `cg start` (and bare `cg`) appends to `PATH`, before it starts the
+agent or launcher, the `bin/` directory of each installed extension that
+contributes a subcommand. Every process of the session inherits it, and step 2
+finds the command. Rules:
+
+- **Only what the extension's own manifest backs.** As for a launcher, the
+  committed ledger isn't trusted alone: a `bin/` is added only when the manifest
+  in the tree at the recorded commit validates and declares a subcommand the
+  ledger lists, named `bin/cg-<namespace>`, and that binary exists. Otherwise
+  `cg start` warns, naming the extension, and starts without it.
+- **Only a binary named `cg-<namespace>`** counts, because step 2 looks up that
+  name. An extension whose binary is named otherwise gets no `PATH` entry, and
+  its command works only inside the workspace.
+- **The whole `bin/` directory joins `PATH`,** not only the declared binary: any
+  executable in it (a helper script, another `cg-<name>`) can be run by name in
+  the session, and `cg <name>` finds an undeclared `cg-<name>` there. It is the
+  extension's own code, which cg already runs inside the workspace, but keep
+  `bin/` to what the extension means to expose.
+- **Appended, not prepended,** so nothing in an extension's `bin/` shadows a
+  command already on `PATH` (it can still provide a name nothing else on `PATH`
+  has). Entries inside cg's extension store left by an outer `cg start` (a
+  `cg start` inside a session cg started) are dropped and replaced by the
+  current ones, also when this workspace adds none, so an older tree, or a
+  removed extension, doesn't keep winning (so don't add store directories to
+  `PATH` yourself: `cg start` drops them); every other entry stays as written, in
+  its place, quotes included on Windows. An unset `PATH` stays unset.
+- The binary gets no workspace from cg, so a command that needs one (reading
+  the workspace's files) still works only inside it.
+- Only sessions started with `cg` get the entries; a session started directly
+  with the agent doesn't. A shell startup file that resets `PATH` outright
+  (rather than adding to it) drops them in the agent's shell.
+- The entries point at the trees as they were when the session started; after
+  `cg extension update`, runs outside the workspace use the old tree until the
+  next `cg start` (old trees are kept), and after `cg extension remove` a
+  running session can still run the removed extension's commands outside the
+  workspace until then.
 
 ## `.cg.json` v1.2 additions
 
