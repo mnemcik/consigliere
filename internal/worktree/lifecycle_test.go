@@ -13,7 +13,7 @@ import (
 // TestFullCycle exercises the whole worktree lifecycle end to end —
 // create → commit → land → remove — and asserts the commit reaches the landing
 // branch and the worktree/branch are gone afterwards. This is the integration
-// counterpart of the personal-workspace test-land-worktree-commit.sh smoke test.
+// counterpart of an earlier workspace's test-land-worktree-commit.sh smoke test.
 func TestFullCycle(t *testing.T) {
 	ctx, root := setupWorkspace(t)
 	var log bytes.Buffer

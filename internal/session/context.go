@@ -1,5 +1,5 @@
 // Package session implements the Claude Code hook bodies promoted from the
-// personal-workspace shell hooks: the session-start gate, the dirty-flag
+// earlier workspace shell hooks: the session-start gate, the dirty-flag
 // marker, the pull-latest-main refresh, and the status-line renderer. Each is a
 // deterministic, cross-platform port that reads the hook's stdin JSON and emits
 // the hook's expected stdout, replacing jq/awk/stat/timeout shell plumbing.

@@ -17,7 +17,7 @@ func TestRepoKeyIsSafeAndDistinct(t *testing.T) {
 		"https://github.com/mnemcik/cg-extensions",
 		"https://github.com/mnemcik/cg-extensions.git",
 		"git@github.com:acme/cg-extensions.git",
-		"ssh://git@github-work/mnemcik-visma/cg-extensions.git",
+		"ssh://git@github-work/example-org/cg-extensions.git",
 		"/tmp/../../etc",
 		"C:\\Users\\x\\ext",
 		"..",

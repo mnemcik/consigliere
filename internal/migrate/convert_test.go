@@ -193,7 +193,7 @@ func TestConvertValueShapes(t *testing.T) {
 		"- **Status:** **done (2026-06-13)** — released in v1.3.0\n" +
 		"- **Authority:** mirror — https://example.com/pricing\n" +
 		"- **Verified:** 2026-09-01\n" +
-		"- **Areas:** `vips-core` (primary), `devops`\n" +
+		"- **Areas:** `core-platform` (primary), `devops`\n" +
 		"- **Repository:** `~/source/x` <!-- local clone -->\n" +
 		"- **Origin:** N/A (spun off from another project)\n" +
 		"- **Color:** {color}\n" +
@@ -205,8 +205,8 @@ func TestConvertValueShapes(t *testing.T) {
 		"authority":      "mirror",
 		"authority_note": "https://example.com/pricing",
 		"verified":       day("2026-09-01"),
-		"areas":          []any{"vips-core", "devops"},
-		"areas_note":     "`vips-core` (primary), `devops`",
+		"areas":          []any{"core-platform", "devops"},
+		"areas_note":     "`core-platform` (primary), `devops`",
 		"repository":     "`~/source/x`",
 		"origin":         "N/A (spun off from another project)",
 		"version":        "1.10", // a string, not the float 1.1

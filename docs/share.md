@@ -36,17 +36,17 @@ published is read from each share repo, never stored in the workspace.
   "owner": "Ada Owner",
   "denylist": ["acme corp", "project-bluebird"],
   "audiences": {
-    "prdcfg-team": {
+    "team-a": {
       "repo": "git@github.com:<org>/<share-repo>.git",
       "branch": "main",
       "authorName": "Ada Owner",
       "authorEmail": "ada@example.com",
       "projects": {
-        "product-config-api": {
-          "include": ["value-serialization-analysis.md"],
+        "orders-api": {
+          "include": ["design-notes.md"],
           "acknowledged": [{ "rule": "local-path", "hash": "6c54c54b471a3e54" }]
         },
-        "product-config-ui": {}
+        "orders-ui": {}
       }
     }
   }

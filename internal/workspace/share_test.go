@@ -17,7 +17,7 @@ func TestShareConfigRoundTrips(t *testing.T) {
 			Owner:    "Ada Owner",
 			Denylist: []string{"acme"},
 			Audiences: map[string]ShareAudience{
-				"prdcfg-team": {
+				"team-a": {
 					Repo:        "git@github.com:org/share.git",
 					AuthorEmail: "ada@example.com",
 					Projects: map[string]ShareProject{
@@ -37,7 +37,7 @@ func TestShareConfigRoundTrips(t *testing.T) {
 	if !reflect.DeepEqual(got.Share, cfg.Share) {
 		t.Errorf("share block did not round-trip:\ngot  %+v\nwant %+v", got.Share, cfg.Share)
 	}
-	if got.Share.Audiences["prdcfg-team"].BranchOrDefault() != DefaultShareBranch {
+	if got.Share.Audiences["team-a"].BranchOrDefault() != DefaultShareBranch {
 		t.Errorf("empty branch must default to %s", DefaultShareBranch)
 	}
 }
