@@ -46,12 +46,12 @@ Scenarios: S1–S15, U4, U5, X6 (docs part).
 Scenarios: S16–S21, S34–S36, U1–U3, U6.
 
 - `cmd/external.go`: typed words (Q7); for each consulted root (only the cwd root until M3), build its table from
-  the ledgers, verifying each entry with the M1 helper; the first root with any entry in the typed namespace (a `commands` entry, verified or not, or a
-  legacy `subcommands` entry) decides it (Q9); there, a legacy entry stops dispatch first (S20); otherwise the
-  longest word-prefix match over all its entries, then verification; an unverified entry for the typed command stops dispatch (S18); duplicates stop it (S19); an old
-  `subcommands` ledger entry for the namespace stops it with the update hint (S20, read from the raw ledger JSON);
-  no match in the deciding root → usage error listing its commands (S17); an undeclared namespace
-  → `PATH` fallback `cg-<namespace>`.
+  the ledgers, verifying each entry with the M1 helper. The first root with any entry in the typed namespace (a
+  `commands` entry, verified or not, or a legacy `subcommands` entry read from the raw ledger JSON) decides it
+  (Q9). In the deciding root, in this order: a legacy entry stops dispatch with the update hint (S20); duplicates
+  stop it (S19); the longest word-prefix match over all its `commands` entries is chosen, and stops dispatch if it
+  isn't verified (S18); no match → usage error listing its commands (S17). An undeclared namespace → `PATH`
+  fallback `cg-<namespace>`.
 - The binary still receives the arguments after the namespace word (Q4).
 - Unknown-command hint (S36), carried over from #251 and reworded.
 
@@ -83,8 +83,12 @@ Scenarios: S37–S42, S40b.
 - State file location: `gitx.CommonRoot` of the session root, as `sessionRoots` does.
 - `cmd/worktree.go`: `create` records it when a session ID resolves; `remove` clears it when it matches.
 - `cmd/session.go`: `set-context --worktree <path>`, refused unless the path is in the repo's worktree list.
-- `cmd/external.go`: S40, re-checking the recorded path against the worktree list; S40b, detecting a linked-worktree
-  session root from `--git-dir` vs `--git-common-dir` (both with the cleaned-env helper, no session ID needed).
+- `cmd/external.go`: S40, re-checking the recorded path against the worktree list; S40b, the linked-worktree test
+  exactly as the spec's S40b states it (one cleaned-env `git rev-parse --path-format=absolute --show-toplevel
+  --git-dir --git-common-dir`; top level equals the session root; git dir differs from common dir; both compared
+  after `filepath.EvalSymlinks`; any failure → not linked; no session ID needed). Tests: a main checkout → unset;
+  a session root that is a subdirectory of its repo → unset; a symlinked linked-worktree root → set; a stale
+  recorded worktree with a linked-worktree session root → set to the session root.
 - Check `cg active` and the status line with a state file holding only `worktree` (S42); adjust if either lists it.
 - Docs: session state and the writer contract.
 

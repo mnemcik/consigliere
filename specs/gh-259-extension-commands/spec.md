@@ -161,8 +161,8 @@ The session state file is `<badge root>/.claude/session-context/<id>.json`, wher
 - **S40** WHEN the session root serves a command for a current directory outside the session root and its
   worktrees (S24/S26), the session ID is valid, and the recorded worktree is still listed in the session repo's
   worktree list THEN `CG_SESSION_WORKTREE` is set to it (Q2).
-- **S40b** WHEN the session root serves such a command, no valid worktree is recorded (none, no session ID, or a
-  recorded path no longer listed), and the session root is itself a linked worktree THEN `CG_SESSION_WORKTREE` is
+- **S40b** WHEN the session root serves such a command, no valid worktree is recorded (none; no session ID, or one
+  failing `ValidSessionID`; a state file that can't be read; or a recorded path no longer listed), and the session root is itself a linked worktree THEN `CG_SESSION_WORKTREE` is
   set to the session root (Q10). "Linked worktree" is decided in the session root with the cleaned environment:
   `git rev-parse --path-format=absolute --show-toplevel --git-dir --git-common-dir`; the top level must equal the
   session root and the git dir must differ from the common dir, both compared after `filepath.EvalSymlinks`. Any
