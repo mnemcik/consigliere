@@ -1,7 +1,7 @@
 # Spec — extension commands declared in manifests; the session carries its workspace (#259)
 
 Implements the decisions in [analysis.md](analysis.md#decision). Each scenario below is one behaviour and maps to
-at least one test; `plan.md` names the milestone that delivers it. Q1–Q8 at the end are the choices this spec makes
+at least one test; `plan.md` names the milestone that delivers it. Q1–Q9 at the end are the choices this spec makes
 beyond the decision, for the owner's agreement.
 
 ## Terms
@@ -46,7 +46,8 @@ the namespace word (Q4), so `cg live run --until-pane x` runs `bin/cg-live run -
 - **S3** WHEN one manifest declares the same command twice THEN validation fails, naming both indexes.
 - **S4** WHEN a manifest contains `contributes.subcommands` (any schema version) THEN validation fails, saying the
   form was removed in cg 2.0 and naming `commands` as its replacement. For an installed extension (`cg init` on an
-  old pin, `cg extension update`) it also names `cg extension update <name>`.
+  old pin) it also names `cg extension update <name>`; when the manifest refused is the one `cg extension update`
+  just fetched, it says the extension needs a release that declares `commands`.
 - **S5** WHEN one manifest declares both `shop` and `shop add` THEN it validates: nesting inside one extension is
   allowed, and dispatch picks the longest match (S16).
 - **S6** WHEN a manifest declares `commands` with `"manifest": 1` THEN validation fails, asking for `"manifest": 2`;
@@ -80,12 +81,15 @@ extension installed in the workspace (from their pinned manifests, not their led
 
 ### Dispatch: which program runs
 
-The first consulted root that declares any command in the typed namespace **decides** that namespace; later roots
-and the `PATH` fallback are not consulted for it (Q6, Q9).
+Roots are checked in the consulted order. The first root whose ledgers have **any** entry in the typed namespace (a
+`commands` entry, verified or not, or a legacy `subcommands` entry) **decides** that namespace; later roots and the
+`PATH` fallback are not consulted for it (Q6, Q9).
 
-- **S16** WHEN the deciding root has a verified command that the typed words start with THEN the longest such
-  command wins and its binary runs.
-- **S17** WHEN the deciding root has no such command (`cg shop` alone, or `cg shop frobnicate`) THEN cg exits with a
+- **S16** WHEN the typed words start with one or more of the deciding root's `commands` entries THEN the longest
+  such entry wins (chosen among all its entries, before verification) and, if it is verified, its binary runs;
+  if it isn't, S18 applies. A shorter verified entry never stands in for an unverified longer one.
+- **S17** WHEN the deciding root has no such entry (with only `pr merge` declared: `cg pr` alone, or `cg pr watch`)
+  THEN cg exits with a
   usage error listing that root's declared commands in the namespace; a later root that declares the typed command
   is not consulted, and neither is the `PATH` fallback.
 - **S18** WHEN a root's ledger entry for the typed command isn't verified (the command is missing from the pinned
@@ -154,9 +158,11 @@ The session state file is `<badge root>/.claude/session-context/<id>.json`, wher
 - **S39** WHEN `cg worktree remove` removes the recorded worktree THEN the record is cleared.
 - **S40** WHEN the session root serves a command for a current directory outside the session root and its
   worktrees (S24/S26), the session ID is valid, and the recorded worktree is still listed in the session repo's
-  worktree list THEN `CG_SESSION_WORKTREE` is set to it (Q2). When no worktree is recorded but the session root is
-  itself a linked worktree (the session was started in one), it is set to the session root. In every other case it
-  is unset.
+  worktree list THEN `CG_SESSION_WORKTREE` is set to it (Q2).
+- **S40b** WHEN the session root serves such a command and the session root is itself a linked worktree (the session
+  was started in one: its `git rev-parse --git-dir` differs from `--git-common-dir`, run with the cleaned
+  environment) THEN `CG_SESSION_WORKTREE` is set to the session root when nothing is recorded, whether or not a
+  session ID resolves. In every other case than S40/S40b it is unset.
 - **S41** WHEN the session ID fails `ValidSessionID` (for example `../../x`) THEN no state file is read or written.
 - **S42** WHEN a state file has only `worktree` (no area or project) THEN the badge and `cg active` show the same as
   for a file without it.

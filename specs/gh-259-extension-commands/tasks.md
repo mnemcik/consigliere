@@ -30,9 +30,9 @@
 
 ## M4 — the session records its worktree
 
-- [ ] Failing tests for S37–S42
+- [ ] Failing tests for S37–S42, S40b
 - [ ] State key, `worktree create/remove`, `set-context --worktree`, `CG_SESSION_WORKTREE`
-- [ ] Mutation checks for S38, S40, S41
+- [ ] Mutation checks for S38, S40, S40b, S41
 - [ ] Docs; `make check`; independent review
 
 ## PR

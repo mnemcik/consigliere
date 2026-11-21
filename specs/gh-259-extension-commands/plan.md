@@ -7,7 +7,7 @@ carry their workspace`. The description closes #259 and #248. The squash body be
 extension, including `live-runs`, `shopping`, and `tmux` for the variable in tmux sessions).
 
 Every new test must fail before its change. Guard tests (refusals: S4, S6–S12, S17–S20, S25, S27–S29, S31, S35, S38,
-S40, S41) also get a mutation check: remove the guard, confirm the test fails, restore. `make check` passes at every
+S40, S40b, S41) also get a mutation check: remove the guard, confirm the test fails, restore. `make check` passes at every
 milestone commit. Windows rules from CONTRIBUTING apply: dispatch tests that exec binaries skip on Windows with a
 reason (#239 leaves extension commands unsupported there); path comparisons use `filepath.EvalSymlinks` and don't
 depend on case.
@@ -72,14 +72,15 @@ Scenarios: S22–S33.
 
 ## M4 — the session records its worktree
 
-Scenarios: S37–S42.
+Scenarios: S37–S42, S40b.
 
 - `internal/session/context.go`: a `worktree` key, written through the existing map-preserving writer;
   `ReadContext` and the writer refuse an invalid session ID themselves (S41), not only their callers.
 - State file location: `gitx.CommonRoot` of the session root, as `sessionRoots` does.
 - `cmd/worktree.go`: `create` records it when a session ID resolves; `remove` clears it when it matches.
 - `cmd/session.go`: `set-context --worktree <path>`, refused unless the path is in the repo's worktree list.
-- `cmd/external.go`: S40, re-checking the recorded path against the worktree list (same cleaned-env helper).
+- `cmd/external.go`: S40, re-checking the recorded path against the worktree list; S40b, detecting a linked-worktree
+  session root from `--git-dir` vs `--git-common-dir` (both with the cleaned-env helper, no session ID needed).
 - Check `cg active` and the status line with a state file holding only `worktree` (S42); adjust if either lists it.
 - Docs: session state and the writer contract.
 
