@@ -46,8 +46,9 @@ Scenarios: S1–S15, U4, U5, X6 (docs part).
 Scenarios: S16–S21, S34–S36, U1–U3, U6.
 
 - `cmd/external.go`: typed words (Q7); for each consulted root (only the cwd root until M3), build its table from
-  the ledgers, verifying each entry with the M1 helper; the first root declaring the typed namespace decides it (Q9),
-  longest word-prefix match there; an unverified entry for the typed command stops dispatch (S18); duplicates stop it (S19); an old
+  the ledgers, verifying each entry with the M1 helper; the first root with any entry in the typed namespace (a `commands` entry, verified or not, or a
+  legacy `subcommands` entry) decides it (Q9); there, a legacy entry stops dispatch first (S20); otherwise the
+  longest word-prefix match over all its entries, then verification; an unverified entry for the typed command stops dispatch (S18); duplicates stop it (S19); an old
   `subcommands` ledger entry for the namespace stops it with the update hint (S20, read from the raw ledger JSON);
   no match in the deciding root → usage error listing its commands (S17); an undeclared namespace
   → `PATH` fallback `cg-<namespace>`.
@@ -61,6 +62,9 @@ Scenarios: S22–S33.
 - `cmd/start.go` / `start_exec_*`: set `CG_WORKSPACE` to the absolute resolved root in the environment of the agent
   or launcher (S33).
 - `cmd/external.go`: consulted roots per S22–S26; `CG_WORKSPACE` ignored when relative or invalid (S27).
+- Cross-root tests: a session root whose `shop` entry is unverified (S18) or legacy (S20), or that declares only
+  `shop add` (S17), blocks a clone's verified `shop …` typed from inside the clone (guard tests, with mutation
+  checks).
 - Worktree test: a new `gitx` helper that runs git with a **cleaned** environment (every variable from
   `git rev-parse --local-env-vars` removed; `RunEnv` can only add). In the session root, require
   `git rev-parse --show-toplevel` to equal the session root, then read `git worktree list --porcelain`; compare

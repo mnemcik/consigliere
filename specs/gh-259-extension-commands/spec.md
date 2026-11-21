@@ -99,8 +99,10 @@ Roots are checked in the consulted order. The first root whose ledgers have **an
   S17/S34.
 - **S19** WHEN two ledgers in one root declare the same command (a hand-edited or pulled `.cg.json`) THEN dispatch
   stops with a usage error naming both, instead of running the first.
-- **S20** WHEN a root's ledger still records the removed `subcommands` form for the typed namespace THEN dispatch
-  stops with an error naming `cg extension update <name>` (the upgrade path from cg 1.x).
+- **S20** WHEN the deciding root's ledgers still record the removed `subcommands` form for the typed namespace (in
+  any extension) THEN dispatch stops with an error naming `cg extension update <name>` (the upgrade path from cg
+  1.x). This check comes before S16 and S17, so a matching `commands` entry of another extension doesn't run
+  either.
 
 ### Dispatch: which workspace serves
 
@@ -159,10 +161,12 @@ The session state file is `<badge root>/.claude/session-context/<id>.json`, wher
 - **S40** WHEN the session root serves a command for a current directory outside the session root and its
   worktrees (S24/S26), the session ID is valid, and the recorded worktree is still listed in the session repo's
   worktree list THEN `CG_SESSION_WORKTREE` is set to it (Q2).
-- **S40b** WHEN the session root serves such a command and the session root is itself a linked worktree (the session
-  was started in one: its `git rev-parse --git-dir` differs from `--git-common-dir`, run with the cleaned
-  environment) THEN `CG_SESSION_WORKTREE` is set to the session root when nothing is recorded, whether or not a
-  session ID resolves. In every other case than S40/S40b it is unset.
+- **S40b** WHEN the session root serves such a command, no valid worktree is recorded (none, no session ID, or a
+  recorded path no longer listed), and the session root is itself a linked worktree THEN `CG_SESSION_WORKTREE` is
+  set to the session root (Q10). "Linked worktree" is decided in the session root with the cleaned environment:
+  `git rev-parse --path-format=absolute --show-toplevel --git-dir --git-common-dir`; the top level must equal the
+  session root and the git dir must differ from the common dir, both compared after `filepath.EvalSymlinks`. Any
+  failure or mismatch means "not a linked worktree". In every other case than S40/S40b it is unset.
 - **S41** WHEN the session ID fails `ValidSessionID` (for example `../../x`) THEN no state file is read or written.
 - **S42** WHEN a state file has only `worktree` (no area or project) THEN the badge and `cg active` show the same as
   for a file without it.
@@ -235,3 +239,9 @@ The session state file is `<badge root>/.claude/session-context/<id>.json`, wher
   (decision 4: a clone mustn't choose the code behind the owner's grants). *Cost:* two workspaces can't split one
   namespace across them (session `pr merge`, clone `pr watch`); within one workspace they still can (S9).
   *Alternative:* decide per full command, as decision 4's "when it provides the command" literally reads.
+- **Q10 — a session started in a linked worktree writes there without a record** (S40b). Decision 5 says writers
+  find the worktree from the session's state file; S40b adds a second source that needs no state file and no
+  session ID, because the session root (`CG_WORKSPACE`, set by `cg start`) is then already the worktree, and
+  decision 5's aim (never write into the main checkout) holds. *Alternative:* refuse unless a worktree is recorded,
+  as decision 5 literally reads; sessions started in a worktree by agents without a session ID then can't write
+  from external directories.

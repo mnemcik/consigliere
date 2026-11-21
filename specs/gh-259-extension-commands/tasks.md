@@ -25,7 +25,7 @@
 
 - [ ] Failing tests for S22–S33
 - [ ] `CG_WORKSPACE` at start; precedence; worktree test; `CG_EXTENSION_WORKSPACE`
-- [ ] Mutation checks for S25, S27–S29, S31
+- [ ] Mutation checks for S25, S27–S29, S31, and the cross-root S17/S18/S20 tests
 - [ ] Docs; `make check`; independent review
 
 ## M4 — the session records its worktree
