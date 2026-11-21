@@ -3,7 +3,7 @@
 ## Before code
 
 - [x] Analysis, spec, plan on the branch
-- [ ] Independent review of spec + plan (L tier), clean round
+- [x] Independent review of spec + plan (L tier): 6 rounds, round 6 clean
 - [ ] Agreement comment on #259 (spec commit + hashes of `spec.md` and `plan.md`)
 
 ## M1 — manifest `commands` and install-time ownership

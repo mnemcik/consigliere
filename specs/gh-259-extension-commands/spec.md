@@ -97,8 +97,9 @@ Roots are checked in the consulted order. The first root whose ledgers have **an
   THEN dispatch **stops** with an error naming the extension and `cg init` / `cg extension update <name>` as the
   fix. It does not fall through to a later root or the `PATH` fallback, and the namespace counts as declared for
   S17/S34.
-- **S19** WHEN two ledgers in one root declare the same command (a hand-edited or pulled `.cg.json`) THEN dispatch
-  stops with a usage error naming both, instead of running the first.
+- **S19** WHEN two ledgers in the deciding root declare the same command anywhere in the typed namespace (a
+  hand-edited or pulled `.cg.json`), whether or not it is the command the typed words match, THEN dispatch stops
+  with a usage error naming both, instead of running the first.
 - **S20** WHEN the deciding root's ledgers still record the removed `subcommands` form for the typed namespace (in
   any extension) THEN dispatch stops with an error naming `cg extension update <name>` (the upgrade path from cg
   1.x). This check comes before S16 and S17, so a matching `commands` entry of another extension doesn't run
