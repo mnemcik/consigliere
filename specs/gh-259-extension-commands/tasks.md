@@ -8,31 +8,31 @@
 
 ## M1 — manifest `commands` and install-time ownership
 
-- [ ] Failing tests for S1–S15
+- [ ] Failing tests for S1–S14
 - [ ] Manifest v2, ledger, `CheckCommands`, pinned-manifest helper, install/update/init wiring, `extension list`, interim dispatch
-- [ ] Mutation checks for S4, S6–S12
+- [ ] Mutation checks for S5–S11
 - [ ] Docs
 - [ ] `make check`; independent review
 
 ## M2 — dispatch by command table
 
-- [ ] Failing tests for S16–S21, S34–S36
+- [ ] Failing tests for S15–S19, S32–S34
 - [ ] Table, per-root matching, stop-on-unverified, errors, hint
-- [ ] Mutation checks for S17–S20, S35
+- [ ] Mutation checks for S16–S18, S33
 - [ ] `make check`; independent review
 
 ## M3 — the session carries its workspace
 
-- [ ] Failing tests for S22–S33
+- [ ] Failing tests for S20–S31
 - [ ] `CG_WORKSPACE` at start; precedence; worktree test; `CG_EXTENSION_WORKSPACE`
-- [ ] Mutation checks for S25, S27–S29, S31, and the cross-root S17/S18/S20 tests
+- [ ] Mutation checks for S23, S25–S27, S29, and the cross-root S16/S17 tests
 - [ ] Docs; `make check`; independent review
 
 ## M4 — the session records its worktree
 
-- [ ] Failing tests for S37–S42, S40b
+- [ ] Failing tests for S35–S40, S38b
 - [ ] State key, `worktree create/remove`, `set-context --worktree`, `CG_SESSION_WORKTREE`
-- [ ] Mutation checks for S38, S40, S40b, S41
+- [ ] Mutation checks for S36, S38, S38b, S39
 - [ ] Docs; `make check`; independent review
 
 ## PR
