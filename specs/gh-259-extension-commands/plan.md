@@ -3,18 +3,18 @@
 One PR on `gh-259-extension-commands`, one commit (or a small group) per milestone, independent review after each
 milestone and a final round over the whole PR. Title: `feat!: extension commands declared in manifests; sessions
 carry their workspace`. The description closes #259 and #248. The squash body becomes the changelog entry, so its
-`BREAKING CHANGE:` footer carries the migration: update cg, then `cg extension update live-runs shopping` (and
-`tmux` for the variable in tmux sessions).
+`BREAKING CHANGE:` footer carries the migration: update cg, then `cg extension update` (updates every installed
+extension, including `live-runs`, `shopping`, and `tmux` for the variable in tmux sessions).
 
-Every new test must fail before its change. Guard tests (refusals: S4, S6–S12, S18–S20, S25, S27–S29, S31, S35, S38,
-S41) also get a mutation check: remove the guard, confirm the test fails, restore. `make check` passes at every
+Every new test must fail before its change. Guard tests (refusals: S4, S6–S12, S17–S20, S25, S27–S29, S31, S35, S38,
+S40, S41) also get a mutation check: remove the guard, confirm the test fails, restore. `make check` passes at every
 milestone commit. Windows rules from CONTRIBUTING apply: dispatch tests that exec binaries skip on Windows with a
 reason (#239 leaves extension commands unsupported there); path comparisons use `filepath.EvalSymlinks` and don't
 depend on case.
 
 ## M1 — manifest `commands` and install-time ownership
 
-Scenarios: S1–S15, U5, X6 (docs part).
+Scenarios: S1–S15, U4, U5, X6 (docs part).
 
 - `internal/extension/manifest.go`: `SchemaVersion` 2, v1 still accepted without `commands`/`subcommands` (S6);
   `CommandContribution{Command, Binary}`; `Contributions.Commands`; remove `SubcommandContribution` and
@@ -33,7 +33,7 @@ Scenarios: S1–S15, U5, X6 (docs part).
     (S11);
   - `cg init` (`reinstallMissingExtensions`): load the manifests of the extensions to re-install and of those
     present, check the whole set, then apply (S12).
-  - Built-in list from `rootCmd.Commands()` (names and aliases, hidden ones excluded) plus `help`, `completion`,
+  - Built-in list from `rootCmd.Commands()` (names and aliases, hidden ones included, since they resolve too) plus `help`, `completion`,
     `__complete`.
   - `cg extension list`: commands in text and `--json`; built-in shadowing flagged.
 - `cmd/external.go`, interim: read `ledger.Commands` and match on the namespace word only (today's behaviour on the
@@ -46,17 +46,17 @@ Scenarios: S1–S15, U5, X6 (docs part).
 Scenarios: S16–S21, S34–S36, U1–U3, U6.
 
 - `cmd/external.go`: typed words (Q7); for each consulted root (only the cwd root until M3), build its table from
-  the ledgers, verifying each entry with the M1 helper; longest word-prefix match per root, first root with a match
-  wins; an unverified entry for the typed command stops dispatch (S18); duplicates stop it (S19); an old
+  the ledgers, verifying each entry with the M1 helper; the first root declaring the typed namespace decides it (Q9),
+  longest word-prefix match there; an unverified entry for the typed command stops dispatch (S18); duplicates stop it (S19); an old
   `subcommands` ledger entry for the namespace stops it with the update hint (S20, read from the raw ledger JSON);
-  a declared namespace with no match in any root → usage error listing the commands (S17); an undeclared namespace
+  no match in the deciding root → usage error listing its commands (S17); an undeclared namespace
   → `PATH` fallback `cg-<namespace>`.
 - The binary still receives the arguments after the namespace word (Q4).
 - Unknown-command hint (S36), carried over from #251 and reworded.
 
 ## M3 — the session carries its workspace
 
-Scenarios: S22–S33, U3.
+Scenarios: S22–S33.
 
 - `cmd/start.go` / `start_exec_*`: set `CG_WORKSPACE` to the absolute resolved root in the environment of the agent
   or launcher (S33).

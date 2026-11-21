@@ -45,7 +45,8 @@ the namespace word (Q4), so `cg live run --until-pane x` runs `bin/cg-live run -
   trailing space, or an invalid binary THEN validation fails, naming the entry's index and the rule.
 - **S3** WHEN one manifest declares the same command twice THEN validation fails, naming both indexes.
 - **S4** WHEN a manifest contains `contributes.subcommands` (any schema version) THEN validation fails, saying the
-  form was removed in cg 2.0 and naming `commands` as its replacement.
+  form was removed in cg 2.0 and naming `commands` as its replacement. For an installed extension (`cg init` on an
+  old pin, `cg extension update`) it also names `cg extension update <name>`.
 - **S5** WHEN one manifest declares both `shop` and `shop add` THEN it validates: nesting inside one extension is
   allowed, and dispatch picks the longest match (S16).
 - **S6** WHEN a manifest declares `commands` with `"manifest": 1` THEN validation fails, asking for `"manifest": 2`;
@@ -79,14 +80,14 @@ extension installed in the workspace (from their pinned manifests, not their led
 
 ### Dispatch: which program runs
 
-Matching runs **per consulted root, in order**:
+The first consulted root that declares any command in the typed namespace **decides** that namespace; later roots
+and the `PATH` fallback are not consulted for it (Q6, Q9).
 
-- **S16** WHEN the typed words start with a declared, verified command of the current root THEN the longest such
-  command wins and its binary runs; later roots are not consulted.
-- **S17** WHEN no root has a full match but some consulted root declares commands in the typed namespace (`cg shop`
-  alone, or `cg shop frobnicate`) THEN, after every consulted root has been checked, cg exits with a usage error
-  listing the declared commands in that namespace from the consulted roots, and the `PATH` fallback is not used
-  (Q6).
+- **S16** WHEN the deciding root has a verified command that the typed words start with THEN the longest such
+  command wins and its binary runs.
+- **S17** WHEN the deciding root has no such command (`cg shop` alone, or `cg shop frobnicate`) THEN cg exits with a
+  usage error listing that root's declared commands in the namespace; a later root that declares the typed command
+  is not consulted, and neither is the `PATH` fallback.
 - **S18** WHEN a root's ledger entry for the typed command isn't verified (the command is missing from the pinned
   manifest, the binary differs, the manifest doesn't validate, the tree can't be read, or the binary is missing)
   THEN dispatch **stops** with an error naming the extension and `cg init` / `cg extension update <name>` as the
@@ -153,7 +154,9 @@ The session state file is `<badge root>/.claude/session-context/<id>.json`, wher
 - **S39** WHEN `cg worktree remove` removes the recorded worktree THEN the record is cleared.
 - **S40** WHEN the session root serves a command for a current directory outside the session root and its
   worktrees (S24/S26), the session ID is valid, and the recorded worktree is still listed in the session repo's
-  worktree list THEN `CG_SESSION_WORKTREE` is set to it (Q2); in every other case it is unset.
+  worktree list THEN `CG_SESSION_WORKTREE` is set to it (Q2). When no worktree is recorded but the session root is
+  itself a linked worktree (the session was started in one), it is set to the session root. In every other case it
+  is unset.
 - **S41** WHEN the session ID fails `ValidSessionID` (for example `../../x`) THEN no state file is read or written.
 - **S42** WHEN a state file has only `worktree` (no area or project) THEN the badge and `cg active` show the same as
   for a file without it.
@@ -161,8 +164,8 @@ The session state file is `<badge root>/.claude/session-context/<id>.json`, wher
 ### Unchanged
 
 - **U1** Built-ins win over any declared command or `PATH` program.
-- **U2** `cg live run|watch …` and `cg shop <subcommand> …` keep their spelling and arguments once the extensions
-  ship `commands`.
+- **U2** `cg live …` and `cg shop …` (subcommands, `--help`, bare namespace) keep their spelling, arguments and
+  behaviour once the extensions ship `commands` as X2 says.
 - **U3** Inside the workspace, or one of its worktrees, without `CG_WORKSPACE`: the cwd's extensions serve, as today.
 - **U4** `cg start` with a launcher behaves as today; `findLauncher` uses the pinned-manifest helper it now shares
   with dispatch.
@@ -173,9 +176,10 @@ The session state file is `<badge root>/.claude/session-context/<id>.json`, wher
 
 - **X1** mnemcik/cg-extensions-registry: the manifest schema accepts `manifest: 2` and `commands`; `subcommands` is
   removed once no indexed manifest uses it.
-- **X2** mnemcik/cg-extensions `live-runs` and `shopping`: `"manifest": 2` and `commands` for each subcommand their
-  binary handles (`live run`, `live watch`; `shop add`, `shop list`, … and `shop help`); versions bumped. Bare
-  `cg shop` then lists the declared commands (S17).
+- **X2** mnemcik/cg-extensions `live-runs` and `shopping`: `"manifest": 2`; `commands` declares the bare namespace
+  (`live`, `shop`, so `cg shop`, `cg shop --help` and `cg live --until-pane x run` reach the binary as today) and
+  each subcommand the binary handles (`live run`, `live watch`; `shop add`, `shop list`, …), so permission entries
+  can name them; versions bumped.
 - **X3** `tmux`: `cg-tmux` passes `CG_WORKSPACE` into the tmux session (`new-session -e`) when it is set.
 - **X4** `shopping`: `cg-shop` picks where it writes, in this order: `CG_SESSION_WORKTREE` when set; else
   `CG_EXTENSION_WORKSPACE` when the current directory is inside it; else, when `CG_EXTENSION_WORKSPACE` is set (it
@@ -193,7 +197,9 @@ The session state file is `<badge root>/.claude/session-context/<id>.json`, wher
   keep validating, so only `live-runs` and `shopping` change. An older cg then refuses the new manifests with its
   existing "unsupported manifest schema version" error. *Alternative:* stay on v1 and only refuse `subcommands`;
   one version fewer in the code, but a cg 1.x installing the new manifests drops `commands` silently and `cg live`
-  stops resolving with no explanation.
+  stops resolving with no explanation. *Also:* decision 8 says "`commands` is required"; this spec reads it as
+  "required to contribute commands" (it replaces `subcommands`), so a manifest without commands, such as tmux's,
+  omits it.
 - **Q2 — how a writer learns the session's worktree.** Dispatch resolves the session ID from `CG_SESSION_ID`, then
   `CLAUDE_CODE_SESSION_ID` (as cg's session commands do, without a flag), reads the recorded worktree, re-checks it
   against the session repo's worktree list, and passes it per run as `CG_SESSION_WORKTREE` (S40). Binaries stay
@@ -212,7 +218,14 @@ The session state file is `<badge root>/.claude/session-context/<id>.json`, wher
   reach any `cg-shop` on `PATH`, and a grant written `Bash(cg shop *)` would cover it. *Alternative:* per full
   command, as decision 7's wording literally reads.
 - **Q7 — flags end the typed words.** Matching stops at the first token starting with `-`. `cg live --x run` matches
-  only `live`, which under S17 is a usage error unless the extension also declares `live`. *Alternative:* skip
-  flags while matching; but cg can't know which flags take a value, so `--until-pane x` would misparse.
+  only `live`, which under S17 is a usage error unless the extension also declares `live` (X2 does, for the two
+  existing extensions). *Alternative:* skip flags while matching; but cg can't know which flags take a value, so
+  `--until-pane x` would misparse.
 - **Q8 — an extension still on `subcommands` after upgrading cg** gets a clear refusal naming
   `cg extension update <name>` at dispatch (S20) and at `cg init` / install (S4), but no compatibility reading.
+- **Q9 — the first root that declares a namespace decides it.** Once the session root declares commands in `shop`,
+  a cloned repo's workspace can't answer `cg shop frobnicate`, even when it declares that exact command; otherwise
+  a typo or an undeclared subcommand would run the clone's code under a grant written for the session's namespace
+  (decision 4: a clone mustn't choose the code behind the owner's grants). *Cost:* two workspaces can't split one
+  namespace across them (session `pr merge`, clone `pr watch`); within one workspace they still can (S9).
+  *Alternative:* decide per full command, as decision 4's "when it provides the command" literally reads.

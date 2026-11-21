@@ -18,7 +18,7 @@
 
 - [ ] Failing tests for S16–S21, S34–S36
 - [ ] Table, per-root matching, stop-on-unverified, errors, hint
-- [ ] Mutation checks for S18–S20, S35
+- [ ] Mutation checks for S17–S20, S35
 - [ ] `make check`; independent review
 
 ## M3 — the session carries its workspace
@@ -32,7 +32,7 @@
 
 - [ ] Failing tests for S37–S42
 - [ ] State key, `worktree create/remove`, `set-context --worktree`, `CG_SESSION_WORKTREE`
-- [ ] Mutation checks for S38, S41
+- [ ] Mutation checks for S38, S40, S41
 - [ ] Docs; `make check`; independent review
 
 ## PR
