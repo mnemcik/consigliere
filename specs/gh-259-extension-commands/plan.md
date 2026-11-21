@@ -8,7 +8,7 @@ published (cross-repo step 4), `cg extension update` (one run updates every inst
 `tmux` for the variable in tmux sessions); an update run before step 4 fetches the old manifests, which then
 contribute no commands (Q8).
 
-Every new test must fail before its change. Guard tests (refusals: S5–S11, S16–S18, S23, S25–S27, S29, S33, S36,
+Every new test must fail before its change. Guard tests (refusals: S5–S11, S16–S18, S23, S25–S27, S29, S31 (strip), S33, S36,
 S38, S38b, S39) also get a mutation check: remove the guard, confirm the test fails, restore. `make check` passes at every
 milestone commit. Windows rules from CONTRIBUTING apply: dispatch tests that exec binaries skip on Windows with a
 reason (#239 leaves extension commands unsupported there); path comparisons use `filepath.EvalSymlinks` and don't

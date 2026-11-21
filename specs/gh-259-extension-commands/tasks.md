@@ -3,7 +3,7 @@
 ## Before code
 
 - [x] Analysis, spec, plan on the branch
-- [x] Independent review of spec + plan (L tier): rounds 1–6 (round 6 clean), round 7 after the owner's triage
+- [x] Independent review of spec + plan (L tier): rounds 1–6 (round 6 clean), rounds 7–8 after the owner's triage (round 8 clean)
 - [ ] Agreement comment on #259 (spec commit + hashes of `spec.md` and `plan.md`)
 
 ## M1 — manifest `commands` and install-time ownership
@@ -25,7 +25,7 @@
 
 - [ ] Failing tests for S20–S31
 - [ ] `CG_WORKSPACE` at start; precedence; worktree test; `CG_EXTENSION_WORKSPACE`
-- [ ] Mutation checks for S23, S25–S27, S29, and the cross-root S16/S17 tests
+- [ ] Mutation checks for S23, S25–S27, S29, S31 (strip), and the cross-root S16/S17 tests
 - [ ] Docs; `make check`; independent review
 
 ## M4 — the session records its worktree
