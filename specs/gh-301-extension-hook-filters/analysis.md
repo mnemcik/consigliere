@@ -128,7 +128,12 @@ of `contributes` to find a `subcommands` key), `ledger.go` (`Commands`) and `app
 `:240`); it is planned for cg 2.0.0 (plan `M1`, cross-repo steps).
 
 **#300** (skills and subagents from extensions) adds new contribution types to the same manifest and faces the same
-question: an older cg drops an unknown contribution type silently.
+question: an older cg drops an unknown contribution type silently. Its analysis (branch `gh-300-extension-skills`
+at `9e48467`, "Shipping: manifest version and release", D4–D6) recommends: `skills` only in the manifest version
+the shipping release introduces (v2 in 2.0.0, whichever of #259, #300 and #301 introduces it), and for later fields
+**(b) a manifest version bump per release that adds a field an older cg must not ignore**, keeping the documented
+"older cg ignores the key" policy for harmless fields; (a) strict decoding and (c) a minimum-cg field are its
+alternatives.
 
 **Observed this session (2026-11-21):** the `pr-workflow` plugin hook blocked three read-only commands
 (`gh issue view` twice, a `git show` in a registry clone) on their first call per repo. That over-firing is the
@@ -181,11 +186,12 @@ one-registration rule added to the scope.
      events (Claude Code never runs such a hook, so it would be dead code installed silently); `matcher` is not
      checked against the event (Claude Code's list of events with matcher support changes; a wrong one is silently
      ignored, so the hook runs unfiltered, which a script that also checks its input tolerates).
-  5. Unknown manifest fields are refused in v2 manifests (decision 2), so a field added after 2.0.0 fails loudly on
-     an older 2.x cg instead of being dropped. This reverses the documented "an older cg ignores the key" policy
-     (`docs/extensions.md:257-259`, `:282-285`, registry schema `:109`) for v2; those texts change with it. v1
-     manifests keep today's behaviour (unknown keys ignored), since 2.x adds no new key to v1: every new field needs
-     v2, so a v1 manifest can't carry one that matters.
+  5. Later fields (decision 2, the same decision as #300's D6): a release that adds a field an older cg must not
+     ignore bumps the manifest version (v3, …), and only manifests that use the field move to it; harmless fields
+     keep the documented "an older cg ignores the key" policy (`docs/extensions.md:257-259`, `:282-285`, registry
+     schema `:109`). For #301 itself this means: the three fields are accepted only in v2 (item 2), so nothing in
+     2.0.0 has to change for it. *Alternative:* strict decoding of v2 (an unknown key is refused), which reverses
+     the documented policy for v2.
   6. Settings shape: one matcher group per manifest entry (as today: one group per registration); an omitted
      `matcher` is written as `""` (as today); `if` without `matcher` is allowed (Claude Code evaluates it per tool
      call).
@@ -206,18 +212,27 @@ one-registration rule added to the scope.
 - **What:** as above, but after 2.0.0, in a minor release.
 - **Trade-off:** 2.0.0 doesn't wait. But a 2.0.x cg accepts a v2 manifest whose hook carries `matcher` or `onFailure`
   and drops them: the hook runs unfiltered and its failure mode reverts to the default, with no message. Avoiding
-  that needs either decision 2 (refuse unknown fields) to be in 2.0.0 anyway, or a manifest v3.
+  that needs a manifest v3 for the fields (decision 2's recommendation), or strict v2 decoding in 2.0.0.
 - **Wrong choice when:** #45 needs the fields in the same release as #259's commands, which the chain says it does
   (#45, #46, #49, #50 are blocked by #259, #300 and #301 "via the cg release").
 - **Rabbit holes:** a v3 bump for three optional fields.
-- **Wins instead if:** #259 must release before #301 is implemented, and 2.0.0 refuses unknown fields; then 2.1 is
-  safe and adds no version.
+- **Wins instead if:** #259 must release before #301 is implemented. Then 2.1 needs v3 for the fields if 2.0.0
+  already accepts v2 (#259's Q1 = v2, or #300 brings v2 in 2.0.0), or strict v2 decoding in 2.0.0; otherwise #301
+  introduces v2 in 2.1 and needs no v3.
 
-### Alternative (for decision 2) — a minimum cg version in the manifest, unknown keys still ignored
+### Alternatives for decision 2 — strict v2 decoding, or a minimum cg version in the manifest
 
-- **What:** instead of refusing unknown keys, a manifest may declare the cg it needs (for example
+- **Strict v2 decoding:** an unknown key in a v2 manifest is refused, naming the key and asking for a newer cg. It
+  needs no judgement per field: a field added later can't be dropped by an older 2.x, whoever forgets what. But
+  every harmless addition then makes older 2.x refuse the manifest, and it reverses the documented policy for v2.
+  #259's M1 already decodes `contributes` raw, so the code is small. **Wins instead if** the owner prefers a rule
+  that can't be forgotten over keeping harmless additions installable.
+
+**Minimum cg version:**
+
+- **What:** instead of a version bump, a manifest may declare the cg it needs (for example
   `"requires": {"cg": ">=2.1"}`); a cg that is too old refuses it with a clear message. Unknown keys stay ignored,
-  as documented today.
+  as documented today. It helps only from the release that introduces the check: a cg before it ignores the field.
 - **Trade-off:** harmless additions (a cosmetic field, a launcher-like key) keep installing on an older cg, and new
   fields can ship in minor releases with no schema bump. But it relies on each extension author remembering to raise
   the minimum when they use a field that matters; forgetting gives back the silent drop. A registry check could
@@ -281,7 +296,7 @@ hooks that need two events keep shipping duplicate files.
 
 | File | #259 (M1) | #301 |
 |---|---|---|
-| `internal/extension/manifest.go` | `SchemaVersion` 2, v1 still accepted without `commands`; `Contributions.Commands`; `Validate`; raw decode of `contributes` | `HookContribution` fields; `Validate` for hooks and the v2 gate; unknown-field refusal (decision 2) would replace or reuse #259's raw decode |
+| `internal/extension/manifest.go` | `SchemaVersion` 2, v1 still accepted without `commands`; `Contributions.Commands`; `Validate`; raw decode of `contributes` | `HookContribution` fields; `Validate` for hooks and the v2 gate; strict decoding, only if decision 2 picks it, would reuse #259's raw decode |
 | `internal/extension/apply.go` | records commands (`:240`) | `applyHook` and the hook loop (`:226-231`): unregister once, register all |
 | `internal/extension/ledger.go` | `Commands` replaces `Subcommands` | probably unchanged (one `LedgerHook` per entry already fits); changes only if `cg extension list` shows filters |
 | `internal/extension/settings.go` | — | `registerHook` takes the filter fields and a set of entries |
@@ -295,8 +310,8 @@ M1 commit, not from `main`.
 | # | Decision | Recommended answer | Status |
 |---|---|---|---|
 | 1 | Which release carries the fields? | cg 2.0.0, inside manifest v2, so the chain's extensions need one cg release. Implemented after #259's M1 (decision 9). | open |
-| 2 | What does a 2.x cg do with a field it doesn't know in a v2 manifest? One policy for #259, #300, #301 and later fields; decided here, and #300's analysis refers to it. | Refuse it, naming the field and asking for a newer cg; v1 manifests keep ignoring unknown keys. With it, a rule: **every field added from 2.0 on, #300's contribution types included, is accepted only in v2 manifests** (a v1 manifest using one is refused), so v1 never carries a field an older 2.x would drop. This reverses the documented "an older cg ignores the key" for v2. *Alternative:* a manifest-level minimum cg version, unknown keys still ignored. | open |
-| 3 | Do the new fields need `"manifest": 2`? Depends on #259's Q1, which isn't agreed. | Yes, as #259 S6 does for `commands`. If #259's Q1 is rejected (no v2): the fields go into v1, and nothing protects a 1.x cg, which is already released and drops them silently. The choices are then to accept that and document the minimum cg for extensions that use the fields, or to bump the schema for #301 alone. (Refusing unknown keys in 2.x v1 manifests would protect later 2.x additions, not 1.x.) | open |
+| 2 | How do fields added after 2.0.0 avoid being dropped by an older 2.x cg? **The same decision as #300's D6**: one answer for both. | As #300 recommends: a manifest version bump per release that adds a field an older cg must not ignore; harmless fields keep "an older cg ignores the key". *Alternatives:* strict v2 decoding (refuse unknown keys; reverses the documented policy for v2); a minimum-cg field. Doesn't affect #301 itself if it ships in 2.0.0 with v2. | open (shared with #300 D6) |
+| 3 | Do the new fields need `"manifest": 2`? Depends on #259's Q1, which isn't agreed. | Yes, whatever #259's Q1 decides: if Q1 keeps v1 for `commands`, #301 (or #300, as its D4 proposes) introduces v2 in 2.0.0, so a 1.x cg, already released, refuses manifests that use the fields instead of dropping them. The only alternative to a version is to accept the silent drop on 1.x and document the minimum cg. | open |
 | 4 | When an entry omits `onFailure`, what does cg write? | Nothing (Claude Code's default). Windows without Git Bash is already unsupported for cg's hooks. *Alternative:* write `continue` by default (more exposure to the older-Claude-Code risk in decision 5, since every extension hook would carry the key). | open |
 | 5 | Which fields? | `matcher`, `if`, `onFailure` only; others when an extension needs them. **Prerequisite:** check what a Claude Code older than 2.1.295 does with `onFailure` (and an older one with `if`) in `settings.json`: key ignored, entry skipped, or whole file lost. The `if` check is best-effort until the version that introduced it is found; the `pr-workflow` plugin already writes `if`, the same exposure today. If the key is ignored or the entry skipped, ship it: a `block` guard then fails open there, as without the field. If the whole file is lost: leave the field out, or ship it with the minimum Claude Code documented. | open: needs the check |
 | 6 | Several entries per wrapper (events, `if` rules)? | Yes, with duplicate and same-install-path refusals. *Alternative:* `if` as a list that cg expands; doesn't solve one wrapper on two events. | open |
@@ -331,13 +346,21 @@ Out of scope, noted: `command` is required but never read by cg; it stays as it 
 - Verified true: round-2 findings 1–5 resolved; no contradiction between the decisions table, the recommendation and the hidden constraints; no private context
 - Not verified: older Claude Code behaviour with unknown handler keys; the version that introduced `if`
 
+**Review 4** (delta) — `analysis.md` @ content hash `f59c630` (uncommitted, on `c2c336f`) · 2026-11-21 · **clean**
+- Why: after round 3, #300's analysis (branch `gh-300-extension-skills` at `9e48467`) turned out to answer decision 2's question differently (its D6: a version bump per release, not strict decoding). Decision 2 reframed as the same decision as #300's D6, recommending its option (b); decision 3, Recommended item 5, the shipped-later alternative, the overlap table and the verdict adjusted; round 3's nits applied
+- Reviewers: doc-reviewer (delta, with #300's analysis as a source)
+- Findings: 0 blocker, 0 should-fix, 1 nit → fixed after the round (text only): the shipped-later alternative needs v3 only if 2.0.0 already accepts v2
+- Builder questions: none
+- Verified true: the claims about #300's analysis (D4–D6); decisions 2 and 3 consistent with each other, the recommendation, the hidden constraints and #300's D4–D6; no leftover text recommending strict decoding; round-3 nits reflected; no private context
+- Not verified: older Claude Code behaviour (still a prerequisite for decision 5)
+
 ## Verdict
 
 **Needs clarification.** The recommendation stands, but three things force "needs clarification":
 - decision 5 waits on a check of what an older Claude Code does with `onFailure` (and `if`) in `settings.json`;
 - decisions 1–3 depend on #259's Q1 (manifest v2), which isn't agreed;
-- decision 2 sets the policy for #300 and later fields as well.
+- decision 2 is shared with #300's D6 and has to be decided once for both.
 
 ## Q→A log
 
-- 2026-11-21: analysis written and reviewed (3 rounds, the last clean); the open decisions go to the owner.
+- 2026-11-21: analysis written and reviewed (4 rounds; rounds 3 and 4 clean; round 4 after aligning decision 2 with #300's D6); the open decisions go to the owner.
