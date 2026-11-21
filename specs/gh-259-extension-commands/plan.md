@@ -3,8 +3,10 @@
 One PR on `gh-259-extension-commands`, one commit (or a small group) per milestone, independent review after each
 milestone and a final round over the whole PR. Title: `feat!: extension commands declared in manifests; sessions
 carry their workspace`. The description closes #259 and #248. The squash body becomes the changelog entry, so its
-`BREAKING CHANGE:` footer carries the migration: update cg, then `cg extension update` (updates every installed
-extension, including `live-runs`, `shopping`, and `tmux` for the variable in tmux sessions).
+`BREAKING CHANGE:` footer carries the migration: update cg, then, once the extensions' v2 versions are
+published (cross-repo step 4), `cg extension update` (one run updates every installed extension, including
+`tmux` for the variable in tmux sessions); an update run before step 4 fetches the old manifests, which then
+contribute no commands (Q8).
 
 Every new test must fail before its change. Guard tests (refusals: S5–S11, S16–S18, S23, S25–S27, S29, S33, S36,
 S38, S38b, S39) also get a mutation check: remove the guard, confirm the test fails, restore. `make check` passes at every
@@ -42,7 +44,7 @@ Scenarios: S1–S14, U4, U5, X6 (docs part).
 
 ## M2 — dispatch by command table
 
-Scenarios: S15–S19, S32–S34, U1–U3, U6.
+Scenarios: S15–S19, S28 and S29 (their `CG_COMMAND` parts), S30, S32–S34, U1–U3, U6.
 
 - `cmd/external.go`: typed words (Q7); for each consulted root (only the cwd root until M3), build its table from
   the ledgers, verifying each entry with the M1 helper. The first root with any entry in the typed namespace (a
@@ -60,7 +62,7 @@ Scenarios: S15–S19, S32–S34, U1–U3, U6.
 Scenarios: S20–S31.
 
 - `cmd/start.go` / `start_exec_*`: set `CG_WORKSPACE` to the absolute resolved root in the environment of the agent
-  or launcher (S31).
+  or launcher, and remove the three per-run variables (S31).
 - `cmd/external.go`: consulted roots per S20–S24; `CG_WORKSPACE` ignored when relative or invalid (S25).
 - Cross-root tests: a session root whose `shop` entry is unverified (S17), or that declares only
   `shop add` (S16), blocks a clone's verified `shop …` typed from inside the clone (guard tests, with mutation

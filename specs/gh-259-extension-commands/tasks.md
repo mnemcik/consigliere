@@ -3,7 +3,7 @@
 ## Before code
 
 - [x] Analysis, spec, plan on the branch
-- [x] Independent review of spec + plan (L tier): 6 rounds, round 6 clean
+- [x] Independent review of spec + plan (L tier): rounds 1–6 (round 6 clean), round 7 after the owner's triage
 - [ ] Agreement comment on #259 (spec commit + hashes of `spec.md` and `plan.md`)
 
 ## M1 — manifest `commands` and install-time ownership
@@ -16,9 +16,9 @@
 
 ## M2 — dispatch by command table
 
-- [ ] Failing tests for S15–S19, S32–S34
+- [ ] Failing tests for S15–S19, S28/S29 (`CG_COMMAND` parts), S30, S32–S34
 - [ ] Table, per-root matching, stop-on-unverified, errors, hint
-- [ ] Mutation checks for S16–S18, S33
+- [ ] Mutation checks for S16–S18, S29 (`CG_COMMAND` strip), S33
 - [ ] `make check`; independent review
 
 ## M3 — the session carries its workspace

@@ -1,7 +1,7 @@
 # Spec — extension commands declared in manifests; the session carries its workspace (#259)
 
 Implements the decisions in [analysis.md](analysis.md#decision). Each scenario below is one behaviour and maps to
-at least one test; `plan.md` names the milestone that delivers it. Q1–Q9 at the end are the choices this spec makes
+at least one test; `plan.md` names the milestone that delivers it. Q1–Q10 at the end are the choices this spec makes
 beyond the decision, for the owner's agreement.
 
 ## Terms
@@ -130,7 +130,8 @@ Roots are checked in the consulted order. The first root whose ledgers have **an
 - **S30** WHEN dispatch decides which workspace serves or which command matches THEN it never reads
   `CG_EXTENSION_WORKSPACE`, `CG_SESSION_WORKTREE` or `CG_COMMAND`.
 - **S31** WHEN `cg start` (or bare `cg`) starts the agent or the launcher THEN `CG_WORKSPACE` is set to the absolute
-  root it resolved (a worktree when started in one), in the agent's environment and the launcher's.
+  root it resolved (a worktree when started in one), in the agent's environment and the launcher's. It removes `CG_COMMAND`, `CG_EXTENSION_WORKSPACE` and `CG_SESSION_WORKTREE` from that
+  environment: they describe one dispatched run and mustn't leak into a session started from inside a binary.
 
 ### `PATH` fallback
 
@@ -198,7 +199,7 @@ The session state file is `<badge root>/.claude/session-context/<id>.json`, wher
 
 ## Choices this spec makes (for agreement)
 
-- **Q1 — manifest version.** Manifest **v2** for any manifest with `commands`; v1 manifests without `subcommands`
+- **Q1 — manifest version.** Manifest **v2** for any manifest with `commands`; v1 manifests without `commands`
   keep validating, so only `live-runs` and `shopping` change. An older cg then refuses the new manifests with its
   existing "unsupported manifest schema version" error. *Alternative:* stay on v1;
   one version fewer in the code, but a cg 1.x installing the new manifests drops `commands` silently and `cg live`
@@ -232,8 +233,8 @@ The session state file is `<badge root>/.claude/session-context/<id>.json`, wher
 - **Q8 — no special handling of the removed `subcommands` form.** cg 2.0 doesn't recognise it: like any unknown
   manifest or ledger field, it is ignored. An extension not yet updated contributes no commands, so `cg live run`
   is an unknown command until `cg extension update` runs. *Consequence:* in that window the session's workspace
-  declares nothing in the namespace, so a cloned workspace that declares it could serve it (Q9 then has nothing to
-  protect). *Alternative:* recognise the old form only to refuse it with an update hint, and let it claim its
+  declares nothing in the namespace, so a cloned workspace that declares it, or a `cg-<namespace>` program on `PATH`,
+  could serve it (Q6 and Q9 then have nothing to protect). *Alternative:* recognise the old form only to refuse it with an update hint, and let it claim its
   namespace.
 - **Q9 — the first root that declares a namespace decides it.** Once the session root declares commands in `shop`,
   a cloned repo's workspace can't answer `cg shop frobnicate`, even when it declares that exact command; otherwise
