@@ -464,3 +464,22 @@ func TestListShowsCommands(t *testing.T) {
 		t.Errorf("old in --json: %+v", got[1])
 	}
 }
+
+// A .cg.json that lists an extension twice (hand-edited) reports each
+// conflict once.
+func TestInstallConflictWithDuplicateEntryReportedOnce(t *testing.T) {
+	requireGit(t)
+	cfgHome, ws := t.TempDir(), newWorkspace(t)
+	installRepo(t, cfgHome, ws, commandsManifest("alpha", "1.0.0", "shop add"))
+	cfg, _ := workspace.Detect(ws)
+	cfg.Extensions = append(cfg.Extensions, cfg.Extensions[0])
+	if err := cfg.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	repo := makeExtRepo(t, commandsManifest("beta", "1.0.0", "shop add"))
+	out, err := runExtCfg(t, cfgHome, ws, "install", repo)
+	wantConflict(t, err, out, `"shop add"`)
+	if n := strings.Count(err.Error(), `already declared by extension "alpha"`); n != 1 {
+		t.Errorf("conflict reported %d times, want once:\n%v", n, err)
+	}
+}

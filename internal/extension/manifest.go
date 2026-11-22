@@ -34,8 +34,8 @@ const (
 
 // nameRe constrains extension names, section ids, binaries and command words. A
 // name is load-bearing: it is the install name, the .cg.json key, the clone
-// directory, the ext:<name>:section marker namespace, and the cg-<name> binary
-// stem. Keeping it to [a-z0-9-]+ keeps every one of those uses safe.
+// directory and the ext:<name>:section marker namespace. Keeping it to
+// [a-z0-9-]+ keeps every one of those uses safe.
 var nameRe = regexp.MustCompile(`^[a-z0-9-]+$`)
 
 // Manifest is a parsed cg-extension.json (schema v1 or v2).
