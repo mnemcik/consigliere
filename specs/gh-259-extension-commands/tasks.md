@@ -19,7 +19,7 @@
 - [x] Failing tests for S15–S19, S28/S29 (`CG_COMMAND` parts), S30, S32–S34
 - [x] Table, per-root matching, stop-on-unverified, errors, hint
 - [x] Mutation checks for S16–S18, S29 (`CG_COMMAND` strip), S33
-- [ ] `make check`; independent review
+- [x] `make check`; independent review (5 rounds; round 5 clean)
 
 ## M3 — the session carries its workspace
 
