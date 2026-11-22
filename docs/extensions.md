@@ -2,8 +2,8 @@
 
 This document is the authoritative design for the Consigliere extension system:
 the `cg-extension.json` manifest, the central registry, the `cg extension`
-subcommand suite, the contribution points an extension can declare, and the
-external-subcommand discovery mechanism.
+subcommand suite, the contribution points an extension can declare, and how
+cg runs the commands extensions declare.
 
 It is the framework-side counterpart to the author-facing
 [`EXTENSIONS.md`](../EXTENSIONS.md) guide. When the two disagree, this file is
@@ -78,7 +78,7 @@ Only a commit that is on a branch or tag, as of the store's last fetch, is insta
 A tree is checked out through a private index into a staging directory and
 renamed into place, so a reader never sees a partial one. Each workspace records
 the commit it installed in `.cg.json` (`extensions[].commit`): install, update,
-`cg init`'s re-install, git-hook approval and external-subcommand discovery all
+`cg init`'s re-install, git-hook approval and command dispatch all
 read the tree at that commit. Co-located extensions at one commit share a tree,
 and same-named extensions from different repos never meet. Trees are kept when
 an extension is removed, since other workspaces may use them; a prune step does
@@ -95,9 +95,9 @@ A manifest dir looks like this:
   cg-extension.json
   fragments/<id>.md                  # CLAUDE.md section bodies
   notes/<file>.md                    # notes to copy into the workspace
-  hooks/<file>.sh                    # hook wrappers (DEC-004 style: exec cg-<name> …)
+  hooks/<file>.sh                    # hook wrappers (DEC-004 style: exec a binary …)
   templates/<path>                   # templates to copy into the workspace
-  bin/cg-<name>                      # optional external subcommand binary
+  bin/<binary>                       # binaries serving the extension's commands
 ```
 
 `$XDG_CONFIG_HOME` is honoured when set; otherwise `~/.config`. This is the
@@ -118,15 +118,23 @@ placement: the ledger must be per-workspace so `cg extension remove` reverses th
 right workspace, and so two workspaces sharing one tree don't fight over one
 log. See DEC-002.
 
-## Manifest schema v1 (`cg-extension.json`)
+## Manifest schema v2 (`cg-extension.json`)
 
-Lives at the root of every extension repo. v1 is intentionally minimal; the
-`"manifest"` integer versions the schema itself for forward compatibility. v1
-forbids cross-extension dependencies (declare none).
+Lives at the root of every extension repo. The schema is intentionally minimal;
+the `"manifest"` integer versions the schema itself for forward compatibility.
+It forbids cross-extension dependencies (declare none).
+
+Version 2 adds [`commands`](#extension-commands). A manifest that declares
+commands must say `"manifest": 2`; a version 1 manifest without commands still
+installs, so an extension that contributes no command needn't change. cg 1.x
+refuses a version 2 manifest with "unsupported manifest schema version".
+Version 1's `subcommands` key is gone: cg ignores it like any unknown key, so
+an extension that still uses it contributes no command until it moves to
+`commands`.
 
 ```json
 {
-  "manifest": 1,
+  "manifest": 2,
   "name": "1password",
   "version": "0.1.0",
   "description": "1Password as authoritative credential store",
@@ -141,8 +149,9 @@ forbids cross-extension dependencies (declare none).
     "hooks": [
       { "event": "SessionStart", "wrapper": "hooks/credentials-gate.sh", "command": "cg-1password gate" }
     ],
-    "subcommands": [
-      { "namespace": "secret", "binary": "cg-1password" }
+    "commands": [
+      { "command": "secret get", "binary": "cg-1password" },
+      { "command": "secret put", "binary": "cg-1password" }
     ],
     "templates": [
       { "src": "templates/credential-request.md", "dest": "templates/credential-request.md" }
@@ -161,8 +170,8 @@ forbids cross-extension dependencies (declare none).
 
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
-| `manifest` | int | yes | Manifest **schema** version. v1 = `1`. `cg` refuses a manifest whose `manifest` it doesn't understand. |
-| `name` | string | yes | Short, lowercase, `[a-z0-9-]+`. The install name, the `.cg.json` key, the legacy clone directory, the `ext:<name>:section` namespace, and the `cg-<name>` binary stem. Must be unique in the registry. |
+| `manifest` | int | yes | Manifest **schema** version: `2`, or `1` for a manifest without `commands`. `cg` refuses a manifest whose `manifest` it doesn't understand. |
+| `name` | string | yes | Short, lowercase, `[a-z0-9-]+`. The install name, the `.cg.json` key, the legacy clone directory and the `ext:<name>:section` namespace. Must be unique in the registry. It needn't match a command or a binary. |
 | `version` | string | yes | Extension semver. Recorded in `.cg.json`; compared on `cg extension update`. |
 | `description` | string | yes | One line, shown in `cg extension list` and the registry. |
 | `contributes` | object | yes | The contribution points (all eight keys below). Each is an array; an empty/absent array means "contributes nothing of this type". |
@@ -186,14 +195,20 @@ forbids cross-extension dependencies (declare none).
 3. **`hooks`** — `[{ event, wrapper, command }]`. Installs the bash wrapper at
    `wrapper` into `.claude/hooks/`, registers it for `event` in
    `.claude/settings.json` (additive merge — never clobbers existing hooks or
-   user padding), and the wrapper `exec`s `command` (a `cg-<name>` subcommand).
+   user padding), and the wrapper `exec`s `command` (typically one of the
+   extension's binaries).
    Mirrors framework hook style (DEC-004): user-readable, degrades to a no-op
    when the binary is absent.
 
-4. **`subcommands`** — `[{ namespace, binary }]`. Declares that the extension
-   ships an external binary `bin/<binary>` exposed as `cg <namespace> …` via the
-   external-subcommand resolver (below). Install symlinks/records the binary;
-   it is **not** copied into the workspace. Not supported on Windows yet
+4. **`commands`** — `[{ command, binary }]` (manifest v2). Each entry declares
+   that `cg <command> …` runs the extension's `bin/<binary>`. A command is one
+   or more words, each `[a-z0-9-]+`, separated by single spaces (`live run`,
+   `coderabbit approve`); its first word is its **namespace**. `binary` is any
+   `[a-z0-9-]+` file in `bin/`, and one binary may serve several commands. The
+   binary is recorded in the ledger, **not** copied into the workspace. cg owns
+   the command tree: see [Extension commands](#extension-commands) for the
+   rules install enforces and how a typed command finds its program. Not
+   supported on Windows yet
    ([#239](https://github.com/mnemcik/consigliere/issues/239)).
 
 5. **`templates`** — `[{ src, dest }]`. Copies template files into the
@@ -268,7 +283,7 @@ forbids cross-extension dependencies (declare none).
    "launcher": [{ "binary": "cg-tmux", "args": ["launch"] }]
    ```
 
-   Like `subcommands` it touches no workspace files and is recorded in the
+   Like `commands` it touches no workspace files and is recorded in the
    ledger. Because the ledger is committed in the workspace, `cg start` doesn't
    trust it alone: it runs a launcher only when the extension's own manifest,
    in its tree at the recorded commit, validates and declares the same entry,
@@ -293,9 +308,9 @@ forbids cross-extension dependencies (declare none).
 | `cg extension install <repo-url>` | Skip the registry: fetch the URL directly, read its manifest, take `name` from the manifest. Source recorded as `direct`. |
 | `cg extension install … --ref <tag\|branch\|commit>` | Install at that ref. Default: the default branch. |
 | `cg extension install <repo-url> --path <subdir>` | Install a co-located extension whose manifest lives in `<subdir>` of a monorepo. Direct installs only; registry entries carry their own `path`. See [Co-located extensions](#co-located-extensions-monorepo). |
-| `cg extension list [--json]` | List installed extensions for the current workspace: name, version, source, installed-at. |
+| `cg extension list [--json]` | List installed extensions for the current workspace: name, version, source, repo, and the commands each declares. A command whose namespace is now a built-in (one added by a later cg) is flagged as shadowed: it no longer runs. |
 | `cg extension remove <name> [--purge]` | Reverse every contribution recorded in the workspace ledger (delete the `ext:<name>:section` block, copied notes/templates that are still as cg wrote them, hook wrapper + settings entry, git-hook scripts and any dispatcher left with nothing to run, the notes index block), drop the `.cg.json` entry, delete the ledger. The store's trees are shared, so they stay; `--purge` deletes only a legacy name-keyed clone. |
-| `cg extension update [<name>]` | Move a **single-repo** extension to its latest tag (or its default branch when untagged), record the new commit, then re-apply contributions (replace-in-place). A **co-located** (subdir) extension instead tracks the default branch and versions from its manifest — see [Co-located extensions](#co-located-extensions-monorepo). No `<name>` updates all installed extensions. Copied notes and templates you changed are kept: see [Files you change](#files-you-change). |
+| `cg extension update [<name>]` | Move a **single-repo** extension to its latest tag (or its default branch when untagged), record the new commit, then re-apply contributions (replace-in-place). A **co-located** (subdir) extension instead tracks the default branch and versions from its manifest — see [Co-located extensions](#co-located-extensions-monorepo). No `<name>` updates all installed extensions. Copied notes and templates you changed are kept: see [Files you change](#files-you-change). Every target's new version is fetched and its [commands checked](#extension-commands), with the extensions not being updated, before any target is applied. |
 | `cg extension pending [--json]` | List copied files that both you and the extension changed, which update left as yours. |
 | `cg extension diff <name> <file>` | For a pending file, show the extension's change and yours, each against what cg installed, and whether a three-way merge is clean. |
 | `cg extension resolve <name> <file> --merge\|--keep\|--take` | Settle a pending file: merge the extension's change into yours (refused unless the merge is clean), keep yours, or take the extension's. Each makes the extension's version the new baseline. |
@@ -396,20 +411,62 @@ whole.
 `extensions[]` entry whose tree is missing on this machine, `cg init` fetches
 **that commit** and re-applies its contributions, so every machine applies the
 same content no matter what upstream holds by then. An entry without a commit
-is installed from the default branch, and the commit is recorded.
+is installed from the default branch, and the commit is recorded. Every missing
+tree is fetched and the [commands](#extension-commands) of the whole set (the
+re-installed extensions and those already present) checked before the first is
+applied: on a conflict `cg init` reports every conflict and re-installs none.
 
-## External-subcommand discovery
+## Extension commands
 
-Modelled on git's `git foo` → `git-foo` pattern. When `cg <verb> …` is not a
-known built-in subcommand, the resolver looks for an executable named
-`cg-<verb>`:
+An extension declares the commands it provides in its manifest's
+[`commands`](#contribution-points), each served by one of its binaries. cg
+owns the command tree, so a typed command maps to exactly one program, and a
+permission grant written for a command (`Bash(cg coderabbit approve *)`) only
+ever reaches the code of the extension that declared it.
 
-1. in each installed extension's `bin/` (under its subdir for a co-located extension), in the tree at the commit the workspace's `.cg.json` records, then
-2. on `$PATH`.
+### Naming
 
-If found, `cg` `exec`s it with the remaining arguments and forwards the exit
-code. If not found, the normal "unknown command" cobra error is shown. Built-in
-subcommands always win over external ones (no shadowing the framework).
+- A **subject namespace** is vendor-neutral and may be shared:
+  `cg pr merge` and `cg pr watch` can come from different extensions.
+- **Vendor-specific commands** use the vendor's namespace:
+  `cg coderabbit probe`, `cg coderabbit approve`.
+- Neither the namespace nor the binary has to match the extension's name.
+
+### Ownership, checked before anything is applied
+
+`cg extension install`, `cg extension update` and `cg init`'s re-install compare
+the incoming manifests' commands with the commands of every other extension
+installed in the workspace, and refuse, naming the commands and extensions,
+before changing anything, when:
+
+- another extension already declares the same command;
+- a command is inside another extension's command, or the reverse: with `pr`
+  installed, `pr merge` is refused, and with `pr merge` installed, `pr` is;
+- its namespace is a built-in cg command or alias (`start`, `extension`,
+  `ext`, `help`, `completion`, …): built-ins always win, so it could never
+  run.
+
+Two extensions may declare different commands in one namespace (`pr merge`
+and `pr watch`). One extension may nest its own commands (`shop` and
+`shop add`). An update that keeps an extension's own commands, or moves a
+command from one extension to another in a single `cg extension update`, is
+not a conflict. A removed extension's commands are free again.
+
+An installed extension's commands are read from its ledger and counted only
+when its manifest, in its tree at the recorded commit, declares the same
+command with the same binary and that binary exists. The ledger is committed
+in the workspace, so it isn't trusted on its own, just as for the
+[launcher](#contribution-points).
+
+A built-in added by a later cg can shadow a command an extension declared
+earlier. `cg extension list` flags such a command; it no longer runs.
+
+### Dispatch
+
+When `cg <namespace> …` is not a built-in, cg runs the binary of an installed
+extension that declares a command in that namespace, with every argument after
+the namespace word; failing that, a `cg-<namespace>` executable on `$PATH`.
+Built-in commands always win over extension commands and `$PATH` programs.
 
 ## `.cg.json` v1.2 additions
 
@@ -449,7 +506,7 @@ diff. Not user-edited.
   "notes": ["notes/credentials-policy.md"],
   "hooks": [{ "event": "SessionStart", "wrapper": ".claude/hooks/credentials-gate.sh" }],
   "templates": ["templates/credential-request.md"],
-  "subcommands": [{ "namespace": "secret", "binary": "cg-1password" }],
+  "commands": [{ "command": "secret get", "binary": "cg-1password" }],
   "indexRows": [{ "file": "notes/INDEX.md", "marker": "ext:1password:index" }],
   "gitHooks": [".cg/git-hooks/post-commit.d/1password-check.sh"],
   "gitignore": ["1password-cache"],

@@ -4,14 +4,14 @@
 
 - [x] Analysis, spec, plan on the branch
 - [x] Independent review of spec + plan (L tier): rounds 1–6 (round 6 clean), rounds 7–8 after the owner's triage (round 8 clean)
-- [ ] Agreement comment on #259 (spec commit + hashes of `spec.md` and `plan.md`)
+- [x] Agreement comment on #259 (spec commit + hashes of `spec.md` and `plan.md`)
 
 ## M1 — manifest `commands` and install-time ownership
 
-- [ ] Failing tests for S1–S14
-- [ ] Manifest v2, ledger, `CheckCommands`, pinned-manifest helper, install/update/init wiring, `extension list`, interim dispatch
-- [ ] Mutation checks for S5–S11
-- [ ] Docs
+- [x] Failing tests for S1–S14
+- [x] Manifest v2, ledger, `CheckCommands`, pinned-manifest helper, install/update/init wiring, `extension list`, interim dispatch
+- [x] Mutation checks for S5–S11
+- [x] Docs
 - [ ] `make check`; independent review
 
 ## M2 — dispatch by command table

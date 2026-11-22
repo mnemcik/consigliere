@@ -18,8 +18,10 @@ import (
 // `cg <verb>` only resolves externally when <verb> is not a known cg command.
 //
 // Resolution (git's `git foo` → `git-foo` pattern, extended): an installed
-// extension whose ledger declares the namespace <verb> contributes a binary at
-// <clone>/bin/<binary>; failing that, a `cg-<verb>` executable on $PATH.
+// extension whose ledger declares a command in the namespace <verb> contributes
+// a binary at <clone>/bin/<binary>; failing that, a `cg-<verb>` executable on
+// $PATH. (Interim: matching on the namespace word alone, until dispatch by the
+// declared command table replaces it.)
 func externalDispatch(args []string) (path string, rest []string, ok bool) {
 	// Find the verb: the first non-flag token. Leading persistent flags (e.g.
 	// --no-auto-update) are cg's, not the external command's, so they are
@@ -52,7 +54,7 @@ func externalDispatch(args []string) (path string, rest []string, ok bool) {
 
 // resolveExternalSubcommand finds the executable backing `cg <namespace>`. It
 // first consults the workspace's installed extensions (an extension whose ledger
-// declares <namespace> ships a binary at <source>/<subdir>/bin/<binary>, where
+// declares a command in <namespace> ships a binary at <source>/<subdir>/bin/<binary>, where
 // <subdir> is empty for a single-repo extension), then falls back
 // to a `cg-<namespace>` executable on $PATH.
 func resolveExternalSubcommand(root, namespace string) (string, bool) {
@@ -70,8 +72,8 @@ func resolveExternalSubcommand(root, namespace string) (string, bool) {
 				if perr != nil {
 					continue
 				}
-				for _, sc := range led.Subcommands {
-					if sc.Namespace != namespace {
+				for _, sc := range led.Commands {
+					if extension.CommandNamespace(sc.Command) != namespace {
 						continue
 					}
 					bin := filepath.Join(extension.SourceRoot(e), sub, "bin", sc.Binary)

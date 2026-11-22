@@ -9,7 +9,7 @@ import (
 )
 
 const validManifest = `{
-  "manifest": 1,
+  "manifest": 2,
   "name": "1password",
   "version": "0.1.0",
   "description": "1Password as authoritative credential store",
@@ -17,7 +17,11 @@ const validManifest = `{
     "claude-md-sections": [{ "id": "credentials-1password", "path": "fragments/credentials.md" }],
     "notes": [{ "src": "notes/credentials-policy.md", "dest": "notes/credentials-policy.md" }],
     "hooks": [{ "event": "SessionStart", "wrapper": "hooks/gate.sh", "command": "cg-1password gate" }],
-    "subcommands": [{ "namespace": "secret", "binary": "cg-1password" }],
+    "commands": [
+      { "command": "secret", "binary": "cg-1password" },
+      { "command": "secret get", "binary": "cg-1password" },
+      { "command": "secret-store x-2", "binary": "cg-1password" }
+    ],
     "templates": [{ "src": "templates/req.md", "dest": "templates/req.md" }]
   }
 }`
@@ -36,8 +40,49 @@ func TestParseAndValidateValid(t *testing.T) {
 	if len(m.Contributes.ClaudeMDSections) != 1 || m.Contributes.ClaudeMDSections[0].ID != "credentials-1password" {
 		t.Errorf("claude-md-sections not parsed: %+v", m.Contributes.ClaudeMDSections)
 	}
-	if len(m.Contributes.Subcommands) != 1 || m.Contributes.Subcommands[0].Binary != "cg-1password" {
-		t.Errorf("subcommands not parsed: %+v", m.Contributes.Subcommands)
+	if len(m.Contributes.Commands) != 3 || m.Contributes.Commands[1] != (CommandContribution{Command: "secret get", Binary: "cg-1password"}) {
+		t.Errorf("commands not parsed: %+v", m.Contributes.Commands)
+	}
+}
+
+// cmdManifest is a minimal manifest of schema version v declaring commands,
+// each served by bin/cg-a.
+func cmdManifest(v int, commands ...string) Manifest {
+	m := Manifest{Manifest: v, Name: "a", Version: "1.0.0", Description: "d"}
+	for _, c := range commands {
+		m.Contributes.Commands = append(m.Contributes.Commands, CommandContribution{Command: c, Binary: "cg-a"})
+	}
+	return m
+}
+
+// S1, S4: valid commands validate, including nesting inside one extension.
+func TestValidateCommands(t *testing.T) {
+	for _, m := range []Manifest{
+		cmdManifest(2, "live run", "live watch"),
+		cmdManifest(2, "shop", "shop add"),
+		cmdManifest(2, "coderabbit approve", "pr", "pr merge now"),
+		cmdManifest(2, "a-1 b-2 c-3"),
+		cmdManifest(2), // v2 without commands
+	} {
+		if err := m.Validate(); err != nil {
+			t.Errorf("Validate(%v): %v", m.Contributes.Commands, err)
+		}
+	}
+}
+
+// S5: a v1 manifest without commands still validates; the removed
+// "subcommands" form is ignored like any unknown field (Q8).
+func TestValidateV1WithoutCommands(t *testing.T) {
+	m, err := ParseManifest([]byte(`{"manifest": 1, "name": "a", "version": "1", "description": "d",
+	  "contributes": {"subcommands": [{"namespace": "a", "binary": "cg-a"}]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("v1 manifest without commands: %v", err)
+	}
+	if len(m.Contributes.Commands) != 0 {
+		t.Errorf("subcommands must not become commands: %+v", m.Contributes.Commands)
 	}
 }
 
@@ -53,7 +98,7 @@ func TestValidateRejects(t *testing.T) {
 		m    Manifest
 		want string // substring expected in the error
 	}{
-		{"wrong schema version", Manifest{Manifest: 2, Name: "a", Version: "1.0.0", Description: "d"}, "schema version"},
+		{"wrong schema version", Manifest{Manifest: 3, Name: "a", Version: "1.0.0", Description: "d"}, "schema version"},
 		{"empty name", Manifest{Manifest: 1, Name: "", Version: "1.0.0", Description: "d"}, "invalid name"},
 		{"bad name chars", Manifest{Manifest: 1, Name: "Has_Caps", Version: "1.0.0", Description: "d"}, "invalid name"},
 		{"missing version", Manifest{Manifest: 1, Name: "a", Version: "", Description: "d"}, "version is required"},
@@ -106,12 +151,27 @@ func TestValidateRejects(t *testing.T) {
 				Contributes: Contributions{Hooks: []HookContribution{{Event: "e", Wrapper: "w", Command: ""}}}},
 			"hooks[0]",
 		},
+		{"command empty", cmdManifest(2, "pr merge", "", "x"), "commands[1]: command is required"},
+		{"command word with caps", cmdManifest(2, "pr Merge"), `commands[0]: invalid command "pr Merge": word "Merge" must match`},
+		{"command word with slash", cmdManifest(2, "pr", "pr ../x"), `commands[1]: invalid command "pr ../x": word "../x" must match`},
+		{"command double space", cmdManifest(2, "pr  merge"), `commands[0]: invalid command "pr  merge": words must be separated by single spaces`},
+		{"command leading space", cmdManifest(2, " pr"), `commands[0]: invalid command " pr": no leading or trailing space`},
+		{"command trailing space", cmdManifest(2, "pr "), `commands[0]: invalid command "pr ": no leading or trailing space`},
+		{"command tab", cmdManifest(2, "pr\tmerge"), `commands[0]: invalid command "pr\tmerge": word "pr\tmerge" must match`},
 		{
-			"subcommand bad binary",
-			Manifest{Manifest: 1, Name: "a", Version: "1.0.0", Description: "d",
-				Contributes: Contributions{Subcommands: []SubcommandContribution{{Namespace: "ns", Binary: "Bad"}}}},
-			"invalid binary",
+			"command bad binary",
+			Manifest{Manifest: 2, Name: "a", Version: "1.0.0", Description: "d",
+				Contributes: Contributions{Commands: []CommandContribution{{Command: "ns", Binary: "ok"}, {Command: "ns x", Binary: "../Bad"}}}},
+			`commands[1]: invalid binary "../Bad": must match`,
 		},
+		{
+			"command empty binary",
+			Manifest{Manifest: 2, Name: "a", Version: "1.0.0", Description: "d",
+				Contributes: Contributions{Commands: []CommandContribution{{Command: "ns", Binary: ""}}}},
+			`commands[0]: invalid binary ""`,
+		},
+		{"command declared twice", cmdManifest(2, "pr merge", "pr watch", "pr merge"), `commands[2]: command "pr merge" is already declared by commands[0]`},
+		{"commands in a v1 manifest", cmdManifest(1, "pr"), `commands need "manifest": 2`},
 		{
 			"two launchers",
 			Manifest{Manifest: 1, Name: "a", Version: "1.0.0", Description: "d",

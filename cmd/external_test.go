@@ -23,7 +23,7 @@ func TestResolveExternalSubcommandFromExtension(t *testing.T) {
 		t.Fatal(err)
 	}
 	led := &extension.Ledger{Name: "demo", Version: "1.0.0",
-		Subcommands: []extension.SubcommandContribution{{Namespace: "secret", Binary: "cg-demo"}}}
+		Commands: []extension.CommandContribution{{Command: "secret", Binary: "cg-demo"}}}
 	if err := led.Save(ws); err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestResolveExternalSubcommandFromSubdirExtension(t *testing.T) {
 		t.Fatal(err)
 	}
 	led := &extension.Ledger{Name: "shopping", Version: "0.1.0",
-		Subcommands: []extension.SubcommandContribution{{Namespace: "shop", Binary: "cg-shop"}}}
+		Commands: []extension.CommandContribution{{Command: "shop add", Binary: "cg-shop"}}}
 	if err := led.Save(ws); err != nil {
 		t.Fatal(err)
 	}

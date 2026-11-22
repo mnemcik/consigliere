@@ -29,8 +29,8 @@ const hooksDirRel = ".claude/hooks"
 // before any change, and on failure the snapshot is restored — so a failed
 // apply leaves the workspace byte-for-byte as it was, even when contributions
 // overwrite files a prior install of the same extension already placed.
-// Subcommand and launcher contributions touch no workspace files (the
-// external-subcommand resolver and `cg start` read them from the clone); they
+// Command and launcher contributions touch no workspace files (command
+// dispatch and `cg start` read them from the clone); they
 // are recorded so the ledger is a complete account of the manifest.
 func Apply(root, cloneDir string, m *Manifest) (*Ledger, error) {
 	return ApplyWith(root, cloneDir, m, ApplyOptions{Force: true})
@@ -237,7 +237,7 @@ func applyAll(root, cloneDir string, m *Manifest, l *Ledger, plans []copyPlan, n
 		}
 		l.GitHooks = append(l.GitHooks, dest)
 	}
-	l.Subcommands = append(l.Subcommands, m.Contributes.Subcommands...)
+	l.Commands = append(l.Commands, m.Contributes.Commands...)
 	l.Launcher = append(l.Launcher, m.Contributes.Launcher...)
 	return nil
 }
@@ -322,7 +322,7 @@ func Reverse(root string, l *Ledger) (kept []string, err error) {
 // OrphanLedger returns the contributions present in old but absent from next —
 // the artifacts a reinstall/update no longer ships, which must be reversed after
 // the new manifest is applied. Identity is by section id, copied-file dest, and
-// hook wrapper path. Subcommands are not file-backed, so none are returned.
+// hook wrapper path. Commands are not file-backed, so none are returned.
 // Returns nil when old is nil or nothing is orphaned.
 func OrphanLedger(old, next *Ledger) *Ledger {
 	if old == nil {

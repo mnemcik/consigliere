@@ -211,18 +211,9 @@ func findLauncher(root string, cfg *workspace.Config) (*launcher, error) {
 		warn := func(format string, a ...any) {
 			_, _ = fmt.Fprintf(os.Stderr, "cg start: extension %s: "+format+"; starting the agent without it\n", append([]any{e.Name}, a...)...)
 		}
-		sub, err := extension.CleanSubdir(e.Path)
+		dir, m, err := verifiedManifest(e)
 		if err != nil {
-			warn("invalid path %q", e.Path)
-			continue
-		}
-		dir := filepath.Join(extension.SourceRoot(e), sub)
-		m, err := extension.LoadManifest(dir)
-		if err == nil {
-			err = m.Validate()
-		}
-		if err != nil {
-			warn("can't read its manifest (%v); `cg init` restores the recorded version", err)
+			warn("%v", err)
 			continue
 		}
 		if len(m.Contributes.Launcher) == 0 || !sameLauncher(led.Launcher[0], m.Contributes.Launcher[0]) {
