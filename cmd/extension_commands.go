@@ -47,15 +47,14 @@ func verifiedCommand(dir string, m *extension.Manifest, c extension.CommandContr
 // installedCommands returns, for each extension in exts, its verified commands:
 // the entries of its ledger in the workspace at root that its pinned manifest
 // declares with the same binary, whose binary exists. An extension with no
-// ledger, or whose tree can't be read, contributes none, and an entry listed
-// twice (a hand-edited .cg.json) counts once.
+// ledger, or whose tree can't be read, contributes none. An extension listed
+// twice (a hand-edited .cg.json) contributes the union of what each entry
+// verifies, each command once: for a refusal check, counting more is the safe
+// side.
 func installedCommands(root string, exts []workspace.ExtensionRef) map[string][]extension.CommandContribution {
 	out := map[string][]extension.CommandContribution{}
 	for i := range exts {
 		e := &exts[i]
-		if _, seen := out[e.Name]; seen {
-			continue
-		}
 		led, err := extension.LoadLedger(root, e.Name)
 		if err != nil || led == nil || len(led.Commands) == 0 {
 			continue
@@ -65,7 +64,7 @@ func installedCommands(root string, exts []workspace.ExtensionRef) map[string][]
 			continue
 		}
 		for _, c := range led.Commands {
-			if verifiedCommand(dir, m, c) {
+			if verifiedCommand(dir, m, c) && !slices.Contains(out[e.Name], c) {
 				out[e.Name] = append(out[e.Name], c)
 			}
 		}
