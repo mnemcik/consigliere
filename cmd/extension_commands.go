@@ -57,13 +57,21 @@ func verifiedCommand(dir string, m *extension.Manifest, c extension.CommandContr
 // twice (a hand-edited .cg.json) contributes the union of what each entry
 // verifies, each command once: for a refusal check, counting more is the safe
 // side. A ledger that can't be read is an error, since it might declare any
-// command.
-func installedCommands(root string, exts []workspace.ExtensionRef) (map[string][]extension.CommandContribution, error) {
+// command, unless nothing incoming declares a command or the extension is
+// itself being replaced (skip), when it can't conflict.
+func installedCommands(root string, exts []workspace.ExtensionRef, skip map[string][]extension.CommandContribution) (map[string][]extension.CommandContribution, error) {
 	out := map[string][]extension.CommandContribution{}
+	anyIncoming := false
+	for _, cs := range skip {
+		anyIncoming = anyIncoming || len(cs) > 0
+	}
 	for i := range exts {
 		e := &exts[i]
 		led, err := extension.LoadLedger(root, e.Name)
 		if err != nil {
+			if _, replaced := skip[e.Name]; replaced || !anyIncoming {
+				continue
+			}
 			return nil, unreadableLedgerError(root, e.Name, err)
 		}
 		if led == nil || len(led.Commands) == 0 {
@@ -107,7 +115,7 @@ func builtinFor(command string) string {
 // by extension name) that conflict with each other, with the verified commands
 // of the extensions installed in the workspace at root, or with a built-in.
 func checkCommands(root string, installed []workspace.ExtensionRef, incoming map[string][]extension.CommandContribution) error {
-	have, err := installedCommands(root, installed)
+	have, err := installedCommands(root, installed, incoming)
 	if err != nil {
 		return err
 	}

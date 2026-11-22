@@ -469,16 +469,21 @@ func TestDispatchPathFallbackRefusesSeparators(t *testing.T) {
 	}
 }
 
-// A broken ledger blocks only a namespace no readable entry declares: one a
-// readable ledger declares still runs.
-func TestDispatchUnreadableLedgerBlocksOnlyUndecided(t *testing.T) {
+// A broken ledger stops dispatch through its workspace even when a readable
+// ledger declares the namespace: it might declare a longer command (S15) or
+// the same one (S18).
+func TestDispatchUnreadableLedgerStopsDeclaredNamespace(t *testing.T) {
 	requireGit(t)
-	ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"}, []string{"beta", "pr"})
+	// beta's verified `pr` next to alpha's `pr merge`, as a pulled .cg.json
+	// could leave them (install refuses the pair).
+	ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "pr merge"}, []string{"beta", "other"})
+	ledgerAdd(t, ws, "beta", extension.CommandContribution{Command: "pr", Binary: "cg-beta"})
+	updateManifestInTree(t, ws, "beta", commandsManifest("beta", "1.0.0", "other", "pr"))
 	if err := os.WriteFile(extension.LedgerPath(ws, "alpha"), []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if run := mustDispatch(t, "pr"); run.path != binOf(t, ws, "beta") {
-		t.Errorf("pr = %+v, want beta's", run)
+	for _, args := range [][]string{{"pr", "merge"}, {"pr"}, {"other"}} {
+		dispatchErr(t, args, extension.LedgerPath(ws, "alpha"))
 	}
 }
 
@@ -486,16 +491,25 @@ func TestDispatchUnreadableLedgerBlocksOnlyUndecided(t *testing.T) {
 // when one of them verifies, as the install-time check counts it.
 func TestDispatchDuplicateEntryPrefersVerified(t *testing.T) {
 	requireGit(t)
-	ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"})
-	cfg, _ := workspace.Detect(ws)
-	stale := cfg.Extensions[0]
-	stale.Commit = strings.Repeat("0", 40) // a tree that isn't there
-	cfg.Extensions = append([]workspace.ExtensionRef{stale}, cfg.Extensions...)
-	if err := cfg.Save(ws); err != nil {
-		t.Fatal(err)
-	}
-	if run := mustDispatch(t, "shop"); run.command != "shop" {
-		t.Errorf("shop = %+v", run)
+	for _, staleFirst := range []bool{true, false} {
+		ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"})
+		cfg, err := workspace.Detect(ws)
+		if err != nil || cfg == nil || len(cfg.Extensions) != 1 {
+			t.Fatalf("Detect: %+v, %v", cfg, err)
+		}
+		stale := cfg.Extensions[0]
+		stale.Commit = strings.Repeat("0", 40) // a tree that isn't there
+		if staleFirst {
+			cfg.Extensions = append([]workspace.ExtensionRef{stale}, cfg.Extensions...)
+		} else {
+			cfg.Extensions = append(cfg.Extensions, stale)
+		}
+		if err := cfg.Save(ws); err != nil {
+			t.Fatal(err)
+		}
+		if run := mustDispatch(t, "shop"); run.command != "shop" {
+			t.Errorf("staleFirst=%v: shop = %+v", staleFirst, run)
+		}
 	}
 }
 
@@ -511,6 +525,26 @@ func TestInstallRefusesWithUnreadableLedger(t *testing.T) {
 	repo := makeExtRepo(t, commandsManifest("beta", "1.0.0", "shop add"))
 	out, err := runExtCfg(t, cfgHome, ws, "install", repo)
 	wantConflict(t, err, out, extension.LedgerPath(ws, "alpha"))
+}
+
+// Nothing incoming that declares a command, or replacing the extension whose
+// ledger is broken, can't conflict: the broken ledger doesn't block it.
+func TestUnreadableLedgerBlocksOnlyIncomingCommands(t *testing.T) {
+	requireGit(t)
+	ws := newWorkspace(t)
+	cfgHome := t.TempDir()
+	installRepo(t, cfgHome, ws, commandsManifest("alpha", "1.0.0", "shop add"))
+	if err := os.WriteFile(extension.LedgerPath(ws, "alpha"), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := workspace.Detect(ws)
+	if err := checkCommands(ws, cfg.Extensions, map[string][]extension.CommandContribution{"beta": nil}); err != nil {
+		t.Errorf("no incoming command: %v", err)
+	}
+	if err := checkCommands(ws, cfg.Extensions, map[string][]extension.CommandContribution{
+		"alpha": {{Command: "shop add", Binary: "cg-alpha"}}}); err != nil {
+		t.Errorf("replacing alpha itself: %v", err)
+	}
 }
 
 // The S17 error names its remedy once.

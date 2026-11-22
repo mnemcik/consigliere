@@ -454,7 +454,10 @@ not a conflict. A removed extension's commands are free again.
 
 An installed extension's commands are read from its ledger and counted only
 when its manifest, in its tree at the recorded commit, declares the same
-command with the same binary and that binary exists. The ledger is committed
+command with the same binary and that binary exists. A ledger that can't be
+read might declare anything, so install, update and `cg init` refuse incoming
+commands until it is restored (unless it belongs to the extension being
+replaced). The ledger is committed
 in the workspace, so it isn't trusted on its own, just as for the
 [launcher](#contribution-points).
 
@@ -483,13 +486,13 @@ the workspace's declared commands:
    `cg extension update <name>`, or correcting the entry when its `path` in
    `.cg.json` is invalid. cg never falls back to another program for it. Two
    ledgers declaring the same command in the namespace (a hand-edited or pulled
-   `.cg.json`) stop dispatch too. So does a `.cg.json` that can't be read, and a
-   ledger that can't be read when no readable ledger declares the namespace,
-   since it might: the error names the file to restore.
+   `.cg.json`) stop dispatch too. So does a `.cg.json` or ledger that can't be
+   read (it might declare the command), and a current directory cg can't
+   determine: the error names the file to restore.
 4. When no installed extension declares any command in the namespace, cg runs a
    `cg-<namespace>` executable on `$PATH`, if there is one, with the arguments
-   after the namespace (a plain name: one with a path separator is never looked
-   up). A namespace an extension declares never reaches `$PATH`, whether or not
+   after the namespace (a plain name: one with a path separator or a colon is
+   never looked up). A namespace an extension declares never reaches `$PATH`, whether or not
    the full command matched.
 
 Otherwise cobra's "unknown command" error is shown, with a hint that an

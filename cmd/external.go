@@ -169,10 +169,11 @@ type commandEntry struct {
 
 // namespaceEntries returns the ledger command entries of the workspace at root
 // whose namespace is ns, in .cg.json order, each verified against its
-// extension's manifest in its pinned tree. A .cg.json that can't be read is an
-// error. So is a ledger that can't be read, when no readable ledger declares
-// the namespace: the broken one might, so dispatch must not hand the
-// namespace to a later root or to PATH.
+// extension's manifest in its pinned tree. A .cg.json or ledger that can't be
+// read is an error: a broken ledger might declare the namespace, a longer
+// command than any readable entry (S15) or the same one (S18), so dispatch
+// must neither pick among the rest nor hand the namespace to a later root or
+// to PATH.
 func namespaceEntries(root, ns string) ([]commandEntry, error) {
 	cfg, err := workspace.Detect(root)
 	if err != nil {
@@ -182,18 +183,12 @@ func namespaceEntries(root, ns string) ([]commandEntry, error) {
 	if cfg == nil {
 		return nil, nil
 	}
-	var (
-		out        []commandEntry
-		unreadable error
-	)
+	var out []commandEntry
 	for i := range cfg.Extensions {
 		e := &cfg.Extensions[i]
 		led, lerr := extension.LoadLedger(root, e.Name)
 		if lerr != nil {
-			if unreadable == nil {
-				unreadable = unreadableLedgerError(root, e.Name, lerr)
-			}
-			continue
+			return nil, unreadableLedgerError(root, e.Name, lerr)
 		}
 		if led == nil {
 			continue
@@ -224,9 +219,6 @@ func namespaceEntries(root, ns string) ([]commandEntry, error) {
 			}
 			out = append(out, entry)
 		}
-	}
-	if len(out) == 0 && unreadable != nil {
-		return nil, unreadable
 	}
 	return out, nil
 }
