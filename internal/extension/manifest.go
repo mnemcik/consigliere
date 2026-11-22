@@ -32,7 +32,11 @@ const (
 	ManifestFile = "cg-extension.json"
 )
 
-// nameRe constrains extension names, section ids, binaries and command words. A
+// wordRe constrains command words: a letter or digit first, so a word can
+// always be typed (typed words end at the first argument starting with "-").
+var wordRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+
+// nameRe constrains extension names, section ids and binaries. A
 // name is load-bearing: it is the install name, the .cg.json key, the clone
 // directory and the ext:<name>:section marker namespace. Keeping it to
 // [a-z0-9-]+ keeps every one of those uses safe.
@@ -249,7 +253,7 @@ func (m *Manifest) Validate() error {
 }
 
 // ValidCommand checks a command's syntax: one or more words, each matching
-// [a-z0-9-]+, separated by single spaces.
+// [a-z0-9][a-z0-9-]*, separated by single spaces.
 func ValidCommand(command string) error {
 	switch {
 	case command == "":
@@ -260,8 +264,8 @@ func ValidCommand(command string) error {
 		return fmt.Errorf("invalid command %q: words must be separated by single spaces", command)
 	}
 	for _, w := range strings.Split(command, " ") {
-		if !nameRe.MatchString(w) {
-			return fmt.Errorf("invalid command %q: word %q must match %s", command, w, nameRe.String())
+		if !wordRe.MatchString(w) {
+			return fmt.Errorf("invalid command %q: word %q must match %s", command, w, wordRe.String())
 		}
 	}
 	return nil

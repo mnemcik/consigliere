@@ -135,8 +135,9 @@ exec cg-foo gate "$@"
 ### `commands` — ship `cg foo …` commands
 
 Each `{ command, binary }` declares that `cg <command> …` runs your
-`bin/<binary>`. A command is one or more lowercase words (`[a-z0-9-]+`)
-separated by single spaces; the first word is its namespace. Your binary
+`bin/<binary>`. A command is one or more lowercase words (`[a-z0-9][a-z0-9-]*`:
+a letter or digit first) separated by single spaces; the first word is its
+namespace. Your binary
 receives every argument after the namespace word, so `cg foo sync --dry-run`
 runs `bin/cg-foo sync --dry-run`, and `CG_COMMAND` in its environment says which
 declared command cg matched (`foo sync`). One binary may serve several

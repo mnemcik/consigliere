@@ -17,7 +17,7 @@ func TestSetWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	c, err := ReadContext(root, "s1")
-	if err != nil || c == nil || c.Worktree != "/w/one" {
+	if err != nil || c == nil || c.Worktree != filepath.FromSlash("/w/one") {
 		t.Fatalf("after create: %+v, %v", c, err)
 	}
 	writeCtx(t, root, "s2", `{"area":"a","project":"p","dirty":true,"extra":7}`)
@@ -39,7 +39,7 @@ func TestSetWorktree(t *testing.T) {
 	if err := WriteContext(root, "s2", Claim{Area: "b", Project: "q"}); err != nil {
 		t.Fatal(err)
 	}
-	if c, _ := ReadContext(root, "s2"); c == nil || c.Worktree != "/w/two" {
+	if c, _ := ReadContext(root, "s2"); c == nil || c.Worktree != filepath.FromSlash("/w/two") {
 		t.Errorf("WriteContext dropped the worktree: %+v", c)
 	}
 }

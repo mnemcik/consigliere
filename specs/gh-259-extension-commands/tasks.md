@@ -38,12 +38,12 @@
 ## Amendments A–F (after the new agreement)
 
 - [ ] S9: owned-command exemption with a warning (ownership from the installed version's manifest only, per command; `cg init` only warns), test-first, with the mutation checks plan.md lists
-- [ ] S2: command words match `[a-z0-9][a-z0-9-]*`, test-first
+- [x] S2: command words match `[a-z0-9][a-z0-9-]*`, test-first
 - [ ] S25: stop branch for every decode case of the session `.cg.json` (directory, dangling symlink, empty, invalid JSON, `null`, non-object, any field of the wrong type, decoded as cg reads `.cg.json` elsewhere), from S20, S22 and S24, and the S21 exemption, test-first, with the mutation checks plan.md lists
 - [ ] S36/S38: the main checkout refused by `set-context --worktree` and ignored as a recorded worktree (then S38b applies), test-first, with mutation checks
 - [ ] S36/S38: paths compared after resolving symlinks on both sides; a symlinked path to a linked worktree accepted, test-first, with a mutation check
 - [ ] S38b: a recorded main checkout counts as "no valid worktree recorded", test-first
-- [ ] S14: list wording (a built-in-namespace command can't run)
+- [x] S14: list wording (a built-in-namespace command can't run)
 - [ ] S35: `cg worktree create` records only worktrees of the session's workspace repo (`CG_WORKSPACE`'s, else the current workspace's); test-first: create in another repo leaves the record unchanged
 - [ ] S35: the session repo is the session root's (`CG_WORKSPACE` unless S25 ignores it, else the cwd's workspace root); a worktree belongs to it when the session root's cleaned-env `git worktree list --porcelain` lists it and it isn't the main checkout, compared after resolving symlinks; test-first, with mutation checks: no session repo (no valid `CG_WORKSPACE`, cwd outside any workspace) records nothing; a symlinked session root still matches
 - [ ] S36: `set-context --worktree` refuses a path that isn't one of the session repo's linked worktrees, test-first

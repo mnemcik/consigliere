@@ -434,7 +434,7 @@ func TestListShowsCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v\n%s", err, out)
 	}
-	for _, want := range []string{"commands: shop, shop add", `commands: start x (shadowed by the built-in "cg start")`} {
+	for _, want := range []string{"commands: shop, shop add", `commands: start x (can't run: the built-in "cg start" wins)`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("list output lacks %q:\n%s", want, out)
 		}

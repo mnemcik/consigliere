@@ -62,7 +62,8 @@ func TestValidateCommands(t *testing.T) {
 		cmdManifest(2, "shop", "shop add"),
 		cmdManifest(2, "coderabbit approve", "pr", "pr merge now"),
 		cmdManifest(2, "a-1 b-2 c-3"),
-		cmdManifest(2), // v2 without commands
+		cmdManifest(2, "a- 9-"), // a letter or digit first; a trailing - is fine
+		cmdManifest(2),          // v2 without commands
 	} {
 		if err := m.Validate(); err != nil {
 			t.Errorf("Validate(%v): %v", m.Contributes.Commands, err)
@@ -158,6 +159,8 @@ func TestValidateRejects(t *testing.T) {
 		{"command leading space", cmdManifest(2, " pr"), `commands[0]: invalid command " pr": no leading or trailing space`},
 		{"command trailing space", cmdManifest(2, "pr "), `commands[0]: invalid command "pr ": no leading or trailing space`},
 		{"command tab", cmdManifest(2, "pr\tmerge"), `commands[0]: invalid command "pr\tmerge": word "pr\tmerge" must match`},
+		{"command word starting with -", cmdManifest(2, "pr --all"), `commands[0]: invalid command "pr --all": word "--all" must match ^[a-z0-9][a-z0-9-]*$`},
+		{"command namespace starting with -", cmdManifest(2, "-x"), `commands[0]: invalid command "-x": word "-x" must match`},
 		{
 			"command bad binary",
 			Manifest{Manifest: 2, Name: "a", Version: "1.0.0", Description: "d",

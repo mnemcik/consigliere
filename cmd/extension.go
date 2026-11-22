@@ -582,7 +582,7 @@ func runExtList(cmd *cobra.Command, _ []string) error {
 			for i, c := range l.Commands {
 				cs[i] = c.Command
 				if c.ShadowedByBuiltin != "" {
-					cs[i] += fmt.Sprintf(" (shadowed by the built-in \"cg %s\")", c.ShadowedByBuiltin)
+					cs[i] += fmt.Sprintf(" (can't run: the built-in \"cg %s\" wins)", c.ShadowedByBuiltin)
 				}
 			}
 			_, _ = fmt.Fprintf(out, "  commands: %s\n", strings.Join(cs, ", "))
@@ -599,8 +599,8 @@ type listedExtension struct {
 }
 
 // listedCommand is a command an installed extension declares. ShadowedByBuiltin
-// names the built-in cg command its namespace now resolves to (one added in a
-// cg newer than the install), so the extension's command no longer runs.
+// names the built-in cg command its namespace resolves to, so the extension's
+// command can't run: the built-in wins.
 type listedCommand struct {
 	Command           string `json:"command"`
 	Binary            string `json:"binary"`

@@ -202,7 +202,8 @@ an extension that still uses it contributes no command until it moves to
 
 4. **`commands`** — `[{ command, binary }]` (manifest v2). Each entry declares
    that `cg <command> …` runs the extension's `bin/<binary>`. A command is one
-   or more words, each `[a-z0-9-]+`, separated by single spaces (`live run`,
+   or more words, each `[a-z0-9][a-z0-9-]*` (a letter or digit first: a word
+   starting with `-` could never be typed), separated by single spaces (`live run`,
    `coderabbit approve`); its first word is its **namespace**. `binary` is any
    `[a-z0-9-]+` file in `bin/`, and one binary may serve several commands. The
    binary is recorded in the ledger, **not** copied into the workspace. cg owns
@@ -308,7 +309,7 @@ an extension that still uses it contributes no command until it moves to
 | `cg extension install <repo-url>` | Skip the registry: fetch the URL directly, read its manifest, take `name` from the manifest. Source recorded as `direct`. |
 | `cg extension install … --ref <tag\|branch\|commit>` | Install at that ref. Default: the default branch. |
 | `cg extension install <repo-url> --path <subdir>` | Install a co-located extension whose manifest lives in `<subdir>` of a monorepo. Direct installs only; registry entries carry their own `path`. See [Co-located extensions](#co-located-extensions-monorepo). |
-| `cg extension list [--json]` | List installed extensions for the current workspace: name, version, source, repo, and the commands each declares. A command whose namespace is now a built-in (one added by a later cg) is flagged as shadowed: it no longer runs. |
+| `cg extension list [--json]` | List installed extensions for the current workspace: name, version, source, repo, and the commands each declares. A command whose namespace is a built-in is flagged: it can't run, because the built-in wins. |
 | `cg extension remove <name> [--purge]` | Reverse every contribution recorded in the workspace ledger (delete the `ext:<name>:section` block, copied notes/templates that are still as cg wrote them, hook wrapper + settings entry, git-hook scripts and any dispatcher left with nothing to run, the notes index block), drop the `.cg.json` entry, delete the ledger. The store's trees are shared, so they stay; `--purge` deletes only a legacy name-keyed clone. |
 | `cg extension update [<name>]` | Move a **single-repo** extension to its latest tag (or its default branch when untagged), record the new commit, then re-apply contributions (replace-in-place). A **co-located** (subdir) extension instead tracks the default branch and versions from its manifest — see [Co-located extensions](#co-located-extensions-monorepo). No `<name>` updates all installed extensions. Copied notes and templates you changed are kept: see [Files you change](#files-you-change). Every target's new version is fetched and its [commands checked](#extension-commands), with the extensions not being updated, before any target is applied. |
 | `cg extension pending [--json]` | List copied files that both you and the extension changed, which update left as yours. |

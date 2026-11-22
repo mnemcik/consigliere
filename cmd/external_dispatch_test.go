@@ -386,10 +386,12 @@ func TestExternalRunPropagatesExitCode(t *testing.T) {
 }
 
 // Q7: the typed words end at the first argument starting with "-", even when a
-// declared command has such a word.
+// ledger has such a word (a manifest can't declare one, S2; a hand-edited
+// ledger can).
 func TestDispatchTypedWordsEndAtFlag(t *testing.T) {
 	requireGit(t)
-	dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop", "shop --all"})
+	ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"})
+	ledgerAdd(t, ws, "alpha", extension.CommandContribution{Command: "shop --all", Binary: "cg-alpha"})
 	if run := mustDispatch(t, "shop", "--all"); run.command != "shop" {
 		t.Errorf("`cg shop --all` matched %q, want the bare namespace", run.command)
 	}
