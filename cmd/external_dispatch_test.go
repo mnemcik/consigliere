@@ -417,8 +417,9 @@ func TestDispatchUnreadableStateFailsClosed(t *testing.T) {
 		pathProgram(t, "shop")
 		dispatchErr(t, []string{"shop", "add"}, extension.LedgerPath(ws, "alpha"), "restore it")
 		// update and remove read the same ledger, so they can't be the fix.
-		if _, err := externalDispatch([]string{"shop", "add"}); err != nil && strings.Contains(err.Error(), "cg extension") {
-			t.Errorf("error %q suggests a cg extension command, which fails on the same ledger", err)
+		if _, err := externalDispatch([]string{"shop", "add"}); err != nil &&
+			(strings.Contains(err.Error(), "cg extension update") || strings.Contains(err.Error(), "cg extension remove")) {
+			t.Errorf("error %q suggests update or remove, which fail on the same ledger", err)
 		}
 	})
 	t.Run(".cg.json", func(t *testing.T) {
@@ -527,9 +528,9 @@ func TestInstallRefusesWithUnreadableLedger(t *testing.T) {
 	wantConflict(t, err, out, extension.LedgerPath(ws, "alpha"))
 }
 
-// Nothing incoming that declares a command, or replacing the extension whose
-// ledger is broken, can't conflict: the broken ledger doesn't block it.
-func TestUnreadableLedgerBlocksOnlyIncomingCommands(t *testing.T) {
+// Another extension's broken ledger blocks only when something incoming
+// declares a command; an incoming extension's own broken ledger always blocks.
+func TestUnreadableLedgerInCommandCheck(t *testing.T) {
 	requireGit(t)
 	ws := newWorkspace(t)
 	cfgHome := t.TempDir()
@@ -540,6 +541,9 @@ func TestUnreadableLedgerBlocksOnlyIncomingCommands(t *testing.T) {
 	cfg, _ := workspace.Detect(ws)
 	if err := checkCommands(ws, cfg.Extensions, map[string][]extension.CommandContribution{"beta": nil}); err != nil {
 		t.Errorf("no incoming command: %v", err)
+	}
+	if err := checkCommands(ws, cfg.Extensions, map[string][]extension.CommandContribution{"alpha": nil}); err == nil {
+		t.Error("alpha's own broken ledger must block, even with no commands")
 	}
 	// Replacing alpha itself would fail later, reading the same ledger:
 	// refuse up front, naming it.

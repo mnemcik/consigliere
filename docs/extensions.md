@@ -457,9 +457,9 @@ when its manifest, in its tree at the recorded commit, declares the same
 command with the same binary and that binary exists. A ledger that can't be
 read might declare anything, so install, update and `cg init` refuse incoming
 commands until it is restored; and an extension being installed, updated or
-restored needs its own ledger readable, so nothing is applied when one isn't. The ledger is committed
-in the workspace, so it isn't trusted on its own, just as for the
-[launcher](#contribution-points).
+restored needs its own ledger readable, so nothing is applied when one isn't.
+The ledger is committed in the workspace, so it isn't trusted on its own, just
+as for the [launcher](#contribution-points).
 
 A built-in added by a later cg can shadow a command an extension declared
 earlier. `cg extension list` flags such a command; it no longer runs.

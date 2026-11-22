@@ -224,10 +224,11 @@ func namespaceEntries(root, ns string) ([]commandEntry, error) {
 }
 
 // unreadableLedgerError says that extension name's ledger in the workspace at
-// root can't be read. Restoring the file is the fix: `cg extension update` and
-// `remove` read the same ledger.
+// root can't be read. `cg extension update` and `remove` read the same ledger,
+// so they can't fix it: restoring a damaged file can, or deleting it and
+// reinstalling the extension.
 func unreadableLedgerError(root, name string, err error) error {
-	return cgerr.New(cgerr.ExitUsage, "can't read %s (%v), so cg can't tell which commands extension %q declares; if it is damaged, restore it, for example from git",
+	return cgerr.New(cgerr.ExitUsage, "can't read %s (%v), so cg can't tell which commands extension %q declares; if it is damaged, restore it (for example from git), or delete it and reinstall the extension with `cg extension install --force`",
 		extension.LedgerPath(root, name), err, name)
 }
 
