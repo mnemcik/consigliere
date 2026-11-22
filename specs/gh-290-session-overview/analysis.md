@@ -142,7 +142,11 @@ review gate and the todo queue are out of this item's core scope.
   3. *Working*: background `state: working` (even when its process is between steps), or interactive
      `status: busy`;
   4. *Ended*: background `state: failed` / `stopped`;
-  5. *Claim only*: a cg badge with no matching agent session (the session is gone or isn't a Claude Code one);
+  5. *Claim only*: a cg badge with no matching agent session (the session is gone or isn't a Claude Code one).
+     Badges are deleted only on release, and a crashed or dirty session releases nothing, so this group applies
+     `cg active`'s usual liveness windows and shows each badge's age; older ones appear only with the
+     `--everywhere`-style flag. A badge whose agent session is `failed` / `stopped` goes in *Ended*, since the
+     IDs join;
   6. *Paused projects* from cg (`resume.md`).
 
   **Which sessions:** `claude agents --json` lists every session on the machine (40 in the capture), and its
@@ -274,7 +278,7 @@ review gate and the todo queue are out of this item's core scope.
 | # | Decision | Recommended answer | Status |
 |---|---|---|---|
 | 1 | Data source for "waiting on the user": Claude Code's own status (`claude agents --json`) or hook-recorded state in the cg badge | Claude Code's status, after first confirming on a real pending dialog that it reports `waiting` with `waitingFor` | open |
-| 2 | Scope of #290: sessions only (waiting / turn ended / working / ended / paused), with "ready for review" left to `pr-workflow` and "who acts next for a todo" split into its own issue; and which sessions are listed | Sessions only; split the todo field out; PRs join later from `pr-workflow`. List sessions with a badge in this workspace or a `cwd` in the workspace or its worktrees; others only with `--all` | open |
+| 2 | Scope of #290: sessions only (waiting / turn ended / working / ended / paused), with "ready for review" left to `pr-workflow` and "who acts next for a todo" split into its own issue; and which sessions are listed | Sessions only; split the todo field out; PRs join later from `pr-workflow`. List sessions with a badge in this workspace or a `cwd` in the workspace or its worktrees; others only with a flag such as `--everywhere` | open |
 | 3 | Where it ships and what it's called: a new cg-extensions extension, or part of the opt-in Claude Code extension #266 proposes; the command name | A small extension in cg-extensions, built as a manifest-v2 command after #259 merges, folded into #266's extension if that is built; name chosen by the owner under #259's naming rule (`session` is a built-in namespace) | open |
 | 4 | Push side: is the 2026-11-22 incident a missing view or a notification that didn't reach the user (terminal, tmux, notification setting)? | Owner to say which setup it happened in; if the notification didn't arrive, fix that setup separately, not in #290 | open (question) |
 | 5 | Core change: a `cg active` option that lists every badge regardless of the liveness windows (and badges without a project, and the caller's own), with #259's `worktree` in the JSON | Yes, a small agent-neutral core change after #259 merges; the default output stays as it is | open |
@@ -313,6 +317,17 @@ review gate and the todo queue are out of this item's core scope.
 - Verified true: round-1 items 1-9 resolved; `active.go:71`, `:88-95`; `--cwd` background-only and `--all` in
   `claude agents --help`; `subcommands` not on Windows; #259 S28, S40, X6, Q1; no private details
 - Not verified: whether `--cwd` with `--json` filters interactive sessions; `claude agents` on Windows
+
+**Review 3** — same path @ content 460238c (commit 2d58a6d), delta from 16bc028 · 2026-11-22
+- Reviewers: doc-reviewer (same lenses, delta scope, regression check of round 2)
+- Tests: not applicable (analysis)
+- Findings: 0 blocker, 1 should-fix, 1 nit → fixed: decision 2 still named the old `--all` flag; *Claim only*
+  had no bound (now uses the liveness windows, older badges behind the flag). owner's: none; rejected: none;
+  dropped in validation: none
+- Builder questions: 2 answered (*Claim only* bound; a failed/stopped session with a badge goes in *Ended*)
+- Verified true: round-2 items resolved apart from decision 2's flag name; `cmd/active.go:34,64-68,76`;
+  `claude agents --help` `--all` and `--cwd`; terminal-config notification conditions; no private details
+- Not verified: `waitingFor` only while `waiting` (documented, not observed)
 
 ## Verdict
 
