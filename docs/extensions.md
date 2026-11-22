@@ -537,9 +537,16 @@ directory put where a deleted worktree was doesn't. When the list can't be read
 or trusted (no git, the session's workspace isn't the top level of its
 repository), the current directory's workspace counts as another workspace. A
 `.cg.json` above the current directory that can't be read stops a command only
-when the session's workspace doesn't declare its namespace. A `CG_WORKSPACE` that is
-relative, or names a directory without a valid `.cg.json` (a worktree removed
-since the session started), is ignored, and the unknown-command hint says so.
+when the session's workspace doesn't declare its namespace.
+
+A `CG_WORKSPACE` that is relative, names a directory that doesn't exist (a worktree removed since the
+session started), one without a `.cg.json`, or one whose `.cg.json` isn't a
+Consigliere workspace's is ignored, and the unknown-command hint says so. One
+whose `.cg.json` exists but can't be read or decoded (a directory, a dangling
+symlink, an empty file, invalid JSON, `null`, a non-object, a field of the wrong
+type) stops dispatch, naming the file, with no fallback to another workspace or
+`$PATH`; only inside one of the session's worktrees does that worktree's own
+`.cg.json` serve instead.
 
 Because the first workspace that declares a namespace decides it, a cloned
 repository's workspace can't answer a command in a namespace the session's

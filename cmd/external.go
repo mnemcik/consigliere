@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -198,6 +201,9 @@ func typedWords(args []string) []string {
 // directory's path.)
 func consultedRoots() (roots []string, cwdErr error) {
 	_, sroot, _ := sessionRoot()
+	if sdir, broken := brokenSessionConfig(); broken != nil {
+		return brokenSessionRoots(sdir, broken)
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		cwdErr = cgerr.New(cgerr.ExitUsage, "can't determine the current directory (%v), so cg can't tell which workspace's extension commands apply", err)
@@ -233,6 +239,22 @@ func consultedRoots() (roots []string, cwdErr error) {
 	}
 }
 
+// brokenSessionRoots handles a CG_WORKSPACE whose .cg.json exists but can't be
+// read or decoded (S25): dispatch stops with broken, unless the current
+// directory's workspace is one of the session repo's worktrees (S21), whose
+// own .cg.json alone counts.
+func brokenSessionRoots(sdir string, broken error) ([]string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, broken
+	}
+	root, _, err := workspace.FindRoot(cwd)
+	if err != nil || root == "" || samePath(root, sdir) || !sessionWorktree(sdir, root) {
+		return nil, broken
+	}
+	return []string{root}, nil
+}
+
 // sessionOnly is the session root as a root list, or none.
 func sessionOnly(sroot string) []string {
 	if sroot == "" {
@@ -242,23 +264,83 @@ func sessionOnly(sroot string) []string {
 }
 
 // sessionRoot reads CG_WORKSPACE. It returns the variable's value, the session
-// root when the value is usable, and otherwise why it is ignored: a relative
-// path, or a directory without a valid .cg.json (e.g. a worktree removed
-// since the session started). Unset, all three are "".
+// root when the value is usable, and otherwise why it is ignored (S25): a
+// relative path, a directory that doesn't exist (e.g. a worktree removed since
+// the session started), one without .cg.json, or one whose .cg.json isn't a
+// Consigliere workspace's. A .cg.json that exists but can't be read or decoded
+// gives no root and no reason: brokenSessionConfig reports it, and dispatch
+// stops. Unset, all three are "".
 func sessionRoot() (value, root, ignored string) {
+	value, root, ignored, _ = readSession()
+	return value, root, ignored
+}
+
+// brokenSessionConfig returns the session root and the usage error to stop
+// with when CG_WORKSPACE names a directory whose .cg.json exists but can't be
+// read or decoded; nil otherwise.
+func brokenSessionConfig() (dir string, broken error) {
+	value, _, _, broken := readSession()
+	if broken == nil {
+		return "", nil
+	}
+	return filepath.Clean(value), broken
+}
+
+// readSession classifies CG_WORKSPACE (S25): usable (root set), ignored
+// (ignored says why), or broken (a .cg.json entry that exists but can't be read
+// or doesn't decode to an object: a directory, a dangling symlink, an empty
+// file, invalid JSON, null, a non-object, or a field of the wrong type). It
+// decodes .cg.json as workspace.Detect does.
+func readSession() (value, root, ignored string, broken error) {
 	value, set := os.LookupEnv(envWorkspace)
 	switch {
 	case !set:
-		return "", "", ""
+		return "", "", "", nil
 	case value == "":
-		return "", "", "it is empty"
+		return "", "", "it is empty", nil
 	case !filepath.IsAbs(value):
-		return value, "", "it is not an absolute path"
+		return value, "", "it is not an absolute path", nil
 	}
-	if cfg, err := workspace.Detect(value); err != nil || cfg == nil {
-		return value, "", "it names no valid .cg.json"
+	dir := filepath.Clean(value)
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		if err == nil || errors.Is(err, fs.ErrNotExist) {
+			return value, "", "it names a directory that doesn't exist", nil
+		}
+		return value, "", "", sessionConfigError(dir, err)
 	}
-	return value, filepath.Clean(value), ""
+	p := filepath.Join(dir, workspace.ConfigFile)
+	if _, err := os.Lstat(p); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return value, "", "it names a directory with no " + workspace.ConfigFile, nil
+		}
+		return value, "", "", sessionConfigError(dir, err)
+	}
+	data, err := os.ReadFile(p) //nolint:gosec // the workspace the session named
+	if err != nil {
+		return value, "", "", sessionConfigError(dir, err)
+	}
+	trimmed := bytes.TrimSpace(data)
+	switch {
+	case len(trimmed) == 0:
+		return value, "", "", sessionConfigError(dir, errors.New("it is empty"))
+	case bytes.Equal(trimmed, []byte("null")) || trimmed[0] != '{':
+		return value, "", "", sessionConfigError(dir, errors.New("it isn't a JSON object"))
+	}
+	var cfg workspace.Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return value, "", "", sessionConfigError(dir, err)
+	}
+	if cfg.Type != workspace.TypeConsigliere {
+		return value, "", "its " + workspace.ConfigFile + " isn't a Consigliere workspace's", nil
+	}
+	return value, dir, "", nil
+}
+
+// sessionConfigError is the usage error for a session .cg.json that can't be
+// used.
+func sessionConfigError(dir string, err error) error {
+	return cgerr.New(cgerr.ExitUsage, "can't read %s (%v), the session's workspace (CG_WORKSPACE), so cg can't tell which extension commands it declares",
+		filepath.Join(dir, workspace.ConfigFile), err)
 }
 
 // servedFromOutside reports whether root, which serves a command, is the

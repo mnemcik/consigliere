@@ -189,8 +189,8 @@ func TestConsultedRootsIgnoresInvalidSessionRoot(t *testing.T) {
 	notWS := t.TempDir()
 	for _, tc := range []struct{ value, why string }{
 		{"relative/ws", "not an absolute path"},
-		{filepath.Join(notWS, "gone"), "no valid .cg.json"},
-		{notWS, "no valid .cg.json"},
+		{filepath.Join(notWS, "gone"), "doesn't exist"},
+		{notWS, "no .cg.json"},
 	} {
 		t.Run(tc.value, func(t *testing.T) {
 			t.Setenv(envWorkspace, tc.value)
@@ -632,5 +632,120 @@ func TestUnreadableConfigStopsAtRoot(t *testing.T) {
 	}
 	if got := unreadableConfig(sub); got != filepath.Join(parent, workspace.ConfigFile) {
 		t.Errorf("unreadableConfig(below a broken one) = %q", got)
+	}
+}
+
+// breakConfig makes dir/.cg.json one of the S25 cases that stop dispatch.
+// It reports false when the case can't be built on this platform.
+func breakConfig(t *testing.T, dir, kind string) bool {
+	t.Helper()
+	p := filepath.Join(dir, workspace.ConfigFile)
+	if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	write := func(body string) {
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil { //nolint:gosec // a test fixture
+			t.Fatal(err)
+		}
+	}
+	switch kind {
+	case "directory":
+		if err := os.Mkdir(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	case "dangling symlink":
+		if isWindowsOS {
+			return false
+		}
+		if err := os.Symlink(filepath.Join(dir, "nowhere"), p); err != nil {
+			t.Fatal(err)
+		}
+	case "empty":
+		write("")
+	case "invalid JSON":
+		write("{")
+	case "null":
+		write("null")
+	case "non-object":
+		write(`["consigliere"]`)
+	case "wrong field type":
+		write(`{"type": 5}`)
+	case "unreadable":
+		if isWindowsOS || os.Geteuid() == 0 {
+			return false
+		}
+		write(`{"type": "consigliere"}`)
+		if err := os.Chmod(p, 0); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(p, 0o644) }) //nolint:gosec // restore the fixture so TempDir cleanup can remove it
+	default:
+		t.Fatalf("unknown case %q", kind)
+	}
+	return true
+}
+
+var brokenConfigCases = []string{"directory", "dangling symlink", "empty", "invalid JSON", "null", "non-object", "wrong field type", "unreadable"}
+
+// S25: a session .cg.json that exists but can't be read or decoded stops
+// dispatch where the session root is consulted (S20, S22, S24), naming the
+// file, with no PATH fallback; inside one of the session's own worktrees (S21)
+// only that worktree's .cg.json counts.
+func TestBrokenSessionConfigStops(t *testing.T) {
+	requireGit(t)
+	for _, kind := range brokenConfigCases {
+		t.Run(kind, func(t *testing.T) {
+			cfgHome := t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", cfgHome)
+			session := sessionWorkspace(t, cfgHome, []string{"alpha", "shop"})
+			wt := addBranchWorktree(t, session, "w")
+			other := otherWorkspace(t, cfgHome, []string{"beta", "shop"})
+			if !breakConfig(t, session, kind) {
+				t.Skip("this case can't be built on this platform")
+			}
+			name := filepath.Join(session, workspace.ConfigFile)
+			t.Setenv(envWorkspace, session)
+			pathProgram(t, "shop")
+			for what, cwd := range map[string]string{"S22 another workspace": other, "S24 outside": t.TempDir(), "S20 inside": session} {
+				t.Chdir(cwd)
+				if _, err := externalDispatch([]string{"shop"}); err == nil || !strings.Contains(err.Error(), name) {
+					t.Errorf("%s: err = %v, want a stop naming %s", what, err, name)
+				}
+			}
+			// S21: the worktree's own .cg.json counts.
+			t.Chdir(wt)
+			if run := mustDispatch(t, "shop"); run.root != wt {
+				t.Errorf("S21: run = %+v, want the worktree's", run)
+			}
+		})
+	}
+}
+
+// S25: CG_WORKSPACE is ignored (dispatch as S19) when it names a directory
+// that doesn't exist, has no .cg.json, or whose .cg.json is an object whose
+// type is missing or isn't consigliere; the hint says why.
+func TestIgnoredSessionConfig(t *testing.T) {
+	for _, tc := range []struct{ name, body, why string }{
+		{"missing directory", "", "doesn't exist"},
+		{"no .cg.json", "", "no .cg.json"},
+		{"type missing", `{"version": "1"}`, "isn't a Consigliere workspace"},
+		{"another type", `{"type": "other"}`, "isn't a Consigliere workspace"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			other := newWorkspace(t)
+			dir := t.TempDir()
+			if tc.name == "missing directory" {
+				dir = filepath.Join(dir, "gone")
+			} else if tc.body != "" {
+				if err := os.WriteFile(filepath.Join(dir, workspace.ConfigFile), []byte(tc.body), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Setenv(envWorkspace, dir)
+			wantRoots(t, other, other)
+			if h := unknownCommandHint(errUnknownForTest); !strings.Contains(h, "ignored") || !strings.Contains(h, tc.why) {
+				t.Errorf("hint %q doesn't say %q", h, tc.why)
+			}
+		})
 	}
 }

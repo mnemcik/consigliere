@@ -29,8 +29,9 @@ func dispatchWorkspace(t *testing.T, cfgHome string, exts ...[]string) string {
 	return ws
 }
 
-// pathProgram puts an executable cg-<ns> in a fresh directory as the whole
-// PATH, so a test can tell whether dispatch reached the PATH fallback.
+// pathProgram puts an executable cg-<ns> in a fresh directory at the front of
+// PATH (git stays reachable), so a test can tell whether dispatch reached the
+// PATH fallback.
 func pathProgram(t *testing.T, ns string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -41,7 +42,7 @@ func pathProgram(t *testing.T, ns string) string {
 	if err := os.WriteFile(p, []byte("#!/bin/sh\necho path\n"), 0o755); err != nil { //nolint:gosec // an executable test fixture
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", dir)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return p
 }
 
