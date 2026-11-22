@@ -213,7 +213,11 @@ func findLauncher(root string, cfg *workspace.Config) (*launcher, error) {
 		}
 		dir, m, err := verifiedManifest(e)
 		if err != nil {
-			warn("%v", err)
+			if errors.Is(err, errBadPath) {
+				warn("%v", err)
+			} else {
+				warn("%v; `cg init` restores the recorded version", err)
+			}
 			continue
 		}
 		if len(m.Contributes.Launcher) == 0 || !sameLauncher(led.Launcher[0], m.Contributes.Launcher[0]) {

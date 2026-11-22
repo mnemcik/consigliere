@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/mnemcik/consigliere/internal/cgerr"
@@ -77,7 +78,11 @@ func externalDispatch(args []string) (*externalRun, error) {
 	}
 	typed := typedWords(args[verbIdx:])
 	rest := args[verbIdx+1:]
-	for _, root := range consultedRoots() {
+	roots, err := consultedRoots()
+	if err != nil {
+		return nil, err
+	}
+	for _, root := range roots {
 		run, decided, err := dispatchIn(root, typed)
 		if err != nil {
 			return nil, err
@@ -86,6 +91,11 @@ func externalDispatch(args []string) (*externalRun, error) {
 			run.args = rest
 			return run, nil
 		}
+	}
+	// Only a plain name is looked up: with a path separator, LookPath would
+	// take cg-<namespace> as a path relative to the current directory.
+	if strings.ContainsAny(typed[0], `/\`) {
+		return nil, nil
 	}
 	if p, err := exec.LookPath("cg-" + typed[0]); err == nil {
 		return &externalRun{path: p, args: rest}, nil
@@ -104,12 +114,21 @@ func typedWords(args []string) []string {
 }
 
 // consultedRoots are the workspace roots dispatch looks at, in order: the
-// workspace of the current directory, if any.
-func consultedRoots() []string {
-	if root := workspaceRootForDispatch(); root != "" {
-		return []string{root}
+// workspace of the current directory, if any. A .cg.json on the way up that
+// can't be read is an error: it might be a workspace declaring the command.
+func consultedRoots() ([]string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, nil
 	}
-	return nil
+	root, _, err := workspace.FindRoot(cwd)
+	if err != nil {
+		return nil, cgerr.New(cgerr.ExitUsage, "can't read the workspace's %s (%v), so cg can't tell which extension commands it declares", workspace.ConfigFile, err)
+	}
+	if root == "" {
+		return nil, nil
+	}
+	return []string{root}, nil
 }
 
 // commandEntry is one ledger command entry of a workspace, checked against the
@@ -122,27 +141,39 @@ type commandEntry struct {
 	bin string
 	// unverified says why the entry can't run; "" when it is verified.
 	unverified string
+	// badPath says the extension's .cg.json entry has an invalid path.
+	badPath bool
 }
 
 // namespaceEntries returns the ledger command entries of the workspace at root
 // whose namespace is ns, in .cg.json order, each verified against its
-// extension's manifest in its pinned tree.
-func namespaceEntries(root, ns string) []commandEntry {
+// extension's manifest in its pinned tree. A .cg.json or ledger that can't be
+// read is an error: it might declare the namespace, so dispatch must not hand
+// it to a later root or to PATH.
+func namespaceEntries(root, ns string) ([]commandEntry, error) {
 	cfg, err := workspace.Detect(root)
-	if err != nil || cfg == nil {
-		return nil
+	if err != nil {
+		return nil, cgerr.New(cgerr.ExitUsage, "can't read %s (%v), so cg can't tell which extension commands it declares",
+			filepath.Join(root, workspace.ConfigFile), err)
+	}
+	if cfg == nil {
+		return nil, nil
 	}
 	var out []commandEntry
 	for i := range cfg.Extensions {
 		e := &cfg.Extensions[i]
 		led, lerr := extension.LoadLedger(root, e.Name)
-		if lerr != nil || led == nil {
+		if lerr != nil {
+			return nil, cgerr.New(cgerr.ExitUsage, "can't read %s (%v), so cg can't tell which commands extension %q declares; restore the file, or run `cg extension update %s`",
+				extension.LedgerPath(root, e.Name), lerr, e.Name, e.Name)
+		}
+		if led == nil {
 			continue
 		}
 		var (
-			dir, why string
-			m        *extension.Manifest
-			checked  bool
+			dir, why         string
+			m                *extension.Manifest
+			checked, badPath bool
 		)
 		for _, c := range led.Commands {
 			if extension.CommandNamespace(c.Command) != ns {
@@ -153,9 +184,10 @@ func namespaceEntries(root, ns string) []commandEntry {
 				var verr error
 				if dir, m, verr = verifiedManifest(e); verr != nil {
 					why = verr.Error()
+					badPath = errors.Is(verr, errBadPath)
 				}
 			}
-			entry := commandEntry{ext: c, name: e.Name, unverified: why}
+			entry := commandEntry{ext: c, name: e.Name, unverified: why, badPath: badPath}
 			if why == "" {
 				entry.bin = filepath.Join(dir, "bin", c.Binary)
 				if !verifiedCommand(dir, m, c) {
@@ -165,7 +197,7 @@ func namespaceEntries(root, ns string) []commandEntry {
 			out = append(out, entry)
 		}
 	}
-	return out
+	return out, nil
 }
 
 // dispatchIn looks for the typed command among the declared commands of the
@@ -174,7 +206,10 @@ func namespaceEntries(root, ns string) []commandEntry {
 // decides, and either run is set or err says why nothing runs.
 func dispatchIn(root string, typed []string) (run *externalRun, decided bool, err error) {
 	ns := typed[0]
-	entries := namespaceEntries(root, ns)
+	entries, err := namespaceEntries(root, ns)
+	if err != nil {
+		return nil, true, err
+	}
 	if len(entries) == 0 {
 		return nil, false, nil
 	}
@@ -204,16 +239,23 @@ func dispatchIn(root string, typed []string) (run *externalRun, decided bool, er
 	if best == nil {
 		cmds := make([]string, 0, len(entries))
 		for _, en := range entries {
-			cmds = append(cmds, "  cg "+en.ext.Command)
+			// An extension .cg.json lists twice repeats its entries.
+			if c := "  cg " + en.ext.Command; !slices.Contains(cmds, c) {
+				cmds = append(cmds, c)
+			}
 		}
 		return nil, true, cgerr.New(cgerr.ExitUsage,
 			"unknown command \"cg %s\": the extensions installed in %s declare these commands in %q:\n%s",
 			strings.Join(typed, " "), root, ns, strings.Join(cmds, "\n"))
 	}
 	if best.unverified != "" {
+		fix := fmt.Sprintf("run `cg init` to restore the recorded version, or `cg extension update %s`", best.name)
+		if best.badPath {
+			fix = fmt.Sprintf("correct its entry in %s", filepath.Join(root, workspace.ConfigFile))
+		}
 		return nil, true, cgerr.New(cgerr.ExitUsage,
-			"cg %s: extension %q (installed in %s) can't run it: %s; run `cg init` to restore the recorded version, or `cg extension update %s`",
-			best.ext.Command, best.name, root, best.unverified, best.name)
+			"cg %s: extension %q (installed in %s) can't run it: %s; %s",
+			best.ext.Command, best.name, root, best.unverified, fix)
 	}
 	return &externalRun{path: best.bin, command: best.ext.Command, root: root}, true, nil
 }

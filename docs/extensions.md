@@ -482,11 +482,14 @@ the workspace's declared commands:
    stops dispatch with an error naming the extension and `cg init` /
    `cg extension update <name>` as the fix; cg never falls back to another
    program for it. Two ledgers declaring the same command in the namespace (a
-   hand-edited or pulled `.cg.json`) stop dispatch too.
+   hand-edited or pulled `.cg.json`) stop dispatch too, and so does a
+   `.cg.json` or ledger that can't be read, since it might declare the
+   command.
 4. When no installed extension declares any command in the namespace, cg runs a
    `cg-<namespace>` executable on `$PATH`, if there is one, with the arguments
-   after the namespace. A namespace an extension declares never reaches
-   `$PATH`, whether or not the full command matched.
+   after the namespace (a plain name: one with a path separator is never looked
+   up). A namespace an extension declares never reaches `$PATH`, whether or not
+   the full command matched.
 
 Otherwise cobra's "unknown command" error is shown, with a hint that an
 extension's command runs inside the workspace that installed it, and whether

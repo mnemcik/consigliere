@@ -217,9 +217,10 @@ func TestDispatchStopsOnDuplicateInNamespace(t *testing.T) {
 		dispatchErr(t, args, `"pr merge"`, `"alpha"`, `"beta"`)
 	}
 	// Another namespace is unaffected.
-	ledgerAdd(t, ws, "alpha", extension.CommandContribution{Command: "shop", Binary: "cg-alpha"})
-	if _, err := externalDispatch([]string{"shop"}); err != nil && strings.Contains(err.Error(), "beta") {
-		t.Errorf("a duplicate in pr blocked shop: %v", err)
+	ledgerAdd(t, ws, "beta", extension.CommandContribution{Command: "shop", Binary: "cg-beta"})
+	updateManifestInTree(t, ws, "beta", commandsManifest("beta", "1.0.0", "pr watch", "shop"))
+	if run := mustDispatch(t, "shop"); run.command != "shop" || run.path != binOf(t, ws, "beta") {
+		t.Errorf("shop = %+v, want beta's shop", run)
 	}
 }
 
@@ -276,7 +277,9 @@ func TestDispatchIgnoresPerRunVariables(t *testing.T) {
 // envOf returns the value of key in env and whether it is set.
 func envOf(env []string, key string) (string, bool) {
 	for _, kv := range env {
-		if k, v, ok := strings.Cut(kv, "="); ok && k == key {
+		// Windows keeps a variable's own spelling (Path), and names are
+		// case-insensitive there.
+		if k, v, ok := strings.Cut(kv, "="); ok && envKeyEqual(k, key) {
 			return v, true
 		}
 	}
@@ -389,5 +392,120 @@ func TestDispatchTypedWordsEndAtFlag(t *testing.T) {
 	dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop", "shop --all"})
 	if run := mustDispatch(t, "shop", "--all"); run.command != "shop" {
 		t.Errorf("`cg shop --all` matched %q, want the bare namespace", run.command)
+	}
+}
+
+// updateManifestInTree rewrites an installed extension's manifest in its
+// pinned tree, so a ledger edit can be made to check out.
+func updateManifestInTree(t *testing.T, ws, name, manifest string) {
+	t.Helper()
+	p := filepath.Join(filepath.Dir(filepath.Dir(binOf(t, ws, name))), extension.ManifestFile)
+	if err := os.WriteFile(p, []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A ledger or .cg.json that can't be read might declare the namespace, so
+// dispatch stops instead of handing it to a PATH program.
+func TestDispatchUnreadableStateFailsClosed(t *testing.T) {
+	requireGit(t)
+	t.Run("ledger", func(t *testing.T) {
+		ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"})
+		if err := os.WriteFile(extension.LedgerPath(ws, "alpha"), []byte("{"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		pathProgram(t, "shop")
+		dispatchErr(t, []string{"shop", "add"}, "alpha.json")
+	})
+	t.Run(".cg.json", func(t *testing.T) {
+		ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"})
+		if err := os.WriteFile(filepath.Join(ws, workspace.ConfigFile), []byte("{"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		pathProgram(t, "shop")
+		dispatchErr(t, []string{"shop", "add"}, workspace.ConfigFile)
+	})
+}
+
+// The PATH fallback only looks up a plain name: a namespace with a path
+// separator never makes cg-<namespace> a path to run.
+func TestDispatchPathFallbackRefusesSeparators(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("executable-bit fixture is POSIX")
+	}
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.Mkdir(filepath.Join(dir, "cg-x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tool"), []byte("#!/bin/sh\n"), 0o755); err != nil { //nolint:gosec // an executable test fixture
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", t.TempDir())
+	for _, ns := range []string{"x/../tool", `x\..\tool`} {
+		if run, err := externalDispatch([]string{ns}); run != nil || err != nil {
+			t.Errorf("externalDispatch(%q) = %+v, %v; want nothing", ns, run, err)
+		}
+	}
+}
+
+// The S17 error names its remedy once.
+func TestDispatchUnverifiedErrorNamesFixOnce(t *testing.T) {
+	requireGit(t)
+	ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"})
+	if err := os.Remove(filepath.Join(filepath.Dir(filepath.Dir(binOf(t, ws, "alpha"))), extension.ManifestFile)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := externalDispatch([]string{"shop"})
+	if err == nil || strings.Count(err.Error(), "cg init") != 1 || !strings.Contains(err.Error(), "cg extension update alpha") {
+		t.Errorf("error = %v, want `cg init` named once and `cg extension update alpha`", err)
+	}
+}
+
+// The usage error lists each declared command once, even when .cg.json lists
+// the extension twice.
+func TestDispatchUsageListsEachCommandOnce(t *testing.T) {
+	requireGit(t)
+	ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop add", "shop list"})
+	cfg, _ := workspace.Detect(ws)
+	cfg.Extensions = append(cfg.Extensions, cfg.Extensions[0])
+	if err := cfg.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	_, err := externalDispatch([]string{"shop", "zzz"})
+	if err == nil || strings.Count(err.Error(), "cg shop add") != 1 {
+		t.Errorf("error = %v, want cg shop add listed once", err)
+	}
+}
+
+// A legacy entry (no recorded commit) reads its name-keyed clone.
+func TestDispatchLegacyEntry(t *testing.T) {
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	ws := newWorkspace(t)
+	cfg, _ := workspace.Detect(ws)
+	cfg.UpsertExtension(&workspace.ExtensionRef{Name: "demo", Version: "1.0.0", Source: workspace.ExtSourceDirect, Repo: "x"})
+	if err := cfg.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&extension.Ledger{Name: "demo", Version: "1.0.0",
+		Commands: []extension.CommandContribution{{Command: "secret", Binary: "cg-demo"}}}).Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	clone := legacyCloneDir(cfgHome)
+	if err := os.MkdirAll(filepath.Join(clone, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := commandsManifest("demo", "1.0.0", "secret")
+	if err := os.WriteFile(filepath.Join(clone, extension.ManifestFile), []byte(m), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(clone, "bin", "cg-demo")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil { //nolint:gosec // an executable test fixture
+		t.Fatal(err)
+	}
+	t.Chdir(ws)
+	if run := mustDispatch(t, "secret", "get"); run.path != bin || run.command != "secret" {
+		t.Errorf("legacy run = %+v, want %s", run, bin)
 	}
 }

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,11 +18,12 @@ import (
 // tree. The ledger under .cg/ext/ is committed in the workspace, so whatever it
 // claims (a launcher, a command) is checked against this manifest before cg
 // runs anything from it or lets it claim a command. The error says why the
-// manifest can't be used, ready to show after the extension's name.
+// manifest can't be used, ready to show after the extension's name; unless it
+// wraps errBadPath, `cg init` restoring the recorded version is the fix.
 func verifiedManifest(e *workspace.ExtensionRef) (dir string, m *extension.Manifest, err error) {
 	sub, err := extension.CleanSubdir(e.Path)
 	if err != nil {
-		return "", nil, fmt.Errorf("invalid path %q", e.Path)
+		return "", nil, fmt.Errorf("%w %q in %s", errBadPath, e.Path, workspace.ConfigFile)
 	}
 	dir = filepath.Join(extension.SourceRoot(e), sub)
 	m, err = extension.LoadManifest(dir)
@@ -29,10 +31,14 @@ func verifiedManifest(e *workspace.ExtensionRef) (dir string, m *extension.Manif
 		err = m.Validate()
 	}
 	if err != nil {
-		return "", nil, fmt.Errorf("can't read its manifest (%w); `cg init` restores the recorded version", err)
+		return "", nil, fmt.Errorf("can't read its manifest (%w)", err)
 	}
 	return dir, m, nil
 }
+
+// errBadPath marks a .cg.json entry whose path is invalid: no restore fixes
+// that, only correcting the entry.
+var errBadPath = errors.New("invalid path")
 
 // verifiedCommand reports whether the ledger entry c is declared, with the same
 // binary, by the manifest m read from dir, and that binary exists in dir/bin.
