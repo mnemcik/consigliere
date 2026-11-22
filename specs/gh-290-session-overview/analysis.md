@@ -17,7 +17,8 @@ verdict: pending review
 
 Work in a workspace runs as several agent sessions in parallel, one worktree each. Nothing shows in one place
 which sessions are working, which are **waiting on the user** (a permission dialog, a question), and which have
-output **ready for review**. A session waiting on a dialog went unnoticed for minutes on 2026-11-22. The issue
+output **ready for review**. The owner reports that a session waiting on a dialog went unnoticed for minutes on
+2026-11-22 (not in the issue text). The issue
 asks for one place that shows all three.
 
 This is first a **"whether and what scope"** item (the issue says scope isn't settled, and names "who acts next
@@ -81,9 +82,10 @@ for a todo" as an open question), then a "how" for the part that holds up.
   ends with no typing) and `elicitation_dialog`; `PermissionRequest` fires before a permission dialog is shown;
   `Stop` fires when the agent finishes responding but **not** on a user interrupt. No event fires when the user
   answers a dialog.
-- Notifications: Claude Code already notifies on permission and idle prompts; Ghostty, kitty and iTerm2 get a
-  desktop notification by default, Apple Terminal only a bell with "Audible bell" on, other terminals nothing
-  (https://code.claude.com/docs/en/terminal-config, read 2026-11-22). Inside tmux, desktop notifications need
+- Notifications: Claude Code already notifies on permission and idle prompts; Ghostty, kitty and iTerm2 can get a
+  desktop notification, subject to the terminal's own alert settings (iTerm2 notifies only when you appear to be
+  away), and other terminals at most a bell (https://code.claude.com/docs/en/terminal-config, read 2026-11-22).
+  Whether a notification reaches the user therefore depends on the terminal and its settings. Inside tmux, desktop notifications need
   tmux passthrough, which the `tmux` extension turns on (cg-extensions `tmux/README.md`). OSC 7501 lets a
   terminal show working / waiting / done per interactive session, but not inside tmux (terminal-config page).
 - The status line runs on events (new assistant message, mode change, …) plus an optional `refreshInterval`; it
@@ -126,20 +128,38 @@ review gate and the todo queue are out of this item's core scope.
 
 ### Recommended — an overview that joins cg's sessions with the agent's live status, shipped as an extension
 
-- **What:** an extension command (name open, decision 3) that reads `cg active --json` and `claude agents --json`,
+- **What:** an extension command (name open, decision 3) that reads cg's session records and `claude agents --json`,
   joins them on session ID, and prints one list grouped by **who acts next**:
-  1. *Waiting on you*: `status: waiting`, with `waitingFor` and for how long, when the agent reports it;
-  2. *Turn ended*: `idle` (the agent finished; your next prompt is due);
-  3. *Working*: `busy`;
-  4. *Paused projects* from cg (`resume.md`).
+  1. *Waiting on you*: `status: waiting` (interactive) or `state: blocked` (background), with `waitingFor`;
+  2. *Turn ended*: `status: idle` or `state: done` (the agent finished; your next prompt is due);
+  3. *Working*: `status: busy` or `state: working`;
+  4. *Ended*: background `state: failed` / `stopped`;
+  5. *Paused projects* from cg (`resume.md`).
 
-  Each row carries cg's project and area when the session has a badge, and "no project" when it doesn't, so a
-  session that skipped `set-context` (#204) is still seen. A `--watch` flag redraws every few seconds, for a
-  terminal or tmux pane kept open as the "mission control" screen. When the agent status can't be read
-  (`claude` missing, too old, output changed), the list says so ("agent status unavailable") instead of showing
-  every session as idle: a quiet source shows as stale, not zero (the principle the issue borrows).
-  Core changes nothing for this, apart from optionally exposing #259's `worktree` in `cg active --json`
-  (decision 5).
+  **Which sessions:** `claude agents --json` lists every session on the machine (40 in the capture), and its
+  `--cwd` filter applies to background sessions only (`claude agents --help`). The overview keeps a session when
+  it has a badge in this workspace, or when its `cwd` is the workspace root or one of its worktrees; sessions in
+  external repos without a badge (#277) and sessions of other workspaces are left out unless `--all` is given
+  (decision 2). Each row carries cg's project, area and worktree when the session has a badge, and "no project"
+  when it doesn't, so a session that skipped `set-context` (#204) is still seen.
+
+  **Durations:** the agent reports no timestamp for when waiting began (only `startedAt`, the session start), so
+  a one-shot run shows no duration; `--watch` shows "waiting since" from the first time it saw the state. A
+  `--watch` flag redraws every few seconds, for a terminal or tmux pane kept open as the "mission control" screen.
+
+  **Stale, not zero:** when the agent status can't be read (`claude` missing, too old, output changed), the list
+  says so ("agent status unavailable") instead of showing every session as idle (the principle the issue
+  borrows).
+
+  **Core change needed:** today `cg active --json` drops badges without a project (`internal/session/active.go:71`)
+  and clean badges not written for 4 h (`active.go:88-95`), so the join would lose cg's data for exactly the
+  idle-but-open sessions #232 describes. The overview needs a small, agent-neutral `cg active` option that lists
+  every badge regardless of the liveness windows, with its `worktree` (from #259) in the JSON (decision 5). It
+  doesn't change `cg active`'s default output or liveness rules. Reading the badge files directly from the
+  extension would tie it to a core-internal file format instead.
+
+  **Which workspace:** run from an external directory, the binary asks the workspace that served it
+  (`CG_EXTENSION_WORKSPACE`, #259 S28) rather than its current directory.
 - **Why this one:** the agent already knows exactly when a dialog is open, including the cases a hook can't see
   (an answered dialog, an interrupted turn). Reading it means no new state to keep correct, no hook on every tool
   call, and no `settings.json` migration. Keeping the Claude Code-specific part in an extension follows #266 and
@@ -147,7 +167,9 @@ review gate and the todo queue are out of this item's core scope.
 - **Trade-off:** depends on a Claude Code interface marked research preview and on a field (`waitingFor`) not yet
   observed here. Claude Code only. A pull view helps only while it's on screen.
 - **Wrong choice when:** the owner wants the state recorded agent-neutrally in cg (other agents in use), or wants
-  no dependency on a preview interface. Then the runner-up.
+  no dependency on a preview interface (then the runner-up); or needs it on Windows soon: extension commands
+  don't start on Windows yet (`docs/extensions.md:192-196`, #239, open), so an extension command doesn't run
+  there until #239 is fixed, whatever `claude` does (decision 7).
 - **Rabbit holes:** parsing beyond the documented fields (stay with `sessionId`, `status`, `waitingFor`, `cwd`);
   turning `--watch` into a TUI; mapping `cwd` to a project for sessions without a badge (show the directory
   instead); folding in PR state before `pr-workflow` exists.
@@ -186,6 +208,9 @@ review gate and the todo queue are out of this item's core scope.
   background sessions run outside cg's tmux launcher; research preview.
 - **Wrong choice when:** sessions are started with `cg` in terminals or tmux, as today.
 - **Wins instead if:** the owner is willing to move parallel work to background sessions.
+- **Stopgap within this option:** a documented one-liner that filters `claude agents --json` to sessions whose
+  `cwd` is under the workspace and shows `status` / `waitingFor`. No cg change; it fits Priority Low until the
+  overview exists, but has no project, worktree or paused data.
 
 ### Alternative — a full mission-control board
 
@@ -200,8 +225,13 @@ review gate and the todo queue are out of this item's core scope.
 
 - **#259 (PR #303):** its state file is the same badge file; it adds `worktree` (S35-S37) and says a file with
   only `worktree` shows the same in the badge and `cg active` (S40). The recommendation reads that file only
-  through `cg active --json` and adds no field to it, so it doesn't touch #259's open amendment (S2, S9, S25).
-  Exposing `worktree` in `cg active --json` (decision 5) is a small change after #259 merges. The runner-up would
+  through `cg active` and adds no field to it. Listing every badge with its `worktree` in `cg active --json`
+  (decision 5) is a small change after #259 merges; it would make `cg active` show more than S40 describes only
+  under the new option, not by default. #259 also replaces the manifest's `subcommands` with manifest-v2
+  `commands` and sets a naming rule for new namespaces (its spec, "Manifest shape", Q1, Q8, X6), so the
+  extension's manifest shape and command name depend on what #259 merges. Recommendation: build after #259
+  merges, against what it merged, without presuming its pending amendment (S2 word pattern, S9 owned commands,
+  S25 unreadable session `.cg.json`). The runner-up would
   add `state` / `stateAt` to the same file; map-based writes keep both (`context.go:32-33`), and its hook writes
   should resolve the root through `CG_WORKSPACE` as #259 settles it, not assume S25's outcome.
 - **#300 (extension skills):** no overlap.
@@ -221,8 +251,9 @@ review gate and the todo queue are out of this item's core scope.
 - **Performance:** `claude agents --json` took about 0.6 s per call here: fine for a command or a refresh every
   few seconds, too slow for the status line.
 - **Dependencies:** Claude Code with `claude agents --json` (present in 2.1.330; the minimum version wasn't
-  established). Whether it works on Windows wasn't verified; the extension can declare its platforms as `tmux`
-  does.
+  established); #259 for the manifest shape. **Windows:** extension commands don't start on Windows yet (#239),
+  and whether `claude agents --json` works there wasn't verified; the manifest has no platform field, so the
+  extension's README would say it, as `tmux`'s does ("macOS or Linux").
 - **Operations:** none; nothing runs in the background unless `--watch` is used.
 - **Who else is affected:** workspaces that don't install the extension see no change; core stays agent-neutral.
 
@@ -231,15 +262,31 @@ review gate and the todo queue are out of this item's core scope.
 | # | Decision | Recommended answer | Status |
 |---|---|---|---|
 | 1 | Data source for "waiting on the user": Claude Code's own status (`claude agents --json`) or hook-recorded state in the cg badge | Claude Code's status, after first confirming on a real pending dialog that it reports `waiting` with `waitingFor` | open |
-| 2 | Scope of #290: sessions only (waiting / turn ended / working / paused), with "ready for review" left to `pr-workflow` and "who acts next for a todo" split into its own issue | Sessions only; split the todo field out; PRs join later from `pr-workflow` | open |
-| 3 | Where it ships and what it's called: a new cg-extensions extension, or part of the opt-in Claude Code extension #266 proposes; the command name | A small extension in cg-extensions now, folded into #266's extension if that is built; name to be chosen by the owner (`session` is a built-in namespace) | open |
+| 2 | Scope of #290: sessions only (waiting / turn ended / working / ended / paused), with "ready for review" left to `pr-workflow` and "who acts next for a todo" split into its own issue; and which sessions are listed | Sessions only; split the todo field out; PRs join later from `pr-workflow`. List sessions with a badge in this workspace or a `cwd` in the workspace or its worktrees; others only with `--all` | open |
+| 3 | Where it ships and what it's called: a new cg-extensions extension, or part of the opt-in Claude Code extension #266 proposes; the command name | A small extension in cg-extensions, built as a manifest-v2 command after #259 merges, folded into #266's extension if that is built; name chosen by the owner under #259's naming rule (`session` is a built-in namespace) | open |
 | 4 | Push side: is the 2026-11-22 incident a missing view or a notification that didn't reach the user (terminal, tmux, notification setting)? | Owner to say which setup it happened in; if the notification didn't arrive, fix that setup separately, not in #290 | open (question) |
-| 5 | Expose #259's `worktree` in `cg active --json` (core, after #259 merges) so the overview can show it | Yes, as a small follow-up once #259 is merged | open |
+| 5 | Core change: a `cg active` option that lists every badge regardless of the liveness windows (and badges without a project), with #259's `worktree` in the JSON | Yes, a small agent-neutral core change after #259 merges; the default output stays as it is | open |
 | 6 | Order relative to other work, given Priority Low | After #259 merges; independent of #300 and #301 | open |
+| 7 | Windows: accept that the overview doesn't run on Windows until #239 (extension commands on Windows) is fixed, or wait for #239 | Accept; say so in the extension's README | open |
 
 ## Review
 
-pending
+**Review 1** — `specs/gh-290-session-overview/analysis.md` @ content 1c307e9 (commit 49ffe6f) · 2026-11-22
+- Reviewers: doc-reviewer (builder check, claim check, missed option, hidden constraints, governing rules)
+- Tests: not applicable (analysis)
+- Findings: 0 blocker, 6 should-fix, 3 nit → fixed: `cg active` windows drop the idle sessions the join needs
+  (core option, decision 5); which sessions are listed (filter, decision 2); no source for the waiting duration;
+  background `state` mapping; Windows and #239 (decision 7); #259's manifest shape and naming rule; Apple Terminal
+  claim softened; incident labelled as the owner's report; stopgap one-liner added. owner's: none; rejected: none;
+  dropped in validation: none
+- Builder questions: 6 answered (session filter, cg-side source, manifest version and name, Windows, background
+  mapping, which workspace the binary asks), 0 minor, 0 owner's beyond decisions 2, 3, 5, 7
+- Verified true: badge path, fields and map writes; `cg active` windows, fields and paused handling; root from
+  `cwd`; session ID resolution; template hooks; sync doesn't wire hooks; extension hooks merge; `claude agents
+  --help` text and the observed capture; agent-view fields and preview label; hook timings; OSC 7501 and tmux;
+  status line refresh; #259 S35-S40; no private details
+- Not verified: `Stop` skipping user interrupts; Claude Code licence and the minimum version with
+  `claude agents --json`; `claude agents --json` on Windows; `waiting` for interactive sessions (decision 1)
 
 ## Verdict
 
