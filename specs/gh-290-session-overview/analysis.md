@@ -300,6 +300,20 @@ review gate and the todo queue are out of this item's core scope.
 - Not verified: `Stop` skipping user interrupts; Claude Code licence and the minimum version with
   `claude agents --json`; `claude agents --json` on Windows; `waiting` for interactive sessions (decision 1)
 
+**Review 2** — same path @ content 16bc028 (commit 9dfd3b0), delta from 1c307e9 · 2026-11-22
+- Reviewers: doc-reviewer (same lenses, delta scope, regression check of round 1)
+- Tests: not applicable (analysis)
+- Findings: 0 blocker, 2 should-fix, 3 nit → fixed (in 623a685): `state` decides for background sessions,
+  `waitingFor` only while waiting; call `claude agents --json --all` and rename the overview's own flag
+  (`--everywhere`); run `cg active` from `CG_EXTENSION_WORKSPACE` and include the caller's session (decision 5);
+  notification conditions corrected (away condition, other terminals none); one rule for subdirectories ("at or
+  under"). owner's: none; rejected: none; dropped in validation: none
+- Builder questions: 2 answered (badge without a live agent session → *Claim only* group; `state`/`status`
+  precedence)
+- Verified true: round-1 items 1-9 resolved; `active.go:71`, `:88-95`; `--cwd` background-only and `--all` in
+  `claude agents --help`; `subcommands` not on Windows; #259 S28, S40, X6, Q1; no private details
+- Not verified: whether `--cwd` with `--json` filters interactive sessions; `claude agents` on Windows
+
 ## Verdict
 
 pending review
