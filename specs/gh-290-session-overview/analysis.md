@@ -3,7 +3,7 @@ title: "Analysis — one view of which sessions are running, waiting on the user
 created: 2026-11-22
 item: "https://github.com/mnemcik/consigliere/issues/290"
 size: full
-verdict: pending review
+verdict: needs clarification
 ---
 
 # Analysis — one view of which sessions are running, waiting on the user, or ready for review (#290)
@@ -344,9 +344,29 @@ review gate and the todo queue are out of this item's core scope.
 - Not verified by the reviewer: whether #259 changes the `cg active` JSON; checked by the analyst on #259's branch
   (`cmd/active.go:86-91` there): same six fields, unchanged
 
+**Review 5** — same path @ content 8a73f18 (commit a61d22d), delta from 04760e4 · 2026-11-22
+- Reviewers: doc-reviewer (same lenses, delta scope, regression check of round 4)
+- Tests: not applicable (analysis)
+- Findings: none. **Outcome: clean.**
+- Builder questions: none left
+- Verified true: round-4 items resolved; `mtime` format (`cmd/active.go:95`); `live` / `paused` states
+  (`internal/session/active.go:13-14`), so `stale` fits; paused listed whatever its age; #259 records `worktree`
+  in the state file only (S35-S37); no private details
+- Not verified: #259's branch `cg active` JSON (not among the reviewer's sources; the analysis doesn't depend on it)
+
 ## Verdict
 
-pending review
+**Needs clarification.** The direction is clear (a read-only overview joining cg's sessions with Claude Code's own
+status, in an extension, plus a small agent-neutral `cg active` option), but two things are open before it can
+proceed:
+
+- **Decision 1 rests on an unobserved field.** `claude agents --json` reporting `waiting` and `waitingFor` for an
+  interactive session is documented but wasn't seen. If it doesn't, the runner-up (hook-recorded state) wins.
+  Checking it on a real pending dialog is a prerequisite, not a follow-up.
+- **Decision 4 is a question to the owner:** whether the 2026-11-22 incident was a missing view or a notification
+  that didn't reach the user decides whether #290 addresses it at all.
+
+The other decisions (2, 3, 5, 6, 7) have recommended answers and wait only for the owner.
 
 ## Q→A log
 
