@@ -513,9 +513,7 @@ and `$PATH` programs. No extension `bin/` directory is added to `$PATH`.
 ### Which workspace serves
 
 `cg start` (and bare `cg`) starts the session with `CG_WORKSPACE` set to the
-absolute workspace root it resolved, a worktree's root when started in one (not
-for an old workspace without a `.cg.json`, which has no extensions; an
-inherited `CG_WORKSPACE` is dropped then). A
+absolute workspace root it resolved, a worktree's root when started in one. A
 launcher must pass it on into the session it creates (a terminal multiplexer
 doesn't by default: `tmux new-session` needs `-e CG_WORKSPACE=…`). Dispatch
 reads it (and never rewrites it) to pick the workspaces it consults:
@@ -537,7 +535,8 @@ directory put where a deleted worktree was doesn't. When the list can't be read
 or trusted (no git, the session's workspace isn't the top level of its
 repository), the current directory's workspace counts as another workspace. A
 `.cg.json` above the current directory that can't be read stops a command only
-when the session's workspace doesn't declare its namespace.
+when the session's workspace doesn't declare its namespace (and always when it
+is the session's workspace's or one of its worktrees').
 
 A `CG_WORKSPACE` that is relative, names a directory that doesn't exist (a worktree removed since the
 session started), one without a `.cg.json`, or one whose `.cg.json` isn't a

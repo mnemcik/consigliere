@@ -266,7 +266,8 @@ var sessionSetContextCmd = &cobra.Command{
 	Use:   "set-context",
 	Short: "Record the session's area and project (status-line badge) or its worktree",
 	Long: `Writes the area and project a session is working on to its badge state
-file (.claude/session-context/<session-id>.json under the main worktree root),
+file (.claude/session-context/<session-id>.json under the main worktree root
+of the session's workspace: CG_WORKSPACE, else the current one),
 creating it when absent. The status line renders the badge from this file and
 cg active lists sessions from it. Run it once the session-start gate's area and
 project are confirmed, and again whenever the session switches either one.
@@ -282,8 +283,9 @@ holds the paused work.
 --worktree records the session's worktree, so the workspace's extension
 commands write there when the session runs them from other directories. cg
 worktree create records it already; use this when the workspace's own scripts
-create worktrees. The path must be one of the repository's worktrees. It may
-be given alone, or with --area and --project.
+create worktrees. The path must be one of the workspace repository's linked
+worktrees (in git worktree list, and not the main checkout, so writers are
+never sent there). It may be given alone, or with --area and --project.
 
 ` + sessionIDHelp,
 	Example: `  cg session set-context --session-id 1b2c... --area platform --project api-gateway
@@ -297,7 +299,7 @@ func init() {
 	f.StringVar(&setContextSessionID, "session-id", "", "session ID (shown in the session-start gate; see below for defaults)")
 	f.StringVar(&setContextArea, "area", "", "area slug the session works in")
 	f.StringVar(&setContextProject, "project", "", "project slug the session works on")
-	f.StringVar(&setContextWorktree, "worktree", "", "path of the session's worktree (one of the repository's worktrees)")
+	f.StringVar(&setContextWorktree, "worktree", "", "path of the session's worktree (one of the repository's linked worktrees, not the main checkout)")
 	sessionSetContextCmd.MarkFlagsRequiredTogether("area", "project")
 	sessionReleaseCmd.Flags().StringVar(&releaseSessionID, "session-id", "", "session ID (see below for defaults)")
 	sessionPauseCmd.Flags().StringVar(&pauseSessionID, "session-id", "", "session ID (see below for defaults)")
@@ -493,10 +495,11 @@ func listedWorktree(ctx context.Context, repoRoot, p string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !sessionRepoWorktree(ctx, repoRoot, abs) {
+	listed, ok := sessionRepoWorktreePath(ctx, repoRoot, abs)
+	if !ok {
 		return "", fmt.Errorf("%s is not one of the session repository's linked worktrees (see `git worktree list` in %s; the main checkout doesn't count)", abs, repoRoot)
 	}
-	return canonicalPath(abs), nil
+	return recordPath(listed), nil // git's spelling, as create and remove use
 }
 
 // printResumeNotice tells the agent claiming a paused project where its pickup
@@ -576,15 +579,20 @@ func runSessionStartGate(cmd *cobra.Command, _ []string) error {
 		cwd, _ = os.Getwd()
 	}
 
-	// Badge files live at the main worktree root; fall back to the walk-up root.
-	root, err := gitx.CommonRoot(cmd.Context(), cwd)
-	if err != nil {
-		root, _, _ = workspace.FindRoot(cwd)
+	// Badge files live at the main worktree root of the session repo root
+	// (CG_WORKSPACE, else cwd's workspace), as for every other badge command,
+	// so a session working in an external repo is told its own file. Without
+	// a session repo root, fall back to cwd's repository.
+	root, wsRoot, cfg := sessionRoots(cmd.Context(), cwd)
+	if root == "" {
+		var err error
+		if root, err = gitx.CommonRoot(cmd.Context(), cwd); err != nil {
+			root, _, _ = workspace.FindRoot(cwd)
+		}
+		cfg, _ = workspace.Detect(root)
 	}
-	cfg, _ := workspace.Detect(root)
 	s := cfg.SessionSettings()
 
-	wsRoot, _, _ := workspace.FindRoot(cwd)
 	text, emit := session.Gate(cmd.Context(), root, session.GateInput{
 		Prompt:        in.Prompt,
 		SessionID:     in.SessionID,

@@ -475,13 +475,21 @@ func sessionRepoRoot(cwd string) string {
 // list's first entry), compared after resolving symlinks, and its .git still
 // pointing back into the repo (gitDirIn). Any failure means no.
 func sessionRepoWorktree(ctx context.Context, repoRoot, dir string) bool {
+	_, ok := sessionRepoWorktreePath(ctx, repoRoot, dir)
+	return ok
+}
+
+// sessionRepoWorktreePath is sessionRepoWorktree that also returns the path
+// as git lists it (its spelling, which may differ from dir's in case or
+// symlinks).
+func sessionRepoWorktreePath(ctx context.Context, repoRoot, dir string) (string, bool) {
 	out, err := gitx.RunCleanRaw(ctx, repoRoot, "rev-parse", "--git-common-dir")
 	if err != nil {
-		return false
+		return "", false
 	}
 	lines := gitLines(out)
 	if len(lines) != 1 {
-		return false
+		return "", false
 	}
 	common := gitx.OSPath(lines[0])
 	if !filepath.IsAbs(common) {
@@ -489,7 +497,7 @@ func sessionRepoWorktree(ctx context.Context, repoRoot, dir string) bool {
 	}
 	list, err := gitx.RunCleanRaw(ctx, repoRoot, "worktree", "list", "--porcelain")
 	if err != nil {
-		return false
+		return "", false
 	}
 	first := true
 	for _, line := range strings.Split(string(list), "\n") {
@@ -497,18 +505,19 @@ func sessionRepoWorktree(ctx context.Context, repoRoot, dir string) bool {
 		if !ok {
 			continue
 		}
+		p = gitx.OSPath(p)
 		if first { // the main checkout
 			first = false
-			if samePath(gitx.OSPath(p), dir) {
-				return false
+			if samePath(p, dir) {
+				return "", false
 			}
 			continue
 		}
-		if samePath(gitx.OSPath(p), dir) {
-			return gitDirIn(dir, common)
+		if samePath(p, dir) {
+			return p, gitDirIn(dir, common)
 		}
 	}
-	return false
+	return "", false
 }
 
 // listedWorktreeOf reports whether dir is listed by `git worktree list` run in

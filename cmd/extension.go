@@ -134,7 +134,7 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	warnings, err := checkCommands(root, cfg.Extensions, map[string][]extension.CommandContribution{m.Name: m.Contributes.Commands}, false)
+	warnings, err := checkCommands(root, cfg.Extensions, map[string][]extension.CommandContribution{m.Name: m.Contributes.Commands}, nil)
 	if err != nil {
 		return err
 	}
@@ -376,6 +376,7 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		present []workspace.ExtensionRef
 	)
 	incoming := map[string][]extension.CommandContribution{}
+	restored := map[string][]extension.CommandContribution{} // owned: restored at the recorded commit
 	for i := range out {
 		e := &out[i]
 		if _, err := os.Stat(extension.SourceRoot(e)); err == nil {
@@ -416,8 +417,11 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		}
 		todo = append(todo, restore{e: e, m: m, manifestDir: filepath.Join(tree, path), prev: prev, commit: commit})
 		incoming[m.Name] = m.Contributes.Commands
+		if extension.ValidCommit(e.Commit) { // restored at its recorded version
+			restored[m.Name] = m.Contributes.Commands
+		}
 	}
-	warnings, err := checkCommands(root, present, incoming, true)
+	warnings, err := checkCommands(root, present, incoming, restored)
 	if err != nil {
 		return out, nil, err
 	}
@@ -799,7 +803,7 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 		updates[i] = u
 		incoming[u.ref.Name] = u.m.Contributes.Commands
 	}
-	warnings, err := checkCommands(root, cfg.Extensions, incoming, false)
+	warnings, err := checkCommands(root, cfg.Extensions, incoming, nil)
 	if err != nil {
 		return err
 	}

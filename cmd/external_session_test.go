@@ -490,10 +490,9 @@ func TestUnreadableCwdConfigWithSession(t *testing.T) {
 	dispatchErr(t, []string{"pr"}, filepath.Join(ext, workspace.ConfigFile))
 }
 
-// A workspace found by its folder markers alone has no .cg.json for dispatch
-// to use: cg start doesn't put it in CG_WORKSPACE, and removes an inherited
-// one.
-func TestStartLegacyWorkspaceSetsNoSessionWorkspace(t *testing.T) {
+// S31: cg start sets CG_WORKSPACE to the root it resolved, also for a
+// workspace found by its folder markers alone (dispatch then ignores it, S25).
+func TestStartLegacyWorkspaceSetsSessionWorkspace(t *testing.T) {
 	ws := t.TempDir()
 	for _, f := range []string{"CLAUDE.md", filepath.Join("areas", "INDEX.md"), filepath.Join("projects", "TODO.md")} {
 		p := filepath.Join(ws, f)
@@ -524,8 +523,8 @@ func TestStartLegacyWorkspaceSetsNoSessionWorkspace(t *testing.T) {
 	if err := startCmd.RunE(startCmd, nil); err != nil {
 		t.Fatalf("legacy workspace start: %v", err)
 	}
-	if v, ok := envOf(s.env, envWorkspace); ok {
-		t.Errorf("CG_WORKSPACE=%q set for a workspace without .cg.json", v)
+	if v, _ := envOf(s.env, envWorkspace); !samePath(v, ws) {
+		t.Errorf("CG_WORKSPACE = %q, want the resolved root %s", v, ws)
 	}
 }
 

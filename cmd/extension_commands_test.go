@@ -557,6 +557,23 @@ func TestOwnedBuiltinCommands(t *testing.T) {
 		wantConflict(t, err, out, `"zzfoo run"`, `"beta"`, "cg zzfoo")
 		assertUnchanged(t, ws, before)
 	})
+	t.Run("cg init doesn't own what a legacy entry restores from HEAD", func(t *testing.T) {
+		cfgHome, ws := t.TempDir(), newWorkspace(t)
+		installRepo(t, cfgHome, ws, commandsManifest("alpha", "1.0.0", "zzfoo run"))
+		// A legacy entry (no commit) is restored from the default branch,
+		// not a recorded version, so it owns nothing.
+		cfg, _ := workspace.Detect(ws)
+		cfg.Extensions[0].Commit = ""
+		if err := cfg.Save(ws); err != nil {
+			t.Fatal(err)
+		}
+		laterBuiltin(t)
+		if err := os.RemoveAll(filepath.Join(cfgHome, "consigliere", "extensions")); err != nil {
+			t.Fatal(err)
+		}
+		out, err := runInitForce(t, cfgHome, ws)
+		wantConflict(t, err, out, `"zzfoo run"`, "cg zzfoo")
+	})
 	t.Run("cg init only warns", func(t *testing.T) {
 		cfgHome, ws := t.TempDir(), newWorkspace(t)
 		installRepo(t, cfgHome, ws, commandsManifest("alpha", "1.0.0", "zzfoo run"))

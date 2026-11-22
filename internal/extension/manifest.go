@@ -100,7 +100,7 @@ type GitHookContribution struct {
 }
 
 // CommandContribution declares that `cg <Command> …` runs the extension's
-// bin/<Binary>. Command is one or more words, each matching [a-z0-9-]+,
+// bin/<Binary>. Command is one or more words, each matching [a-z0-9][a-z0-9-]*,
 // separated by single spaces; its first word is its namespace. The binary
 // receives the arguments after the namespace word.
 type CommandContribution struct {

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -316,15 +317,29 @@ func runWorktreeRemove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	// Every session's record of this worktree goes with it (S37), so a
-	// worktree created at the same path later isn't taken for theirs. Records
-	// live under the session repo's badge root; a worktree of another repo
-	// matches none of them.
-	if badge := sessionBadgeRoot(ctx); badge != "" {
+	// worktree created at the same path later isn't taken for theirs.
+	// Records live under the badge root of the repo the worktree belongs to
+	// (root, from worktreeRootConfig: other sessions of that workspace) and of
+	// the session repo running this; a worktree of another repo matches none
+	// of the latter's records.
+	for _, badge := range uniqueRoots(root, sessionBadgeRoot(ctx)) {
 		if err := session.ClearWorktreeAll(badge, path); err != nil {
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not clear worktree records of %s: %v\n", path, err)
 		}
 	}
 	return nil
+}
+
+// uniqueRoots returns the non-empty roots, each directory once.
+func uniqueRoots(roots ...string) []string {
+	var out []string
+	for _, r := range roots {
+		if r == "" || slices.ContainsFunc(out, func(o string) bool { return samePath(o, r) }) {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
 }
 
 // sessionBadgeRoot is the badge root of the session repo root (the main

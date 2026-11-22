@@ -512,3 +512,68 @@ func TestDispatchIgnoresRecordedMainCheckout(t *testing.T) {
 		t.Errorf("linked session, recorded main: %q, want %s", got, linked)
 	}
 }
+
+// The session-start gate names the session's own state file, under the
+// session repo root, even when the agent works in an external repo.
+func TestStartGateUsesSessionRepoRoot(t *testing.T) {
+	requireGit(t)
+	ws := gitWorkspace(t)
+	ext := plainRepo(t)
+	t.Setenv(envWorkspace, ws)
+	stdin := `{"prompt":"hi","session_id":"s1","cwd":"` + filepath.ToSlash(ext) + `"}`
+	out, err := runSession(t, ext, stdin, "start-gate")
+	if err != nil {
+		t.Fatalf("start-gate: %v\n%s", err, out)
+	}
+	if want := session.ContextFile(ws, "s1"); !strings.Contains(out, want) {
+		t.Errorf("gate output doesn't name %s:\n%s", want, out)
+	}
+	if strings.Contains(out, session.ContextFile(ext, "s1")) {
+		t.Errorf("gate output names the external repo's file:\n%s", out)
+	}
+}
+
+// S37: remove clears records of the removed worktree in its own repo's badge
+// root too, when the session that runs it belongs to another workspace.
+func TestRemoveClearsRecordsInTheWorktreesRepo(t *testing.T) {
+	requireGit(t)
+	b := gitWorkspace(t)
+	t.Setenv("CG_SESSION_ID", "s1")
+	t.Setenv(envWorkspace, b)
+	out, err := runCg(t, b, "worktree", "create", "x")
+	if err != nil {
+		t.Fatalf("create: %v\n%s", err, out)
+	}
+	if recordedWorktree(t, b, "s1") == "" {
+		t.Fatal("create recorded nothing")
+	}
+	// Another session, whose workspace is a, removes b's worktree.
+	a := gitWorkspace(t)
+	t.Setenv("CG_SESSION_ID", "s2")
+	t.Setenv(envWorkspace, a)
+	if out, err := runCg(t, b, "worktree", "remove", "x"); err != nil {
+		t.Fatalf("remove: %v\n%s", err, out)
+	}
+	if got := recordedWorktree(t, b, "s1"); got != "" {
+		t.Errorf("s1's record %q survived the removal", got)
+	}
+}
+
+// S36/S37: set-context records git's spelling of the worktree, so remove
+// clears it even when the path was typed in another case (on a
+// case-insensitive filesystem).
+func TestSetContextRecordsGitSpelling(t *testing.T) {
+	requireGit(t)
+	ws := gitWorkspace(t)
+	wt := addBranchWorktree(t, ws, "case")
+	typed := filepath.Join(filepath.Dir(wt), strings.ToUpper(filepath.Base(wt)))
+	if _, err := os.Stat(typed); err != nil {
+		t.Skip("case-sensitive filesystem")
+	}
+	if out, err := runCg(t, ws, "session", "set-context", "--session-id", "s1", "--worktree", typed); err != nil {
+		t.Fatalf("set-context: %v\n%s", err, out)
+	}
+	if got := recordedWorktree(t, ws, "s1"); got != recordPath(wt) {
+		t.Errorf("recorded %q, want git's spelling %q", got, recordPath(wt))
+	}
+}
