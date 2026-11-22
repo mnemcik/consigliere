@@ -3,12 +3,12 @@ title: "Analysis — an extension states the cg version it needs (#212)"
 created: 2026-11-22
 item: "https://github.com/mnemcik/consigliere/issues/212"
 size: full
-verdict: proceed
+verdict: proceed (decided 2026-11-22)
 ---
 
 # Analysis — an extension states the cg version it needs (#212)
 
-- **Status:** reviewed (3 rounds, last clean); waiting on the owner's decisions 1–9. No code, no issue comment with decisions.
+- **Status:** reviewed (3 rounds, last clean); decided by the owner on 2026-11-22, decisions 1–9 (see [Q→A log](#qa-log)). No code yet.
 - **Branch:** `gh-212-extension-cg-version`, from `main` at `61abdfd`.
 - **Related in-flight work, read on their branches and not changed here:** #259 (PR #303, branch
   `gh-259-extension-commands` at `decbfc0`), #300 (branch `gh-300-extension-skills` at `021cbd9`), #301 (branch
@@ -261,15 +261,15 @@ refusal to exist first. A later addition, not part of this change.
 
 | # | Decision | Recommended answer | Status |
 |---|---|---|---|
-| 1 | Does a minimum-cg field belong in manifest v2, enforced from 2.0.0? | Yes: an optional field, checked by 2.0.0, so every later 2.x release is covered. Deferring means 2.0.x ignores it for good. | open |
-| 2 | Field shape and name | `"requires": { "cg": "<min>" }`, a minimum only (`MAJOR[.MINOR[.PATCH]]`), no ranges or upper bound; `requires` takes only `cg` in this change. *Alternatives:* a flat `"requires-cg"`; npm-style `"engines": {"cg": ">=…"}` with a range parser. | open |
-| 3 | Accept it in v1 manifests too? | Yes: older cg ignores it as today; a cg that knows it enforces it. | open |
-| 4 | Where and how is it checked? | One helper, called from `loadValidManifest` (install, update, `cg init`; only extensions being applied) before anything is applied, and from #259's `verifiedManifest`, which returns a distinct "requirement unmet" result. The running version is compared by `MAJOR.MINOR.PATCH`, ignoring pre-release/build suffixes; a non-semver version (`dev`, a hash) skips it. At runtime such an extension stays verified for ownership and the conflict check, stays declared for dispatch (refused with the update hint, no `PATH` fallback), and is unverified for the launcher (warn, start the agent directly). | open |
-| 5 | `cg extension update` (all) and `cg init` when one extension being applied has an unmet requirement, inside #259's load-then-check flow (S10, S11). Only extensions being applied are checked; present, non-target ones aren't. | Refuse the whole run before anything is applied, naming the extension and the cg it needs: one rule, and the fix is a single step (update cg, run again). Cost: a fresh clone on an older cg restores no extension until cg is updated. *Alternative:* drop that extension from the set (it keeps its installed version; on `cg init` its tree stays missing), apply the rest, exit non-zero; better if partial restores on old machines are common. Unlike a command conflict (a workspace defect, why #259 refuses the whole set), this depends on the local cg, so either answer is defensible. | open |
-| 6 | The refusal of a newer `manifest` version names the update path | Yes, in 2.0.0, so D6's later bumps (v3, …) fail with an actionable message on 2.0.x. | open |
-| 7 | A last 1.x release with the field and a "needs cg 2.0" message for v2 manifests? | Owner's call on timing. Recommended **only if** it can merge and release before #303 merges; otherwise skip and accept the 1.x message during the move to v2. | open |
-| 8 | Requirements on other tools (`tmux 3.2+`, `gh 2.48+`) | Out of scope; a separate issue if wanted. | open |
-| 9 | Release and sequencing | In cg 2.0.0: own branch and PR from #259's M1 commit, merged after #303 and before the release PR (as #301). Registry schema accepts `requires` with #259's cross-repo step 1; extensions set `requires.cg` when they move (step 4). | open |
+| 1 | Does a minimum-cg field belong in manifest v2, enforced from 2.0.0? | Yes: an optional field, checked by 2.0.0, so every later 2.x release is covered. Deferring means 2.0.x ignores it for good. | agreed |
+| 2 | Field shape and name | `"requires": { "cg": "<min>" }`, a minimum only (`MAJOR[.MINOR[.PATCH]]`), no ranges or upper bound; `requires` takes only `cg` in this change. *Alternatives:* a flat `"requires-cg"`; npm-style `"engines": {"cg": ">=…"}` with a range parser. | agreed |
+| 3 | Accept it in v1 manifests too? | Yes: older cg ignores it as today; a cg that knows it enforces it. | agreed |
+| 4 | Where and how is it checked? | One helper, called from `loadValidManifest` (install, update, `cg init`; only extensions being applied) before anything is applied, and from #259's `verifiedManifest`, which returns a distinct "requirement unmet" result. The running version is compared by `MAJOR.MINOR.PATCH`, ignoring pre-release/build suffixes; a non-semver version (`dev`, a hash) skips it. At runtime such an extension stays verified for ownership and the conflict check, stays declared for dispatch (refused with the update hint, no `PATH` fallback), and is unverified for the launcher (warn, start the agent directly). | agreed |
+| 5 | `cg extension update` (all) and `cg init` when one extension being applied has an unmet requirement, inside #259's load-then-check flow (S10, S11). Only extensions being applied are checked; present, non-target ones aren't. | Refuse the whole run before anything is applied, naming the extension and the cg it needs: one rule, and the fix is a single step (update cg, run again). Cost: a fresh clone on an older cg restores no extension until cg is updated. *Alternative:* drop that extension from the set (it keeps its installed version; on `cg init` its tree stays missing), apply the rest, exit non-zero; better if partial restores on old machines are common. Unlike a command conflict (a workspace defect, why #259 refuses the whole set), this depends on the local cg, so either answer is defensible. | agreed |
+| 6 | The refusal of a newer `manifest` version names the update path | Yes, in 2.0.0, so D6's later bumps (v3, …) fail with an actionable message on 2.0.x. | agreed |
+| 7 | A last 1.x release with the field and a "needs cg 2.0" message for v2 manifests? | Owner's call on timing. Recommended **only if** it can merge and release before #303 merges; otherwise skip and accept the 1.x message during the move to v2. | agreed (only if released before #303 is ready) |
+| 8 | Requirements on other tools (`tmux 3.2+`, `gh 2.48+`) | Out of scope; a separate issue if wanted. | agreed (#308 filed) |
+| 9 | Release and sequencing | In cg 2.0.0: own branch and PR from #259's M1 commit, merged after #303 and before the release PR (as #301). Registry schema accepts `requires` with #259's cross-repo step 1; extensions set `requires.cg` when they move (step 4). | agreed |
 
 **Not a decision:** #300's D6 (agreed) stays as it is. Version bumps remain the rule for a field an older cg must
 not ignore; `requires.cg` adds what a bump can't express.
@@ -304,10 +304,38 @@ not ignore; `requires.cg` adds what a bump can't express.
 
 **proceed**, to the owner's decisions: the problem is real (partly valid: schema additions are already covered by
 #300's D6, behaviour dependencies and the newer-version message aren't), the recommendation was reviewed in three
-rounds, the last one clean, and no assumption could flip it. Nothing is implemented until the owner decides 1–9.
+rounds, the last one clean, and no assumption could flip it. The owner agreed decisions 1–9 on 2026-11-22.
 Time-sensitive: decision 1 must be taken before #303 merges, so that the change can land between #303 and the 2.0.0
 release PR (decision 9); decision 7 (a last 1.x release) only makes sense before #303 merges.
 
 ## Q→A log
 
-- (none yet)
+- 2026-11-22 — The owner is going through the open decisions one at a time:
+  - Decision 1: a minimum-cg field goes into manifest v2, enforced from cg 2.0.0 → **agreed** as recommended.
+  - Decision 2: `"requires": { "cg": "<min>" }`, a minimum only, `MAJOR[.MINOR[.PATCH]]`, no `v`, suffixes or
+    ranges → **agreed**. Q: should the format be linted? → A: yes, in two places: cg's `Validate` refuses a malformed
+    value before anything is applied (covers direct installs), and the registry's `cg-extension.schema.json` gives
+    `requires.cg` a pattern (`^(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){0,2}$`), which `mnemcik/cg-extensions`' existing
+    `validate` workflow already applies to every manifest on each PR. No separate `cg extension validate` command:
+    installing from a local path already runs the full validation.
+  - Decision 3: `requires.cg` is accepted in v1 manifests too (an older cg ignores it, a cg that knows it enforces
+    it; the registry schema allows it in both) → **agreed** as recommended.
+  - Decision 4: one helper, called from `loadValidManifest` (install, update, `cg init`; only extensions being
+    applied) and from #259's `verifiedManifest` (a distinct "requirement unmet" result); the running version compared
+    by `MAJOR.MINOR.PATCH`, a non-semver version skips it; at runtime the extension stays verified for ownership and
+    the conflict check, declared for dispatch (refused with the update hint, no `PATH` fallback), unverified for the
+    launcher → **agreed** as recommended.
+  - Decision 5: an unmet requirement in any extension being applied refuses the whole `cg extension update` or
+    `cg init` run before anything is applied, naming the extension and the cg it needs (a fresh clone on an older cg
+    restores no extension until cg is updated) → **agreed** as recommended.
+  - Decision 6: in 2.0.0, the refusal of a `manifest` version newer than cg understands names the update path
+    (`cg update upgrade`, or `brew upgrade --cask cg`) → **agreed** as recommended.
+  - Decision 7: a last 1.x minor (1.33.0) with `requires.cg` for v1 manifests and a "needs cg 2.0; run
+    `cg update upgrade`" message for v2 manifests, as a `feat:` PR from `main`, **only if it is released before #303
+    is ready to merge**; it must not delay #303. If it isn't ready in time, it's dropped → **agreed** (option C).
+  - Decision 8: requirements on other tools (`tmux`, `gh`) are out of scope; `requires` leaves room for them later
+    → **agreed**. Filed on the owner's request as #308 (2026-11-22).
+  - Decision 9: in cg 2.0.0; registry schema accepts `requires` (with the format pattern) alongside #259's cross-repo
+    step 1; #212's own branch and PR from #259's M1 commit, merged after #303 and before the 2.0.0 release PR (a
+    1.33.0 under decision 7 comes before #303); extensions set `requires.cg` where they depend on a fix when they
+    move to v2, and drop the "(cg x+)" description text → **agreed** as recommended.
