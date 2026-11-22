@@ -444,8 +444,8 @@ before changing anything, when:
 - a command is inside another extension's command, or the reverse: with `pr`
   installed, `pr merge` is refused, and with `pr merge` installed, `pr` is;
 - its namespace is a built-in cg command or alias (`start`, `extension`,
-  `ext`, `help`, `completion`, …): built-ins always win, so it could never
-  run.
+  `ext`, `help`, `completion`, …) and the extension doesn't already own it:
+  built-ins always win, so it could never run.
 
 Two extensions may declare different commands in one namespace (`pr merge`
 and `pr watch`). One extension may nest its own commands (`shop` and
@@ -463,7 +463,14 @@ The ledger is committed in the workspace, so it isn't trusted on its own, just
 as for the [launcher](#contribution-points).
 
 A built-in added by a later cg can shadow a command an extension declared
-earlier. `cg extension list` flags such a command; it no longer runs.
+earlier. The extension still **owns** that command: its installed version's
+manifest, at the recorded commit, declares it (the ledger alone doesn't count;
+a missing binary doesn't end ownership, an unreadable tree owns nothing). An
+update that keeps an owned command goes ahead with a warning; one that adds a
+new command in the built-in's namespace, or moves the command to another
+extension, is refused. `cg init` restores the recorded versions, so it only
+warns. The built-in still wins at dispatch, and `cg extension list` flags the
+command: it can't run.
 
 ### Dispatch
 

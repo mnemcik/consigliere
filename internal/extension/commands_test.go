@@ -91,9 +91,9 @@ func TestCheckCommands(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := CheckCommands(tc.installed, tc.incoming, testBuiltins)
-			if !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("CheckCommands:\n got  %+v\n want %+v", got, tc.want)
+			got, warn := CheckCommands(tc.installed, tc.incoming, nil, testBuiltins)
+			if !reflect.DeepEqual(got, tc.want) || len(warn) != 0 {
+				t.Errorf("CheckCommands:\n got  %+v (warnings %+v)\n want %+v", got, warn, tc.want)
 			}
 		})
 	}
@@ -116,5 +116,32 @@ func TestConflictString(t *testing.T) {
 		if got := tc.c.String(); got != tc.want {
 			t.Errorf("String() = %q, want %q", got, tc.want)
 		}
+	}
+}
+
+// S9: a built-in-namespace command the extension already owns is a warning,
+// not a conflict; ownership is per command and per extension.
+func TestCheckCommandsOwnedBuiltin(t *testing.T) {
+	owned := map[string][]CommandContribution{"a": cmds("start run")}
+	cases := []struct {
+		name     string
+		incoming map[string][]CommandContribution
+		conflict []Conflict
+		warn     []Conflict
+	}{
+		{"owned command warns", map[string][]CommandContribution{"a": cmds("start run")},
+			nil, []Conflict{{Extension: "a", Command: "start run", Builtin: "start"}}},
+		{"new command in the same built-in namespace is refused", map[string][]CommandContribution{"a": cmds("start run", "start watch")},
+			[]Conflict{{Extension: "a", Command: "start watch", Builtin: "start"}}, []Conflict{{Extension: "a", Command: "start run", Builtin: "start"}}},
+		{"a command moved to another extension isn't owned by it", map[string][]CommandContribution{"a": nil, "b": cmds("start run")},
+			[]Conflict{{Extension: "b", Command: "start run", Builtin: "start"}}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, warn := CheckCommands(nil, tc.incoming, owned, testBuiltins)
+			if !reflect.DeepEqual(got, tc.conflict) || !reflect.DeepEqual(warn, tc.warn) {
+				t.Errorf("got %+v / %+v, want %+v / %+v", got, warn, tc.conflict, tc.warn)
+			}
+		})
 	}
 }

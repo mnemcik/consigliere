@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -111,28 +112,64 @@ func builtinFor(command string) string {
 // checkCommands refuses, before anything is applied, incoming commands (keyed
 // by extension name) that conflict with each other, with the verified commands
 // of the extensions installed in the workspace at root, or with a built-in.
-// Each incoming extension's own ledger must be readable too: applying it
-// reads that ledger, and failing there would leave a multi-extension
-// operation half applied.
-func checkCommands(root string, installed []workspace.ExtensionRef, incoming map[string][]extension.CommandContribution) error {
+// A built-in-namespace command the extension already owns (its installed
+// version's manifest at the recorded commit declares it) isn't refused but
+// returned as a warning; restoring (cg init, which restores the recorded
+// versions) owns every command it restores, so it only warns. Each incoming
+// extension's own ledger must be readable too: applying it reads that ledger,
+// and failing there would leave a multi-extension operation half applied.
+func checkCommands(root string, installed []workspace.ExtensionRef, incoming map[string][]extension.CommandContribution, restoring bool) ([]string, error) {
 	anyIncoming := false
 	for _, name := range slices.Sorted(maps.Keys(incoming)) {
 		if _, err := extension.LoadLedger(root, name); err != nil {
-			return unreadableLedgerError(root, name, err)
+			return nil, unreadableLedgerError(root, name, err)
 		}
 		anyIncoming = anyIncoming || len(incoming[name]) > 0
 	}
 	have, err := installedCommands(root, installed, anyIncoming)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	conflicts := extension.CheckCommands(have, incoming, builtinCommandNames())
+	owned := incoming
+	if !restoring {
+		owned = ownedCommands(installed, incoming)
+	}
+	conflicts, shadowed := extension.CheckCommands(have, incoming, owned, builtinCommandNames())
+	var warnings []string
+	for _, c := range shadowed {
+		warnings = append(warnings, fmt.Sprintf("command %q of extension %q can't run: the built-in \"cg %s\" wins", c.Command, c.Extension, c.Builtin))
+	}
 	if len(conflicts) == 0 {
-		return nil
+		return warnings, nil
 	}
 	lines := make([]string, len(conflicts))
 	for i, c := range conflicts {
 		lines[i] = "  " + c.String()
 	}
-	return cgerr.New(cgerr.ExitUsage, "extension commands conflict, so nothing was changed:\n%s", strings.Join(lines, "\n"))
+	return nil, cgerr.New(cgerr.ExitUsage, "extension commands conflict, so nothing was changed:\n%s", strings.Join(lines, "\n"))
+}
+
+// ownedCommands returns, for each incoming extension that is installed, the
+// commands it owns: those its installed version's manifest, read and validated
+// at the recorded commit, declares. The ledger isn't consulted, and a missing
+// binary doesn't matter; an extension whose tree can't be read owns nothing.
+func ownedCommands(installed []workspace.ExtensionRef, incoming map[string][]extension.CommandContribution) map[string][]extension.CommandContribution {
+	out := map[string][]extension.CommandContribution{}
+	for i := range installed {
+		e := &installed[i]
+		if _, in := incoming[e.Name]; !in {
+			continue
+		}
+		if _, m, err := verifiedManifest(e); err == nil {
+			out[e.Name] = append(out[e.Name], m.Contributes.Commands...)
+		}
+	}
+	return out
+}
+
+// printCommandWarnings writes checkCommands' warnings.
+func printCommandWarnings(w io.Writer, warnings []string) {
+	for _, m := range warnings {
+		_, _ = fmt.Fprintf(w, "warning: %s\n", m)
+	}
 }

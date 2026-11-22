@@ -483,3 +483,96 @@ func TestInstallConflictWithDuplicateEntryReportedOnce(t *testing.T) {
 		t.Errorf("conflict reported %d times, want once:\n%v", n, err)
 	}
 }
+
+// laterBuiltin registers a hidden top-level command "zzfoo" for the rest of
+// the test: a built-in a later cg added after extensions declared commands in
+// its namespace.
+func laterBuiltin(t *testing.T) {
+	t.Helper()
+	c := &cobra.Command{Use: "zzfoo", Hidden: true, Run: func(*cobra.Command, []string) {}}
+	rootCmd.AddCommand(c)
+	t.Cleanup(func() { rootCmd.RemoveCommand(c) })
+}
+
+// S9: a command an extension already owns, whose namespace a later cg made a
+// built-in, doesn't block update or cg init: cg warns. A new command in that
+// namespace, or one moved to another extension, is refused.
+func TestOwnedBuiltinCommands(t *testing.T) {
+	requireGit(t)
+	t.Run("update keeps an owned command, with a warning", func(t *testing.T) {
+		cfgHome, ws := t.TempDir(), newWorkspace(t)
+		alpha := installRepo(t, cfgHome, ws, commandsManifest("alpha", "1.0.0", "zzfoo run"))
+		laterBuiltin(t)
+		updateExtRepo(t, alpha, commandsManifest("alpha", "1.1.0", "zzfoo run"), "")
+		out, err := runExtCfg(t, cfgHome, ws, "update", "alpha")
+		if err != nil {
+			t.Fatalf("update: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "warning:") || !strings.Contains(out, `"zzfoo run"`) || !strings.Contains(out, "cg zzfoo") {
+			t.Errorf("no warning naming the command and the built-in:\n%s", out)
+		}
+	})
+	t.Run("owned even when its binary is missing", func(t *testing.T) {
+		cfgHome, ws := t.TempDir(), newWorkspace(t)
+		alpha := installRepo(t, cfgHome, ws, commandsManifest("alpha", "1.0.0", "zzfoo run"))
+		if err := os.Remove(binOf(t, ws, "alpha")); err != nil {
+			t.Fatal(err)
+		}
+		laterBuiltin(t)
+		updateExtRepo(t, alpha, commandsManifest("alpha", "1.1.0", "zzfoo run"), "")
+		if out, err := runExtCfg(t, cfgHome, ws, "update", "alpha"); err != nil {
+			t.Fatalf("update: %v\n%s", err, out)
+		}
+	})
+	t.Run("a tree that can't be read owns nothing", func(t *testing.T) {
+		cfgHome, ws := t.TempDir(), newWorkspace(t)
+		alpha := installRepo(t, cfgHome, ws, commandsManifest("alpha", "1.0.0", "zzfoo run"))
+		if err := os.RemoveAll(filepath.Dir(filepath.Dir(binOf(t, ws, "alpha")))); err != nil {
+			t.Fatal(err)
+		}
+		laterBuiltin(t)
+		updateExtRepo(t, alpha, commandsManifest("alpha", "1.1.0", "zzfoo run"), "")
+		out, err := runExtCfg(t, cfgHome, ws, "update", "alpha")
+		wantConflict(t, err, out, `"zzfoo run"`, "cg zzfoo")
+	})
+	t.Run("a new command in the built-in namespace is refused", func(t *testing.T) {
+		cfgHome, ws := t.TempDir(), newWorkspace(t)
+		alpha := installRepo(t, cfgHome, ws, commandsManifest("alpha", "1.0.0", "zzfoo run"))
+		laterBuiltin(t)
+		updateExtRepo(t, alpha, commandsManifest("alpha", "1.1.0", "zzfoo run", "zzfoo watch"), "")
+		before := snapshotDir(t, ws)
+		out, err := runExtCfg(t, cfgHome, ws, "update", "alpha")
+		wantConflict(t, err, out, `"zzfoo watch"`, "cg zzfoo")
+		assertUnchanged(t, ws, before)
+	})
+	t.Run("a command moved to another extension is refused", func(t *testing.T) {
+		cfgHome, ws := t.TempDir(), newWorkspace(t)
+		alpha := installRepo(t, cfgHome, ws, commandsManifest("alpha", "1.0.0", "zzfoo run"))
+		beta := installRepo(t, cfgHome, ws, commandsManifest("beta", "1.0.0", "other"))
+		laterBuiltin(t)
+		updateExtRepo(t, alpha, commandsManifest("alpha", "1.1.0", "elsewhere"), "")
+		updateExtRepo(t, beta, commandsManifest("beta", "1.1.0", "other", "zzfoo run"), "")
+		before := snapshotDir(t, ws)
+		out, err := runExtCfg(t, cfgHome, ws, "update")
+		wantConflict(t, err, out, `"zzfoo run"`, `"beta"`, "cg zzfoo")
+		assertUnchanged(t, ws, before)
+	})
+	t.Run("cg init only warns", func(t *testing.T) {
+		cfgHome, ws := t.TempDir(), newWorkspace(t)
+		installRepo(t, cfgHome, ws, commandsManifest("alpha", "1.0.0", "zzfoo run"))
+		laterBuiltin(t)
+		if err := os.RemoveAll(filepath.Join(cfgHome, "consigliere", "extensions")); err != nil {
+			t.Fatal(err)
+		}
+		out, err := runInitForce(t, cfgHome, ws)
+		if err != nil {
+			t.Fatalf("init: %v\n%s", err, out)
+		}
+		if _, serr := os.Stat(binOf(t, ws, "alpha")); serr != nil {
+			t.Errorf("alpha not restored: %v", serr)
+		}
+		if !strings.Contains(out, "warning:") || !strings.Contains(out, `"zzfoo run"`) {
+			t.Errorf("init didn't warn about the shadowed command:\n%s", out)
+		}
+	})
+}

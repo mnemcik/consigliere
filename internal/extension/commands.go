@@ -58,9 +58,12 @@ func commandsNest(a, b string) bool {
 // nested with it in either direction, or when its namespace is a built-in.
 // Two incoming extensions are checked against each other too, each pair
 // reported once. Conflicts among installed extensions alone are not reported:
-// the operation doesn't create them. The result is ordered by incoming
-// extension name, then by the order of its commands.
-func CheckCommands(installed, incoming map[string][]CommandContribution, builtins []string) []Conflict {
+// the operation doesn't create them. A built-in-namespace command the
+// extension already owns (owned, keyed by extension: its installed version's
+// commands) is returned as a warning instead: a later cg added the built-in,
+// and the command keeps its owner though it can't run. Both results are
+// ordered by incoming extension name, then by the order of its commands.
+func CheckCommands(installed, incoming, owned map[string][]CommandContribution, builtins []string) (conflicts, warnings []Conflict) {
 	// The set after the operation: an incoming version replaces the installed
 	// one of the same name.
 	final := map[string][]CommandContribution{}
@@ -75,7 +78,12 @@ func CheckCommands(installed, incoming map[string][]CommandContribution, builtin
 	for _, name := range sortedKeys(incoming) {
 		for _, c := range incoming[name] {
 			if ns := CommandNamespace(c.Command); slices.Contains(builtins, ns) {
-				out = append(out, Conflict{Extension: name, Command: c.Command, Builtin: ns})
+				conflict := Conflict{Extension: name, Command: c.Command, Builtin: ns}
+				if ownsCommand(owned[name], c.Command) {
+					warnings = append(warnings, conflict)
+				} else {
+					out = append(out, conflict)
+				}
 			}
 			for _, other := range others {
 				if other == name {
@@ -92,7 +100,17 @@ func CheckCommands(installed, incoming map[string][]CommandContribution, builtin
 			}
 		}
 	}
-	return out
+	return out, warnings
+}
+
+// ownsCommand reports whether cs declares command.
+func ownsCommand(cs []CommandContribution, command string) bool {
+	for _, c := range cs {
+		if c.Command == command {
+			return true
+		}
+	}
+	return false
 }
 
 func sortedKeys(m map[string][]CommandContribution) []string {
