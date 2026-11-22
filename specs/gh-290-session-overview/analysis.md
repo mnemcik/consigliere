@@ -82,10 +82,11 @@ for a todo" as an open question), then a "how" for the part that holds up.
   ends with no typing) and `elicitation_dialog`; `PermissionRequest` fires before a permission dialog is shown;
   `Stop` fires when the agent finishes responding but **not** on a user interrupt. No event fires when the user
   answers a dialog.
-- Notifications: Claude Code already notifies on permission and idle prompts; Ghostty, kitty and iTerm2 can get a
-  desktop notification, subject to the terminal's own alert settings (iTerm2 notifies only when you appear to be
-  away), and other terminals at most a bell (https://code.claude.com/docs/en/terminal-config, read 2026-11-22).
-  Whether a notification reaches the user therefore depends on the terminal and its settings. Inside tmux, desktop notifications need
+- Notifications: Claude Code already notifies on permission and idle prompts. Ghostty, kitty and iTerm2 can show
+  a desktop notification (iTerm2 only once its alert settings are on); other terminals get none by default; and
+  notifications are sent only when the user appears to be away
+  (https://code.claude.com/docs/en/terminal-config, read 2026-11-22). A user looking at another pane or terminal
+  may therefore get no notification at all. Inside tmux, desktop notifications need
   tmux passthrough, which the `tmux` extension turns on (cg-extensions `tmux/README.md`). OSC 7501 lets a
   terminal show working / waiting / done per interactive session, but not inside tmux (terminal-config page).
 - The status line runs on events (new assistant message, mode change, …) plus an optional `refreshInterval`; it
@@ -129,19 +130,27 @@ review gate and the todo queue are out of this item's core scope.
 ### Recommended — an overview that joins cg's sessions with the agent's live status, shipped as an extension
 
 - **What:** an extension command (name open, decision 3) that reads cg's session records and `claude agents --json`,
-  joins them on session ID, and prints one list grouped by **who acts next**:
-  1. *Waiting on you*: `status: waiting` (interactive) or `state: blocked` (background), with `waitingFor`;
-  2. *Turn ended*: `status: idle` or `state: done` (the agent finished; your next prompt is due);
-  3. *Working*: `status: busy` or `state: working`;
+  joins them on session ID, and prints one list grouped by **who acts next**. It calls
+  `claude agents --json --all`, since without `--all` completed background sessions are left out
+  (`claude agents --help`). For a background session `state` decides the group and `status` only adds detail; for
+  an interactive session (no `state`) `status` decides:
+  1. *Waiting on you*: background `state: blocked`, or interactive `status: waiting`; with `waitingFor` when the
+     agent gives it (it does only while `status` is `waiting`, so a blocked session whose process has exited shows
+     no reason);
+  2. *Turn ended*: background `state: done`, or interactive `status: idle` (the agent finished; your next prompt is
+     due);
+  3. *Working*: background `state: working` (even when its process is between steps), or interactive
+     `status: busy`;
   4. *Ended*: background `state: failed` / `stopped`;
-  5. *Paused projects* from cg (`resume.md`).
+  5. *Claim only*: a cg badge with no matching agent session (the session is gone or isn't a Claude Code one);
+  6. *Paused projects* from cg (`resume.md`).
 
   **Which sessions:** `claude agents --json` lists every session on the machine (40 in the capture), and its
   `--cwd` filter applies to background sessions only (`claude agents --help`). The overview keeps a session when
-  it has a badge in this workspace, or when its `cwd` is the workspace root or one of its worktrees; sessions in
-  external repos without a badge (#277) and sessions of other workspaces are left out unless `--all` is given
-  (decision 2). Each row carries cg's project, area and worktree when the session has a badge, and "no project"
-  when it doesn't, so a session that skipped `set-context` (#204) is still seen.
+  it has a badge in this workspace, or when its `cwd` is at or under the workspace root or one of its worktrees;
+  sessions in external repos without a badge (#277) and sessions of other workspaces are left out unless a flag
+  such as `--everywhere` is given (decision 2). Each row carries cg's project, area and worktree when the session
+  has a badge, and "no project" when it doesn't, so a session that skipped `set-context` (#204) is still seen.
 
   **Durations:** the agent reports no timestamp for when waiting began (only `startedAt`, the session start), so
   a one-shot run shows no duration; `--watch` shows "waiting since" from the first time it saw the state. A
@@ -153,13 +162,16 @@ review gate and the todo queue are out of this item's core scope.
 
   **Core change needed:** today `cg active --json` drops badges without a project (`internal/session/active.go:71`)
   and clean badges not written for 4 h (`active.go:88-95`), so the join would lose cg's data for exactly the
-  idle-but-open sessions #232 describes. The overview needs a small, agent-neutral `cg active` option that lists
-  every badge regardless of the liveness windows, with its `worktree` (from #259) in the JSON (decision 5). It
+  idle-but-open sessions #232 describes. `cg active` also always leaves out the caller's own session
+  (`cmd/active.go:34,76`), so an overview run from inside a session would show that session as "no project". The
+  overview needs a small, agent-neutral `cg active` option that lists every badge regardless of the liveness
+  windows and without excluding the caller, with its `worktree` (from #259) in the JSON (decision 5). It
   doesn't change `cg active`'s default output or liveness rules. Reading the badge files directly from the
   extension would tie it to a core-internal file format instead.
 
-  **Which workspace:** run from an external directory, the binary asks the workspace that served it
-  (`CG_EXTENSION_WORKSPACE`, #259 S28) rather than its current directory.
+  **Which workspace:** `cg active` finds its root from the current directory only (`cmd/active.go:64-68`,
+  `cmd/session.go:585-595`), so the binary runs it with its working directory set to the workspace that served it
+  (`CG_EXTENSION_WORKSPACE`, #259 S28), not wherever it was called from.
 - **Why this one:** the agent already knows exactly when a dialog is open, including the cases a hook can't see
   (an answered dialog, an interrupted turn). Reading it means no new state to keep correct, no hook on every tool
   call, and no `settings.json` migration. Keeping the Claude Code-specific part in an extension follows #266 and
@@ -265,7 +277,7 @@ review gate and the todo queue are out of this item's core scope.
 | 2 | Scope of #290: sessions only (waiting / turn ended / working / ended / paused), with "ready for review" left to `pr-workflow` and "who acts next for a todo" split into its own issue; and which sessions are listed | Sessions only; split the todo field out; PRs join later from `pr-workflow`. List sessions with a badge in this workspace or a `cwd` in the workspace or its worktrees; others only with `--all` | open |
 | 3 | Where it ships and what it's called: a new cg-extensions extension, or part of the opt-in Claude Code extension #266 proposes; the command name | A small extension in cg-extensions, built as a manifest-v2 command after #259 merges, folded into #266's extension if that is built; name chosen by the owner under #259's naming rule (`session` is a built-in namespace) | open |
 | 4 | Push side: is the 2026-11-22 incident a missing view or a notification that didn't reach the user (terminal, tmux, notification setting)? | Owner to say which setup it happened in; if the notification didn't arrive, fix that setup separately, not in #290 | open (question) |
-| 5 | Core change: a `cg active` option that lists every badge regardless of the liveness windows (and badges without a project), with #259's `worktree` in the JSON | Yes, a small agent-neutral core change after #259 merges; the default output stays as it is | open |
+| 5 | Core change: a `cg active` option that lists every badge regardless of the liveness windows (and badges without a project, and the caller's own), with #259's `worktree` in the JSON | Yes, a small agent-neutral core change after #259 merges; the default output stays as it is | open |
 | 6 | Order relative to other work, given Priority Low | After #259 merges; independent of #300 and #301 | open |
 | 7 | Windows: accept that the overview doesn't run on Windows until #239 (extension commands on Windows) is fixed, or wait for #239 | Accept; say so in the extension's README | open |
 
