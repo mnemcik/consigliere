@@ -18,6 +18,10 @@ import (
 	"strings"
 )
 
+// isWindows selects Windows rules (case-insensitive paths, the upstream
+// status line run through Git Bash).
+const isWindows = runtime.GOOS == "windows"
+
 // ContextDirName is the per-session badge state directory, relative to the
 // workspace root.
 var ContextDirName = filepath.Join(".claude", "session-context")
@@ -285,7 +289,7 @@ func sameRecord(m map[string]any, path string) bool {
 		return false
 	}
 	a, b := filepath.ToSlash(v), filepath.ToSlash(path)
-	if runtime.GOOS == "windows" { // drive letters and paths are case-insensitive there
+	if isWindows { // drive letters and paths are case-insensitive there
 		return strings.EqualFold(a, b)
 	}
 	return a == b

@@ -377,7 +377,7 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 				if rerr := os.RemoveAll(t); rerr != nil {
 					// Left in place, the tree would look restored to the
 					// next cg init.
-					retErr = fmt.Errorf("%w; also couldn't remove %s (%v): remove it before the next cg init", retErr, t, rerr)
+					retErr = fmt.Errorf("%w; also couldn't remove %s (%w): remove it before the next cg init", retErr, t, rerr)
 				}
 			}
 		}
