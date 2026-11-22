@@ -19,7 +19,9 @@ func gitCommitAll(t *testing.T, dir string) {
 	ctx := context.Background()
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
 		for _, args := range [][]string{
-			{"init", "--quiet"},
+			// main, as the worktree tests' landing branch, whatever the
+			// machine's init.defaultBranch.
+			{"init", "--quiet", "--initial-branch=main"},
 			{"config", "user.email", "t@example.com"},
 			{"config", "user.name", "test"},
 		} {
