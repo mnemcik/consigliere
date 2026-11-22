@@ -127,8 +127,9 @@ Roots are checked in the consulted order. The first root whose ledgers have **an
   started in and that was removed since), names one with no `.cg.json` entry, or names one whose `.cg.json` decodes
   to an object whose `type` is missing or isn't `consigliere` THEN it is ignored, dispatch behaves as S19, and the
   unknown-command hint says so. WHEN the `.cg.json` entry exists but can't be read or doesn't decode to an object (a
-  directory, a dangling symlink, an empty file, invalid JSON, `null`, a non-object, or a field of the wrong type
-  such as `"type": 5`) THEN dispatch stops with a usage error naming the file, and doesn't fall back to another
+  directory, a dangling symlink, an empty file, invalid JSON, `null`, a non-object, or any field of the wrong type
+  such as `"type": 5`; decoded the way cg reads `.cg.json` everywhere else, keys included) THEN dispatch stops with
+  a usage error naming the file, and doesn't fall back to another
   workspace or the `PATH` fallback. This applies where the session root is consulted: under S20 it is also the
   current directory's root, which stops the same way (M2); under S22 and S24 as stated; inside one of the session's
   own worktrees (S21) only that worktree's `.cg.json` counts.
@@ -170,13 +171,14 @@ The session state file is `<badge root>/.claude/session-context/<id>.json`, wher
 - **S36** WHEN `cg session set-context --worktree <path>` runs THEN the path is recorded the same way, for
   workspaces that create worktrees with their own scripts (Q5). A path that isn't one of the repo's linked
   worktrees is refused: one not in `git worktree list`, and the main checkout (the list's first entry), so writers
-  are never sent into the main checkout.
+  are never sent into the main checkout. Paths are compared after `filepath.EvalSymlinks` on both sides, as in S21;
+  the same comparison applies in S38.
 - **S37** WHEN `cg worktree remove` removes the recorded worktree THEN the record is cleared.
 - **S38** WHEN the session root serves a command for a current directory outside the session root and its
   worktrees (S22/S24), the session ID is valid, and the recorded worktree is still one of the session repo's linked
   worktrees (listed, and not the main checkout) THEN `CG_SESSION_WORKTREE` is set to it (Q2).
 - **S38b** WHEN the session root serves such a command, no valid worktree is recorded (none; no session ID, or one
-  failing `ValidSessionID`; a state file that can't be read; or a recorded path no longer listed), and the session root is itself a linked worktree THEN `CG_SESSION_WORKTREE` is
+  failing `ValidSessionID`; a state file that can't be read; or a recorded path that isn't one of the repo's linked worktrees, such as one no longer listed or the main checkout), and the session root is itself a linked worktree THEN `CG_SESSION_WORKTREE` is
   set to the session root (Q10). "Linked worktree" is decided in the session root with the cleaned environment:
   `git rev-parse --path-format=absolute --show-toplevel --git-dir --git-common-dir`; the top level must equal the
   session root and the git dir must differ from the common dir, both compared after `filepath.EvalSymlinks`. Any

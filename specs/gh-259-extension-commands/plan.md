@@ -88,7 +88,9 @@ Scenarios: S35–S40, S38b.
   `ReadContext` and the writer refuse an invalid session ID themselves (S39), not only their callers.
 - State file location: `gitx.CommonRoot` of the session root, as `sessionRoots` does.
 - `cmd/worktree.go`: `create` records it when a session ID resolves; `remove` clears it when it matches.
-- `cmd/session.go`: `set-context --worktree <path>`, refused unless the path is in the repo's worktree list.
+- `cmd/session.go`: `set-context --worktree <path>`, refused unless the path is one of the repo's linked worktrees
+  (S36: not the main checkout; symlinks resolved). Guard tests with mutation checks: the main checkout refused by
+  S36 and ignored by S38 (and then S38b applies); a symlinked path to a linked worktree accepted.
 - `cmd/external.go`: S38, re-checking the recorded path against the worktree list; S38b, the linked-worktree test
   exactly as the spec's S38b states it (one cleaned-env `git rev-parse --path-format=absolute --show-toplevel
   --git-dir --git-common-dir`; top level equals the session root; git dir differs from common dir; both compared
