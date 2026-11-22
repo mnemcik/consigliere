@@ -86,11 +86,16 @@ Scenarios: S30, S31, S34, S34b, S35, S36, S36b, S36c.
 
 ### 4 — conflicts, moves, list
 
-Scenarios: S19–S24, S26, S37–S41.
+Scenarios: S19–S20c, S21–S24, S26, S37–S41.
 
 - Skill-name conflicts in the same pre-apply pass as #259's `CheckCommands` (install, update over the whole new set,
   `cg init` over the whole set), per target; the framework's skill and command names from `frameworkClaudeFiles`
-  (S20, Q8); a note or template inside a skill's directory (S24); the conditional hint (S22).
+  (S20, Q8), except for a skill the extension already ships for `claude` (manifest at its recorded commit declares
+  it, ledger records `claude` for it), which warns and is flagged (S20b); `cg init` only warns, whatever the ledger records (S20c); using #259's `verifiedManifest` as its S9 does; a note or template inside a skill's directory (S24); the
+  conditional hint (S22). Tests: a reserved name refused on install; added to an installed extension
+  by an update, refused; `claude` added to the targets of an installed skill with a reserved name, refused; a name
+  reserved by a later cg for a skill already shipped for `claude`, warned on update and `cg init`; `cg init`
+  restoring a reserved-name skill whose ledger doesn't record `claude`, warned (S20c); an unreadable tree, refused.
 - The pre-apply pass also builds the graph of skill moves between installed extensions (dropper → gainer): no cycle
   → refuse with the ordered commands (a topological order, S37); a cycle → refuse naming it (S38). `runExtUpdate`
   (`cmd/extension.go:730-750`) keeps applying one target at a time. Tests: one move, a chain of three, a swap, a
@@ -116,7 +121,10 @@ Scenarios: X3.
 
 1. mnemcik/cg-extensions-registry: schema accepts `skills` under `manifest: 2`, in the same change as #259's schema
    step (X1).
-2. mnemcik/cg-extensions `github-digest`: the move to `skills` (X2), version bump, registry index bump.
+2. mnemcik/cg-extensions `github-digest`: the move to `skills` (X2), version bump, registry index bump. `cg extension
+   install` and `update` read the extension repo's default branch, so this v2 manifest must not reach cg-extensions
+   `main` before cg 2.0.0 is released (#259's cross-repo order): prepared early, merged right after the release,
+   together with #259's "PR B".
 3. After the release: `cg update`, then `cg extension update github-digest` in a workspace that has the old version,
    checking S40 end to end.
 
@@ -141,4 +149,4 @@ hook entries in `manifest.go` and `settings.go`; whichever lands second rebases.
 - A `cg init` that stops after fetching (S36c) can't be resumed by running `cg init` again, and the only command
   that re-applies (`cg extension update`) moves the pin to the latest version. Re-applying at a recorded commit
   would be a new path in `updateOne` (`cmd/extension.go:771-779` always resolves the latest tag or default branch);
-  not added here. #259's whole-set check in `cg init` (its S12) has the same property; raised for #259.
+  not added here. #259's whole-set check in `cg init` (its S11) has the same property; filed as #306.

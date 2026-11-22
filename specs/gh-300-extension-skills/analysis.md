@@ -67,10 +67,10 @@ runs it after applying the new version (`cmd/extension.go:200-215`).
 `contributes`, and `manifest` is `const: 1` (cg-extensions-registry `schema/cg-extension.schema.json`). A manifest
 with a new key fails the registry's check.
 
-**#259 (in flight, not agreed).** Its spec proposes manifest **v2** for any manifest that declares `commands`, with
-v1 manifests without `subcommands` still valid, so an older cg refuses the new manifests with its existing error (spec
-Q1). Its M1 changes `manifest.go` (`SchemaVersion`, a new contribution, a raw decode of `contributes` to find the
-removed `subcommands` key), `ledger.go` (`Commands`), `apply.go:240`, a new `commands.go` with a cross-extension
+**#259 (in flight, not agreed when this was written; agreed since, amended at `01de053`).** Its spec proposes
+manifest **v2** for any manifest that declares `commands`, with v1 manifests without `commands` still valid, so an
+older cg refuses the new manifests with its existing error (spec Q1). Its M1 changes `manifest.go` (`SchemaVersion`,
+a new contribution; the removed `subcommands` key is ignored like any unknown field, its Q8), `ledger.go` (`Commands`), `apply.go:240`, a new `commands.go` with a cross-extension
 conflict check, and the install/update/`cg init` flows in `cmd/extension.go`; it is planned as cg 2.0.0
 (`specs/gh-259-extension-commands/plan.md`, M1).
 
@@ -228,14 +228,15 @@ which drops `contributes.skills`: the extension installs, its skills don't, and 
    and 2.0.0 already accepts v2 (#259's Q1 = v2, or #301 introduces v2), since 2.0.0 would accept v2 and drop
    `skills`, unless 2.0.0 decodes v2 strictly (D6 (a)), in which case v2 suffices. Any older cg then refuses the manifest with
    "unsupported manifest schema version", and the new cg refuses a manifest that declares `skills` under an older
-   version, asking for the right one, as #259's S6 does for `commands`.
+   version, asking for the right one, as #259's S5 does for `commands`.
 2. **Future fields fail loudly** (D6). Today's policy, written in the docs, is the opposite: "A cg older than this
    contribution point ignores the key" (`docs/extensions.md:257-259` for `gitignore`, `:282-285` for `launcher`).
    That suits fields an older cg can safely skip; it doesn't suit `skills`, where skipping loses the extension's
    rules. Three ways to make a later field safe:
    - **(a) Strict decoding of v2:** an unknown key in `contributes` or in an entry is refused. Every later field,
-     including harmless optional ones, then makes older 2.x refuse the manifest. #259's M1 already decodes
-     `contributes` raw to find `subcommands`, so the code is small, but it changes #259's spec and the docs' policy.
+     including harmless optional ones, then makes older 2.x refuse the manifest. It needs a raw decode of
+     `contributes` (#259 dropped its own, ignoring `subcommands` like any unknown field), and it changes #259's spec
+     and the docs' policy.
    - **(b) A version bump per release that adds a field an older cg must not ignore** (v3, v4, …): no new mechanism,
      keeps the documented policy for harmless fields; costs a version per such release. Only manifests that declare
      the new field move to the new version, so extensions that don't use it keep installing on older cg.
@@ -262,7 +263,7 @@ manifest.
 
 | File | #259 (M1) | #300 |
 |---|---|---|
-| `internal/extension/manifest.go` | `SchemaVersion` 2, `commands`, raw `contributes` decode | `skills` type and validation; the D4 version required for it; strict decode if D6 |
+| `internal/extension/manifest.go` | `SchemaVersion` 2, `commands` | `skills` type and validation; the D4 version required for it; strict decode if D6 |
 | `internal/extension/ledger.go` | `Commands` replaces `Subcommands` | `Skills` entries |
 | `internal/extension/apply.go` | records commands (`:240`) | apply, `Reverse`, `OrphanLedger` for skill trees |
 | `internal/extension/ownership.go` | — | the reported edit-only case; modes |

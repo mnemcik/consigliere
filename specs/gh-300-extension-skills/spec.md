@@ -146,8 +146,21 @@ warning. The marker form follows the framework's own `<!-- cg:section:start=ID -
   target both install it for THEN install fails, naming the skill, both extensions and the target; files,
   `.cg.json` and ledgers are unchanged.
 - **S20** WHEN it ships a skill whose name is a framework skill or slash command (today `wrap`, `cg-sync`, `cg-init`,
-  `match-project`, from `frameworkClaudeFiles`) and the targets include `claude` THEN install, update, `cg init` and
-  a target change (S34) fail the same way, naming the framework (Q8).
+  `match-project`, from `frameworkClaudeFiles`), the targets include `claude`, and the extension doesn't already
+  ship that skill for `claude` THEN install, update and a target change (S34) fail the same way, naming the
+  framework (Q8). An extension **already ships a skill for `claude`** when its manifest, read and validated at its
+  recorded commit, declares the skill and its ledger records `claude` among that skill's targets; an extension whose
+  tree can't be read ships nothing, as #259's S9 says for commands. So adding `claude` to the targets for a reserved
+  name is refused.
+- **S20b** WHEN an extension already ships, for `claude`, a skill whose name is reserved (typically a framework skill
+  or command a later cg added) THEN update, a target change and `cg init` don't fail: they print a warning that the
+  skill hides the framework's skill or command of that name in Claude Code, naming both, and `cg extension list`
+  flags it, as #259's S9 does for a command whose namespace a later cg made a built-in. A skill moved to another
+  extension in one update isn't already shipped by the receiving one.
+- **S20c** WHEN `cg init` restores an extension at its recorded commit and one of its skills, for a target that
+  includes `claude`, has a reserved name THEN it only warns as in S20b, whatever the ledger records, since it
+  restores what `.cg.json` already records, as #259's S9 does for every command `cg init` restores. `cg init` never
+  refuses on a reserved name.
 - **S21** WHEN the same name exists only under a target the other side doesn't install for (for example `wrap` with
   targets `["agents"]`) THEN it isn't a conflict.
 - **S22** WHEN `cg extension update` (one extension or all) brings versions whose skill names conflict, with each other
@@ -229,7 +242,7 @@ warning. The marker form follows the framework's own `<!-- cg:section:start=ID -
   anything, so after the fix a plain `cg init` run again re-installs normally. Tested as stop, fix, `cg init` again,
   skills written.
 - **S36c** WHEN `cg init` stops on any error after its first tree is fetched (for example S7–S11 on a tree first read
-  by this cg, S16b inside a skill directory no ledger records, S20, S23, S25b, or another extension's fetch or path
+  by this cg, S16b inside a skill directory no ledger records, S23, S25b, or another extension's fetch or path
   error) THEN the message names the cause and lists every pinned extension fetched but not applied in this run, not
   only the one that failed (legacy entries left out, since they are retried), and says for them: running `cg init`
   again won't retry them, because their trees are now on this machine; `cg extension update <name>` re-applies one
@@ -318,7 +331,8 @@ warning. The marker form follows the framework's own `<!-- cg:section:start=ID -
 - **Q5 — `skills.targets: []` is allowed** and installs no skills (S15).
 - **Q7 — `SKILL.md` frontmatter is checked for the two fields Agent Skills requires:** `name` (equal to the
   directory name) and a `description` of 1–1024 characters (S3, S8).
-- **Q8 — reserved names come from `frameworkClaudeFiles`:** its skills and its slash commands, since in Claude Code
+- **Q8 — reserved names come from `frameworkClaudeFiles`** and are refused only for a skill an extension doesn't
+  already ship; one it already ships warns (S20, S20b), matching #259's S9: its skills and its slash commands, since in Claude Code
   a skill takes precedence over a command of the same name (https://code.claude.com/docs/en/skills); `claude`
   target only (S20).
 - **Q9 — skills moving between extensions take one update per extension, droppers first;** cg prints the order and
@@ -334,7 +348,7 @@ warning. The marker form follows the framework's own `<!-- cg:section:start=ID -
   workspaces share; a `cg init` that could stop on an edit could then neither be re-run (the fetched tree makes it
   skip the extension) nor clean up (deleting the tree could pull it from under another workspace). *Alternative:*
   `cg init` replaces committed edits; every machine runs the extension's version at once, but only with a change to
-  how `cg init` decides what to re-install, which belongs with #259's whole-set check for `cg init` (its S12), where
+  how `cg init` decides what to re-install, which belongs with #259's whole-set check for `cg init` (its S11) and #306, where
   the same question arises.
 - **Q12 — one local-file block, worded once in cg's code and versioned,** carried word for word by every skill: a
   skill template that a test keeps on the newest version, and a warning naming the extension's maintainer at install
