@@ -3,7 +3,7 @@
 Implements the decisions in [analysis.md](analysis.md#qa-log): D1, D2, D4–D11, D13 as agreed on 2026-11-21, and D14
 (2026-11-22), which replaces D3 and D12 and amends D8. Each scenario below is one behaviour and maps to at least one
 test; `plan.md` names the commit that delivers it. The choices at the end were agreed in the spec's triage
-(2026-11-22) except Q10–Q12, which this revision adds for the owner's agreement.
+(2026-11-22).
 
 Builds on #259's first milestone (manifest v2, the pinned-manifest helper, the pre-apply conflict check in
 `cmd/extension.go`); it is written against #259's spec as it stands, and anything that changes there before
@@ -83,6 +83,9 @@ These run when cg reads the extension's pinned tree, before anything is written.
 - **S11** WHEN the skill ships a file named `SKILL.local.md` (compared without regard to case) THEN install fails:
   that name is the workspace's.
 - **S12** WHEN the skill's directory holds dot-files or nested directories THEN every file in it is installed.
+- **S12b** WHEN a skill's `SKILL.md` doesn't contain the text `SKILL.local.md` THEN install and update succeed and
+  print a warning naming the skill: it gives the workspace no way to customise it, so a change would have to be
+  made by copying the skill under a new name (Q12).
 
 ### Install
 
@@ -269,7 +272,7 @@ These run when cg reads the extension's pinned tree, before anything is written.
     without asking;
   - `templates` described as any workspace path, yours once copied, and no longer the way to ship a skill.
 
-## Choices (Q3–Q9 agreed in triage, 2026-11-22; Q10–Q12 for agreement)
+## Choices (agreed in triage, 2026-11-22)
 
 - **Q3 — symbolic links in a skill's directory are refused** (S9). A link could make cg write or the agent read
   outside the skill; Agent Skills doesn't use them. cg checks the checked-out tree; where a checkout turns a link
@@ -299,6 +302,7 @@ These run when cg reads the extension's pinned tree, before anything is written.
   `cg init` replaces committed edits; every machine runs the extension's version at once, but only with a change to
   how `cg init` decides what to re-install, which belongs with #259's whole-set check for `cg init` (its S12), where
   the same question arises.
-- **Q12 — the `SKILL.local.md` line is an authoring rule, checked in review** (X3), not inserted by cg. *Alternative:*
+- **Q12 — the `SKILL.local.md` line is an authoring rule, checked in review** (X3), not inserted by cg, plus a
+  warning at install and update when a skill's `SKILL.md` doesn't mention `SKILL.local.md` (S12b). *Alternative:*
   cg appends the line when it installs a skill; every skill then supports customising, but cg would be changing the
   files it installs, and the installed file would differ from the extension's.

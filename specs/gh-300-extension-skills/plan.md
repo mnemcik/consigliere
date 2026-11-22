@@ -32,11 +32,11 @@ Scenarios: S1–S6, S16 (config part).
 
 ### 2 — reading and installing a skill
 
-Scenarios: S7–S15, S16b, S17, S18, S25, S25b, S27, S27b, S28, S29, S32, S33, S33b, S42, S42b.
+Scenarios: S7–S12, S12b, S13–S15, S16b, S17, S18, S25, S25b, S27, S27b, S28, S29, S32, S33, S33b, S42, S42b.
 
 - `skills.go`: read a skill from the pinned tree: walk `src` with `Lstat`, refuse symbolic links (S9), require
   `SKILL.md` and refuse a shipped `SKILL.local.md` (S11), parse its frontmatter for `name` and `description` (S8),
-  check `executables` against the files (S10).
+  check `executables` against the files (S10), and warn when `SKILL.md` doesn't mention `SKILL.local.md` (S12b).
 - A managed-file plan, separate from `decideCopy` (which stays for notes and templates, U1): per file and target,
   checked in this order: adopt when disk already holds the new version or is absent for a drop (S27b); write when
   unedited (S27); set mode only (S32); refuse unowned (S25b); replace with message (S30) or stop (S31) when edited.
