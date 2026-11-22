@@ -35,7 +35,7 @@
 - [x] Mutation checks for S36, S38, S38b, S39
 - [ ] Docs; `make check`; independent review
 
-## Amendments A–D (after the new agreement)
+## Amendments A–E (after the new agreement)
 
 - [ ] S9: owned-command exemption with a warning (ownership from the installed version's manifest only, per command; `cg init` only warns), test-first, with the mutation checks plan.md lists
 - [ ] S2: command words match `[a-z0-9][a-z0-9-]*`, test-first
@@ -44,6 +44,7 @@
 - [ ] S36/S38: paths compared after resolving symlinks on both sides; a symlinked path to a linked worktree accepted, test-first, with a mutation check
 - [ ] S38b: a recorded main checkout counts as "no valid worktree recorded", test-first
 - [ ] S14: list wording (a built-in-namespace command can't run)
+- [ ] S35: `cg worktree create` records only worktrees of the session's workspace repo (`CG_WORKSPACE`'s, else the current workspace's); test-first: create in another repo leaves the record unchanged
 
 ## PR
 
