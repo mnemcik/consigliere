@@ -141,8 +141,8 @@ session reaches by `cd`, and both are specific to one agent, while cg supports o
 From https://code.claude.com/docs/en/hooks (read 2026-11-22): PreToolUse input carries a top-level `cwd`;
 `Write`/`Edit` carry an absolute `tool_input.file_path`; Bash carries `tool_input.command` and no cwd of its own.
 PreToolUse output can carry `permissionDecision` (`allow`, `deny`, `ask`, `defer`); a `deny` reason is shown to
-Claude and the call doesn't run. It can also carry `additionalContext`, "added to Claude's context alongside the tool
-result", so Claude reads it **after** the call has run. A hook entry can carry an `if` field holding exactly one
+Claude and the call doesn't run. It can also carry `additionalContext`, which the page says is added to Claude's context with the tool
+result, so Claude reads it **after** the call has run. A hook entry can carry an `if` field holding exactly one
 permission rule (such as `Bash(git *)`), with no list syntax.
 
 **Assumption (high):** hooks in the workspace's `.claude/settings.json` run for every matching tool call in the
@@ -181,9 +181,11 @@ In two parts, so the prompt ships without waiting for cg 2.0.0.
 1. **Defaults outside a workspace.** When the repository has no `.cg.json`, `cg worktree` uses the remote's default
    branch as the landing branch, and `land` defaults to `pr`, not `direct-to-main`; a direct land must be asked for
    with `--strategy direct-to-main`. `land` itself can't find the workspace from a sibling repo (`cmd/worktree.go:49-53`
-   reads `.cg.json` in the cwd's repo), so the **policy check goes in the push-policy hook**, which already finds the
-   workspace from the hook's cwd: it also matches `cg worktree land` and denies a non-`pr` land in a repo the area
-   files declare `pr`. That closes the bypass without #259. Path (`<repo>--<slug>`) and branch prefix (`session/`)
+   reads `.cg.json` in the cwd's repo), so the **policy check goes in the push-policy hook**, which finds the workspace from
+   the hook's cwd, and from `$CLAUDE_PROJECT_DIR` when that cwd is outside any workspace (today it then returns
+   silently, `cmd/pushpolicy.go:69-74`, which would leave a `cg worktree land` run from inside `<repo>--<slug>`
+   unchecked). It also matches `cg worktree land` (with `--strategy x` and `--strategy=x`) and denies a
+   `direct-to-main` land in a repo the area files declare `pr`; `pr` and `local` (which doesn't push) pass. That closes the bypass without #259. Path (`<repo>--<slug>`) and branch prefix (`session/`)
    stay as today.
 2. **Write-time prompt.** A new hidden `cg session repo-gate` behind a PreToolUse hook in the workspace's
    `settings.json` on `Write|Edit|NotebookEdit`, and on `Bash` for git commands that change the index or branch
@@ -194,10 +196,13 @@ In two parts, so the prompt ships without waiting for cg 2.0.0.
    naming the repo and `cg worktree create <slug>` run there, and lets later calls in that repo through, so a session
    that means to work in the primary clone retries once. `additionalContext` alone would arrive after the write it
    warns about (Hook facts). The "already warned" state lives in a cg-owned per-session file under the workspace's
-   `.claude/session-context/`, found from `CLAUDE_PROJECT_DIR` or the hook's cwd, not from `CG_WORKSPACE`, so it
-   needs nothing from #259.
+   `.claude/session-context/`, named outside the `*.json` and `*.lock` globs that badge readers and pruning use
+   (`internal/session/gate.go:206`, `internal/session/active.go:54`), for example `<id>.repogate`, and pruned with the
+   badges. The workspace is found from the hook's cwd, else `$CLAUDE_PROJECT_DIR`, not from `CG_WORKSPACE`, so it
+   needs nothing from #259. The deny reason says that retrying is allowed. **Assumption (med):** Claude retries or
+   moves to a worktree after such a reason rather than stopping to ask; a subagent may give up instead.
 2b. **Start gate outside the workspace.** When the hook's cwd is in another repository, the start gate names that
-   repo in its warning and keeps the badge path in the session's workspace (found as in item 2) instead of naming a
+   repo in its warning and keeps the badge path in the session's workspace (hook cwd, else `$CLAUDE_PROJECT_DIR`) instead of naming a
    badge file inside the external repo.
 3. **Docs and `/wrap`.** `docs/cg-subcommands.md` describes the external-repo behaviour; a trigger-only paragraph in
    `notes/area-rules.md` (External Repo lookup) says to work in a `cg worktree` there; `/wrap` end mode lists
@@ -284,8 +289,8 @@ Keep the manual recipe. Credible only because the issue is Low; it leaves the pu
   session's cwd stays in an external repo (an added working directory), that lookup fails and the gate stays silent
   today (`cmd/pushpolicy.go:69-74`). `CLAUDE_PROJECT_DIR` in the hook environment is the fallback (assumption, high:
   the hook wrappers already use it, `templates/workspace/.claude/settings.json:7`).
-- **Denying once:** the first write per repo fails by design; a session that meant to write the primary clone retries.
-  A subagent or scripted run sees the same refusal once.
+- **Denying once:** the first write per repo fails by design; a session that meant to write the primary clone retries
+  (assumption, med, above). A subagent or scripted run sees the same refusal once and may stop instead.
 - **Who else is affected:** every workspace on `cg sync` gets the new hook entry in `settings.json` and the note
   paragraph; workspaces that edited `settings.json` see it as drifted. External repos see `session/<slug>` branches
   pushed when a `pr` land runs.
@@ -300,7 +305,7 @@ Keep the manual recipe. Credible only because the issue is Low; it leaves the pu
 | 2 | Prompt strength | `deny` the first write per repo per session with a reason, then let calls through. (`additionalContext` only: never blocks, but arrives after the write; `ask`: the user decides each time; `deny` always: forces worktrees) | open |
 | 3 | What the prompt watches | `Write`/`Edit`/`NotebookEdit` plus Bash git commands that change the index or branch; best effort | open |
 | 4 | Command surface | Reuse `cg worktree` from the repo's directory; optionally `--repo <path>` so it runs from anywhere | open |
-| 5 | `land` outside a workspace | Landing branch = remote default branch; default strategy `pr`; `direct-to-main` only with the flag, and denied by the push-policy hook when the area files declare the repo `pr`. On a non-GitHub host `pr` fails (needs `gh`): the docs say to push the branch by hand | open |
+| 5 | `land` outside a workspace | Landing branch = remote default branch; default strategy `pr`; `direct-to-main` only with the flag, and denied by the push-policy hook (workspace from hook cwd, else `$CLAUDE_PROJECT_DIR`) when the area files declare the repo `pr`. On a non-GitHub host `pr` fails (needs `gh`): the docs say to push the branch by hand | open |
 | 6 | Branch name in external repos | `session/<slug>` by default, `--branch <name>` to follow a repo's convention | open |
 | 7 | Where the record lives | A separate state-file key (name to agree, e.g. `repoWorktrees`); never #259's `worktree` | open |
 | 8 | Sessions not started with `cg` (no `CG_WORKSPACE`) | Create works, record skipped with a printed note; no `--workspace` flag | open |
@@ -329,6 +334,17 @@ Keep the manual recipe. Credible only because the issue is Low; it leaves the pu
   #259 S24, S31, S35-S38, S40, X4 at `b939c7d`; hooks facts; no private context; no in-flight decision assumed.
 - Not verified: the empirical runs and the `EnterWorktree` description (not reproducible by the reviewer); whether
   Claude Code resets the cwd after a `cd` outside the working directories.
+
+**Review 2** (delta): same file @ content hash `610f745` (commit `0243469`) · 2026-11-22
+- Reviewers: doc-reviewer (delta: builder check, claim check, missed option, hidden constraints, governing rules)
+- Findings: 0 blocker, 3 should-fix, 2 nit → fixed: the workspace lookup in items 1, 2 and 2b now falls back to
+  `$CLAUDE_PROJECT_DIR` (the push-policy hook returns silently today when the hook cwd is outside a workspace);
+  the deny-once state file is named outside the badge globs; "retries once" tagged as an assumption (med) and the
+  reason text says retrying is allowed; nits: only `direct-to-main` is denied (`local` doesn't push), the hooks
+  quote is paraphrased. Round 1 findings 1-8: confirmed resolved.
+- Builder questions: 2 → answered by fixes (land with no `cd` and the hook cwd outside the workspace; both
+  `--strategy` forms).
+- Not verified: #259 at `decbfc0` (reviewer had `b939c7d` only); the empirical runs; Claude Code's cwd after `cd`.
 
 ## Verdict
 
