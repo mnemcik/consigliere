@@ -280,10 +280,11 @@ two should not be implemented in parallel on `manifest.go`, `ledger.go` and `app
 - **Migration of `github-digest`.** Moving its two files from `templates` to `skills` at the same paths breaks in two
   places as the code stands:
   - **Before the apply:** `ApplyOptions.base` counts a destination as cg's only when the old ledger lists it under
-    `Notes` or `Templates` (`apply.go:57-68`), and a skill file wouldn't be found there. The new release changes
-    `SKILL.md` (its script path), so the file on disk differs from the new one, `decideCopy` returns `copyRefuse`
-    (`ownership.go:120-124`) and `cg extension update` fails with a conflict. `update` has no `--force` (only
-    `install` does, `cmd/extension.go:37`), so a user can't get past it.
+    `Notes` or `Templates` (`apply.go:57-68`). Templates→skills passes it (the old ledger lists the files under
+    `Templates`); the reverse move (skills→templates) wouldn't: the file isn't found, `decideCopy` returns
+    `copyRefuse` (`ownership.go:120-124`) and `cg extension update` fails, with no `--force` to get past it (only
+    `install` has one, `cmd/extension.go:37`). *Corrected 2026-11-22 in the spec's review: this text first said the
+    templates→skills move refuses here.*
   - **After the apply:** `OrphanLedger` (`apply.go:337-347`) lists the files as dropped templates; `Reverse` then
     deletes them if unchanged since the old version, or reports them as "kept" if the new version changed them.
 
