@@ -66,9 +66,10 @@ extension installed in the workspace (from their pinned manifests, not their led
   install, and each command dispatches to its own extension.
 - **S9** WHEN an extension declares a command whose namespace is a built-in (`start …`, `extension …`, `help …`)
   and the extension doesn't already own that command THEN install and update fail, naming the built-in. An
-  extension owns a command when the verified commands of its installed version include it: read from that
-  version's manifest at its recorded commit (as in "Verified entry"), never from the ledger alone; an extension
-  whose tree can't be read owns nothing, so `cg init` has to restore it first. Ownership is per command: owning
+  extension owns a command when its installed version's manifest, read and validated at its recorded commit,
+  declares it, never from the ledger alone; a missing binary doesn't end ownership, so `cg extension update` can
+  still repair it (S17). An extension whose tree can't be read owns nothing, so `cg init` has to restore it first.
+  Ownership is per command: owning
   `foo run` doesn't let an update add `foo watch` when `foo` is a built-in, and a command moved to another extension
   in one update isn't owned by the receiving extension. An owned command whose namespace a later cg made a built-in
   doesn't block update: cg prints a warning naming the command and the built-in, S14 flags it, and the built-in
@@ -84,7 +85,7 @@ extension installed in the workspace (from their pinned manifests, not their led
 - **S12** WHEN an extension is updated and keeps a command it already owns THEN that is not a conflict with itself.
 - **S13** WHEN an extension is removed THEN its commands are free: another extension declaring them installs.
 - **S14** WHEN `cg extension list` runs (text and `--json`) THEN each extension's commands are shown, and a command
-  whose namespace is now a built-in (added in a later cg) is flagged.
+  whose namespace is a built-in is flagged (it can't run: the built-in wins, U1).
 
 ### Dispatch: which program runs
 
@@ -122,13 +123,15 @@ Roots are checked in the consulted order. The first root whose ledgers have **an
   the check fail.
 - **S24** WHEN the current directory is not inside any workspace and `CG_WORKSPACE` is set THEN the session root is
   consulted, then the `PATH` fallback. *(The external-repo case of #248.)*
-- **S25** WHEN `CG_WORKSPACE` is relative, names a directory that doesn't exist, or names one with no `.cg.json`
-  file, or whose `.cg.json` is a JSON object whose `type` isn't `consigliere` (for example a worktree the session
-  started in and that was removed since) THEN it is ignored, dispatch behaves as S19, and the unknown-command hint
-  says so. WHEN the `.cg.json` exists but is a directory, empty, unreadable, not valid JSON, not a JSON object, or
-  `null` THEN dispatch stops with a usage error naming the file, and doesn't fall back to another workspace or the
-  `PATH` fallback. This applies only where the session root would be consulted (S22, S24): inside one of the
-  session's own worktrees (S21) only that worktree's `.cg.json` counts.
+- **S25** WHEN `CG_WORKSPACE` is relative, names a directory that doesn't exist (for example a worktree the session
+  started in and that was removed since), names one with no `.cg.json` entry, or names one whose `.cg.json` decodes
+  to an object whose `type` is missing or isn't `consigliere` THEN it is ignored, dispatch behaves as S19, and the
+  unknown-command hint says so. WHEN the `.cg.json` entry exists but can't be read or doesn't decode to an object (a
+  directory, a dangling symlink, an empty file, invalid JSON, `null`, a non-object, or a field of the wrong type
+  such as `"type": 5`) THEN dispatch stops with a usage error naming the file, and doesn't fall back to another
+  workspace or the `PATH` fallback. This applies where the session root is consulted: under S20 it is also the
+  current directory's root, which stops the same way (M2); under S22 and S24 as stated; inside one of the session's
+  own worktrees (S21) only that worktree's `.cg.json` counts.
 - **S26** WHEN an external checkout has a planted `.cg.json` and a `.git` file pointing at the session's repo THEN it
   still counts as another workspace (the list is read from the session root only).
 - **S27** WHEN the caller's environment has `GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR` or any other variable git
@@ -165,12 +168,13 @@ The session state file is `<badge root>/.claude/session-context/<id>.json`, wher
   that passes `ValidSessionID` THEN the session's state file records the worktree's absolute path (`worktree`),
   keeping its other fields and creating the file when absent.
 - **S36** WHEN `cg session set-context --worktree <path>` runs THEN the path is recorded the same way, for
-  workspaces that create worktrees with their own scripts (Q5). A path that isn't listed in the repo's worktree
-  list is refused.
+  workspaces that create worktrees with their own scripts (Q5). A path that isn't one of the repo's linked
+  worktrees is refused: one not in `git worktree list`, and the main checkout (the list's first entry), so writers
+  are never sent into the main checkout.
 - **S37** WHEN `cg worktree remove` removes the recorded worktree THEN the record is cleared.
 - **S38** WHEN the session root serves a command for a current directory outside the session root and its
-  worktrees (S22/S24), the session ID is valid, and the recorded worktree is still listed in the session repo's
-  worktree list THEN `CG_SESSION_WORKTREE` is set to it (Q2).
+  worktrees (S22/S24), the session ID is valid, and the recorded worktree is still one of the session repo's linked
+  worktrees (listed, and not the main checkout) THEN `CG_SESSION_WORKTREE` is set to it (Q2).
 - **S38b** WHEN the session root serves such a command, no valid worktree is recorded (none; no session ID, or one
   failing `ValidSessionID`; a state file that can't be read; or a recorded path no longer listed), and the session root is itself a linked worktree THEN `CG_SESSION_WORKTREE` is
   set to the session root (Q10). "Linked worktree" is decided in the session root with the cleaned environment:
