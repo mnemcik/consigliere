@@ -45,12 +45,24 @@ const (
 var perRunVars = []string{envCommand, envExtensionWorkspace, envSessionWorktree}
 
 // samePath reports whether a and b are the same existing file or directory,
-// whatever the spelling: symlinks are followed, and on a case-insensitive
-// filesystem the case of the path doesn't matter. Both must be the same file
-// (os.SameFile) and resolve to the same path ignoring case, so a filesystem
-// that doesn't report unique file IDs can't make two directories equal. A path
-// that can't be resolved matches nothing.
+// whatever the spelling: symlinks are followed, and letter case or Unicode
+// normalisation doesn't matter where the filesystem ignores them (os.SameFile
+// compares the files themselves: device and inode on Unix). On Windows, where
+// some filesystems (network shares, ReFS) don't report reliable file IDs, the
+// resolved paths must also match ignoring case. A path that can't be resolved
+// matches nothing.
 func samePath(a, b string) bool {
+	ia, err := os.Stat(a) //nolint:gosec // only compared, never opened
+	if err != nil {
+		return false
+	}
+	ib, err := os.Stat(b)
+	if err != nil || !os.SameFile(ia, ib) {
+		return false
+	}
+	if !isWindowsOS {
+		return true
+	}
 	ra, err := filepath.EvalSymlinks(a)
 	if err != nil {
 		return false
@@ -59,18 +71,7 @@ func samePath(a, b string) bool {
 	if err != nil {
 		return false
 	}
-	if !strings.EqualFold(filepath.Clean(ra), filepath.Clean(rb)) {
-		return false
-	}
-	ia, err := os.Stat(ra) //nolint:gosec // only compared, never opened
-	if err != nil {
-		return false
-	}
-	ib, err := os.Stat(rb)
-	if err != nil {
-		return false
-	}
-	return os.SameFile(ia, ib)
+	return strings.EqualFold(filepath.Clean(ra), filepath.Clean(rb))
 }
 
 // isWindowsOS selects Windows rules (case-insensitive variable names).
@@ -178,9 +179,12 @@ func typedWords(args []string) []string {
 // When the current directory's .cg.json can't be read and it belongs to
 // another workspace, the session root is still consulted (it would come first
 // anyway), and the error is returned as cwdErr: it stops dispatch only if the
-// session root doesn't decide the namespace. When the broken .cg.json is the
-// session root's or one of its worktrees' (which would replace the session
-// root), it stops dispatch outright.
+// session root doesn't decide the namespace. When it is one of the session
+// repo's worktrees' (which would replace the session root), it stops dispatch
+// outright. (A broken .cg.json of the session root itself makes CG_WORKSPACE
+// ignored, so no root is left and dispatch stops too. A main checkout made with
+// --separate-git-dir isn't recognised as a worktree: git lists it under its git
+// directory's path.)
 func consultedRoots() (roots []string, cwdErr error) {
 	_, session, _ := sessionRoot()
 	cwd, err := os.Getwd()
@@ -191,9 +195,13 @@ func consultedRoots() (roots []string, cwdErr error) {
 	root, _, err := workspace.FindRoot(cwd)
 	if err != nil {
 		broken := unreadableConfig(cwd)
+		name := broken
+		if name == "" {
+			name = "a " + workspace.ConfigFile + " above " + cwd
+		}
 		cwdErr = cgerr.New(cgerr.ExitUsage, "can't read %s (%v), so cg can't tell which extension commands it declares",
-			broken, err)
-		if dir := filepath.Dir(broken); session != "" && (samePath(dir, session) || sessionWorktree(session, dir)) {
+			name, err)
+		if broken == "" || (session != "" && sessionWorktree(session, filepath.Dir(broken))) {
 			return nil, cwdErr
 		}
 		return sessionOnly(session), cwdErr
@@ -275,8 +283,10 @@ func sessionWorktree(session, dir string) bool {
 	if err != nil {
 		return false
 	}
-	// One attribute per line; the path is taken exactly, without trimming
-	// (a trailing space is part of it), only a CR line ending dropped.
+	// One attribute per line; the path is taken without trimming (a leading
+	// or trailing space is part of it), only a CRLF line ending dropped. A
+	// path containing a newline can't be read this way, so it never matches:
+	// that worktree counts as another workspace.
 	for _, line := range strings.Split(string(list), "\n") {
 		if p, ok := strings.CutPrefix(strings.TrimSuffix(line, "\r"), "worktree "); ok && samePath(gitx.OSPath(p), dir) {
 			return gitDirIn(dir, common)
@@ -327,7 +337,8 @@ func gitDirIn(dir, common string) bool {
 }
 
 // unreadableConfig names the first .cg.json from dir upwards that
-// workspace.Detect can't read, the one FindRoot stopped at.
+// workspace.Detect can't read, the one FindRoot stopped at, or "" when none
+// fails any more (a transient error).
 func unreadableConfig(dir string) string {
 	for d := filepath.Clean(dir); ; {
 		if _, err := workspace.Detect(d); err != nil {
@@ -335,7 +346,7 @@ func unreadableConfig(dir string) string {
 		}
 		parent := filepath.Dir(d)
 		if parent == d {
-			return workspace.ConfigFile
+			return ""
 		}
 		d = parent
 	}

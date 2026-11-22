@@ -568,16 +568,43 @@ func TestConsultedRootsSessionRootWithTrailingSpace(t *testing.T) {
 	wantRoots(t, wt, wt)
 }
 
-// newWorkspaceAt writes a minimal .cg.json in dir and returns dir.
-func newWorkspaceAt(t *testing.T, dir string) string {
+// newWorkspaceAt writes a minimal .cg.json in dir.
+func newWorkspaceAt(t *testing.T, dir string) {
 	t.Helper()
-	ws := newWorkspace(t)
-	data, err := os.ReadFile(filepath.Join(ws, ".cg.json"))
-	if err != nil {
+	if err := (&workspace.Config{Type: workspace.TypeConsigliere, Version: "1.3.0"}).Save(dir); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".cg.json"), data, 0o644); err != nil { //nolint:gosec // a test fixture in its own temp dir
+}
+
+// On a filesystem that treats NFC and NFD names as one (APFS), the two
+// spellings of a directory are the same path.
+func TestSamePathUnicodeNormalisation(t *testing.T) {
+	base := t.TempDir()
+	nfd := filepath.Join(base, "café")
+	if err := os.Mkdir(nfd, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return dir
+	nfc := filepath.Join(base, "café")
+	if _, err := os.Stat(nfc); err != nil {
+		t.Skip("this filesystem keeps NFC and NFD names apart")
+	}
+	if !samePath(nfd, nfc) {
+		t.Errorf("%q and %q are one directory", nfd, nfc)
+	}
+}
+
+// With the session in a linked worktree, a broken .cg.json in the main
+// checkout (one of the session repo's worktrees) stops dispatch there.
+func TestUnreadableMainConfigFromLinkedSessionStops(t *testing.T) {
+	requireGit(t)
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	main := sessionWorkspace(t, cfgHome, []string{"alpha", "shop"})
+	linked := addBranchWorktree(t, main, "ses")
+	if err := os.WriteFile(filepath.Join(main, workspace.ConfigFile), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envWorkspace, linked)
+	t.Chdir(main)
+	dispatchErr(t, []string{"shop"}, filepath.Join(main, workspace.ConfigFile))
 }
