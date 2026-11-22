@@ -33,7 +33,7 @@
 - [x] Failing tests for S35–S40, S38b
 - [x] State key, `worktree create/remove`, `set-context --worktree`, `CG_SESSION_WORKTREE`
 - [x] Mutation checks for S36, S38, S38b, S39
-- [ ] Docs; `make check`; independent review
+- [x] Docs; `make check`; independent review (3 rounds; round 3 clean)
 
 ## Amendments A–E (after the new agreement)
 
