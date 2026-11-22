@@ -1,0 +1,393 @@
+package cmd
+
+import (
+	"bytes"
+	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/mnemcik/consigliere/internal/cgerr"
+	"github.com/mnemcik/consigliere/internal/extension"
+	"github.com/mnemcik/consigliere/internal/workspace"
+)
+
+// dispatchWorkspace installs extensions declaring commands (name → commands)
+// into a fresh workspace with config home cfgHome, makes it the current
+// directory, and returns it.
+func dispatchWorkspace(t *testing.T, cfgHome string, exts ...[]string) string {
+	t.Helper()
+	ws := newWorkspace(t)
+	for _, e := range exts {
+		installRepo(t, cfgHome, ws, commandsManifest(e[0], "1.0.0", e[1:]...))
+	}
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	t.Chdir(ws)
+	return ws
+}
+
+// pathProgram puts an executable cg-<ns> in a fresh directory as the whole
+// PATH, so a test can tell whether dispatch reached the PATH fallback.
+func pathProgram(t *testing.T, ns string) string {
+	t.Helper()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "cg-"+ns)
+	if runtime.GOOS == "windows" {
+		p += ".exe"
+	}
+	if err := os.WriteFile(p, []byte("#!/bin/sh\necho path\n"), 0o755); err != nil { //nolint:gosec // an executable test fixture
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	return p
+}
+
+// mustDispatch runs externalDispatch and fails unless it resolves.
+func mustDispatch(t *testing.T, args ...string) *externalRun {
+	t.Helper()
+	run, err := externalDispatch(args)
+	if err != nil {
+		t.Fatalf("externalDispatch(%q): %v", args, err)
+	}
+	if run == nil {
+		t.Fatalf("externalDispatch(%q) resolved nothing", args)
+	}
+	return run
+}
+
+// dispatchErr runs externalDispatch and fails unless it returns a usage error
+// containing every part.
+func dispatchErr(t *testing.T, args []string, parts ...string) {
+	t.Helper()
+	run, err := externalDispatch(args)
+	if err == nil {
+		t.Fatalf("externalDispatch(%q) = %+v, want an error", args, run)
+	}
+	var coded *cgerr.CodedError
+	if !errors.As(err, &coded) || coded.ExitCode() != cgerr.ExitUsage {
+		t.Errorf("externalDispatch(%q) error %v is not a usage error", args, err)
+	}
+	for _, p := range parts {
+		if !strings.Contains(err.Error(), p) {
+			t.Errorf("externalDispatch(%q) error %q lacks %q", args, err, p)
+		}
+	}
+}
+
+func binOf(t *testing.T, ws, name string) string {
+	t.Helper()
+	cfg, err := workspace.Detect(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := findRef(cfg.Extensions, name)
+	if ref == nil {
+		t.Fatalf("%s not recorded", name)
+	}
+	return filepath.Join(extension.SourceRoot(ref), "bin", "cg-"+name)
+}
+
+// S15: the longest declared command the typed words start with wins, and the
+// binary gets the arguments after the namespace word.
+func TestDispatchLongestMatch(t *testing.T) {
+	requireGit(t)
+	ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop", "shop add"}, []string{"beta", "pr merge"})
+	for _, tc := range []struct {
+		args    []string
+		command string
+		rest    []string
+	}{
+		{[]string{"shop", "add", "milk"}, "shop add", []string{"add", "milk"}},
+		{[]string{"shop", "list"}, "shop", []string{"list"}},
+		{[]string{"shop"}, "shop", []string{}},
+		{[]string{"--no-auto-update", "shop", "add"}, "shop add", []string{"add"}},
+		// Q7: typed words end at the first flag.
+		{[]string{"shop", "--x", "add"}, "shop", []string{"--x", "add"}},
+		{[]string{"pr", "merge", "--now", "7"}, "pr merge", []string{"merge", "--now", "7"}},
+	} {
+		run := mustDispatch(t, tc.args...)
+		if run.command != tc.command || !slices.Equal(run.args, tc.rest) {
+			t.Errorf("%q → command %q args %q, want %q %q", tc.args, run.command, run.args, tc.command, tc.rest)
+		}
+		want := "alpha"
+		if tc.command == "pr merge" {
+			want = "beta"
+		}
+		if run.path != binOf(t, ws, want) {
+			t.Errorf("%q → %s, want %s", tc.args, run.path, binOf(t, ws, want))
+		}
+		if run.root != ws {
+			t.Errorf("%q served by %q, want %q", tc.args, run.root, ws)
+		}
+	}
+}
+
+// S8 through dispatch: each command of a shared namespace runs its own
+// extension, whichever is listed first.
+func TestDispatchSharedNamespace(t *testing.T) {
+	requireGit(t)
+	ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "pr merge"}, []string{"beta", "pr watch"})
+	if run := mustDispatch(t, "pr", "watch"); run.path != binOf(t, ws, "beta") {
+		t.Errorf("pr watch ran %s", run.path)
+	}
+	if run := mustDispatch(t, "pr", "merge"); run.path != binOf(t, ws, "alpha") {
+		t.Errorf("pr merge ran %s", run.path)
+	}
+}
+
+// S16, S33: a typed command matching none of the deciding root's entries is a
+// usage error listing them, and the PATH fallback is not used.
+func TestDispatchUndeclaredCommandInDeclaredNamespace(t *testing.T) {
+	requireGit(t)
+	dispatchWorkspace(t, t.TempDir(), []string{"alpha", "pr merge", "pr list"})
+	pathProgram(t, "pr")
+	for _, args := range [][]string{{"pr"}, {"pr", "watch"}, {"pr", "--help"}} {
+		dispatchErr(t, args, `"pr"`, "pr merge", "pr list")
+	}
+}
+
+// ledgerAdd appends entries to an installed extension's ledger, as a
+// hand-edited or pulled .cg/ext/<name>.json could.
+func ledgerAdd(t *testing.T, ws, name string, entries ...extension.CommandContribution) {
+	t.Helper()
+	led := ledgerOf(t, ws, name)
+	led.Commands = append(led.Commands, entries...)
+	if err := led.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// S17, S33: an entry that isn't verified stops dispatch, naming the extension
+// and the fix, without falling back to PATH; a shorter verified entry never
+// stands in for it.
+func TestDispatchStopsOnUnverifiedEntry(t *testing.T) {
+	requireGit(t)
+	cases := []struct {
+		name  string
+		setup func(t *testing.T, ws string)
+		args  []string
+	}{
+		{"command not in the manifest", func(t *testing.T, ws string) {
+			ledgerAdd(t, ws, "alpha", extension.CommandContribution{Command: "shop add", Binary: "cg-alpha"})
+		}, []string{"shop", "add"}},
+		{"binary differs", func(t *testing.T, ws string) {
+			led := ledgerOf(t, ws, "alpha")
+			led.Commands[0].Binary = "cg-other"
+			if err := led.Save(ws); err != nil {
+				t.Fatal(err)
+			}
+		}, []string{"shop"}},
+		{"manifest doesn't validate", func(t *testing.T, ws string) {
+			p := filepath.Join(filepath.Dir(filepath.Dir(binOf(t, ws, "alpha"))), extension.ManifestFile)
+			if err := os.WriteFile(p, []byte(`{"manifest": 9}`), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, []string{"shop", "x"}},
+		{"tree missing", func(t *testing.T, ws string) {
+			if err := os.RemoveAll(filepath.Dir(filepath.Dir(binOf(t, ws, "alpha")))); err != nil {
+				t.Fatal(err)
+			}
+		}, []string{"shop"}},
+		{"binary missing", func(t *testing.T, ws string) {
+			if err := os.Remove(binOf(t, ws, "alpha")); err != nil {
+				t.Fatal(err)
+			}
+		}, []string{"shop"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"})
+			tc.setup(t, ws)
+			pathProgram(t, "shop")
+			dispatchErr(t, tc.args, `"alpha"`, "cg init", "cg extension update alpha")
+		})
+	}
+}
+
+// S18: two ledgers declaring the same command anywhere in the typed namespace
+// stop dispatch, whichever command the typed words match.
+func TestDispatchStopsOnDuplicateInNamespace(t *testing.T) {
+	requireGit(t)
+	ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "pr merge"}, []string{"beta", "pr watch"})
+	ledgerAdd(t, ws, "beta", extension.CommandContribution{Command: "pr merge", Binary: "cg-beta"})
+	for _, args := range [][]string{{"pr", "merge"}, {"pr", "watch"}, {"pr"}} {
+		dispatchErr(t, args, `"pr merge"`, `"alpha"`, `"beta"`)
+	}
+	// Another namespace is unaffected.
+	ledgerAdd(t, ws, "alpha", extension.CommandContribution{Command: "shop", Binary: "cg-alpha"})
+	if _, err := externalDispatch([]string{"shop"}); err != nil && strings.Contains(err.Error(), "beta") {
+		t.Errorf("a duplicate in pr blocked shop: %v", err)
+	}
+}
+
+// S32: an undeclared namespace runs cg-<namespace> from PATH with the
+// arguments after the namespace.
+func TestDispatchPathFallback(t *testing.T) {
+	requireGit(t)
+	dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"})
+	p := pathProgram(t, "greet")
+	run := mustDispatch(t, "greet", "a", "--b")
+	if run.path != p || run.command != "" || run.root != "" || !slices.Equal(run.args, []string{"a", "--b"}) {
+		t.Errorf("fallback run = %+v, want %s with [a --b]", run, p)
+	}
+	// Outside any workspace too (S19).
+	t.Chdir(t.TempDir())
+	if run := mustDispatch(t, "greet"); run.path != p {
+		t.Errorf("fallback outside a workspace = %+v", run)
+	}
+	// Nothing resolves: no run, no error (cobra reports the unknown command).
+	if run, err := externalDispatch([]string{"nope"}); run != nil || err != nil {
+		t.Errorf("unresolved = %+v, %v", run, err)
+	}
+}
+
+// U1: built-ins win over a declared command, even one a ledger was edited to
+// claim.
+func TestDispatchBuiltinsWin(t *testing.T) {
+	requireGit(t)
+	ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"})
+	ledgerAdd(t, ws, "alpha", extension.CommandContribution{Command: "version", Binary: "cg-alpha"})
+	for _, args := range [][]string{{"version"}, {"extension", "list"}, {"help"}, {"--help"}, {}} {
+		if run, err := externalDispatch(args); run != nil || err != nil {
+			t.Errorf("externalDispatch(%q) = %+v, %v; built-ins must win", args, run, err)
+		}
+	}
+}
+
+// S30: dispatch never reads the per-run variables.
+func TestDispatchIgnoresPerRunVariables(t *testing.T) {
+	requireGit(t)
+	cfgHome := t.TempDir()
+	other := dispatchWorkspace(t, cfgHome, []string{"beta", "shop"})
+	ws := dispatchWorkspace(t, cfgHome, []string{"alpha", "shop"})
+	for _, v := range []string{"CG_EXTENSION_WORKSPACE", "CG_SESSION_WORKTREE"} {
+		t.Setenv(v, other)
+	}
+	t.Setenv("CG_COMMAND", "shop add")
+	run := mustDispatch(t, "shop", "add")
+	if run.root != ws || run.command != "shop" || run.path != binOf(t, ws, "alpha") {
+		t.Errorf("run = %+v, want alpha's shop from %s", run, ws)
+	}
+}
+
+// envOf returns the value of key in env and whether it is set.
+func envOf(env []string, key string) (string, bool) {
+	for _, kv := range env {
+		if k, v, ok := strings.Cut(kv, "="); ok && k == key {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+// S28 (CG_COMMAND), S29 (CG_COMMAND), U6: a workspace-served binary gets the
+// matched command; a PATH binary gets none, even when the caller had one; PATH
+// is passed through unchanged.
+func TestExternalCommandEnvironment(t *testing.T) {
+	t.Setenv("CG_COMMAND", "stale")
+	t.Setenv("PATH", "/usr/bin")
+	served := (&externalRun{path: "/x/cg-live", args: []string{"run"}, command: "live run", root: "/ws"}).cmd()
+	if v, ok := envOf(served.Env, "CG_COMMAND"); !ok || v != "live run" {
+		t.Errorf("served CG_COMMAND = %q, %v", v, ok)
+	}
+	fallback := (&externalRun{path: "/x/cg-greet"}).cmd()
+	if _, ok := envOf(fallback.Env, "CG_COMMAND"); ok {
+		t.Error("a PATH binary must not see CG_COMMAND")
+	}
+	for _, c := range [][]string{served.Env, fallback.Env} {
+		if v, _ := envOf(c, "PATH"); v != "/usr/bin" {
+			t.Errorf("PATH = %q, want it unchanged", v)
+		}
+	}
+	if !slices.Equal(served.Args, []string{"/x/cg-live", "run"}) {
+		t.Errorf("args = %q", served.Args)
+	}
+}
+
+// S28 end to end: the binary runs with the arguments after the namespace and
+// CG_COMMAND set.
+func TestDispatchRunsBinary(t *testing.T) {
+	requireGit(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("extension commands don't run on Windows yet (#239)")
+	}
+	dispatchWorkspace(t, t.TempDir(), []string{"alpha", "live", "live run"})
+	run := mustDispatch(t, "live", "run", "--until-pane", "x")
+	c := run.cmd()
+	var out bytes.Buffer
+	c.Stdout = &out
+	if err := c.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(out.String()); got != "live run|run --until-pane x" {
+		t.Errorf("binary saw %q", got)
+	}
+}
+
+// S34: the unknown-command hint says whether CG_WORKSPACE is set and that a
+// session started with cg carries its workspace.
+func TestUnknownCommandHint(t *testing.T) {
+	unknown := errors.New(`unknown command "frob" for "cg"`)
+	t.Setenv("CG_WORKSPACE", "")
+	os.Unsetenv("CG_WORKSPACE") //nolint:errcheck // t.Setenv restores it
+	h := unknownCommandHint(unknown)
+	for _, want := range []string{"CG_WORKSPACE is not set", "session started with `cg`"} {
+		if !strings.Contains(h, want) {
+			t.Errorf("hint %q lacks %q", h, want)
+		}
+	}
+	if h := unknownCommandHint(errors.New("some other error")); h != "" {
+		t.Errorf("hint for another error: %q", h)
+	}
+	if h := unknownCommandHint(nil); h != "" {
+		t.Errorf("hint for no error: %q", h)
+	}
+}
+
+// A co-located extension keeps bin/ under its subdir, next to its manifest;
+// dispatch runs that binary, not a same-named one at the tree's root.
+func TestDispatchSubdirExtension(t *testing.T) {
+	requireGit(t)
+	cfgHome := t.TempDir()
+	ws := newWorkspace(t)
+	repo := makeMonorepo(t, map[string]string{"shopping": commandsManifest("shopping", "0.1.0", "shop", "shop add")})
+	// A binary of the same name at the repo root belongs to no extension.
+	commitFile(t, repo, "bin/cg-shopping", "#!/bin/sh\nexit 1\n")
+	if out, err := runExtCfg(t, cfgHome, ws, "install", repo, "--path", "shopping"); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	cfg, _ := workspace.Detect(ws)
+	want := filepath.Join(extension.SourceRoot(findRef(cfg.Extensions, "shopping")), "shopping", "bin", "cg-shopping")
+	if run := mustDispatch(t, "shop", "add"); run.path != want {
+		t.Errorf("ran %s, want %s", run.path, want)
+	}
+}
+
+// The binary's exit code becomes cg's, with no message of cg's own.
+func TestExternalRunPropagatesExitCode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fixture is POSIX")
+	}
+	script := filepath.Join(t.TempDir(), "cg-fail")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 7\n"), 0o755); err != nil { //nolint:gosec // an executable test fixture
+		t.Fatal(err)
+	}
+	err := (&externalRun{path: script}).run()
+	var coded *cgerr.CodedError
+	if !errors.As(err, &coded) || coded.ExitCode() != 7 || coded.Error() != "" {
+		t.Errorf("run() = %v, want a silent exit code 7", err)
+	}
+}
+
+// Q7: the typed words end at the first argument starting with "-", even when a
+// declared command has such a word.
+func TestDispatchTypedWordsEndAtFlag(t *testing.T) {
+	requireGit(t)
+	dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop", "shop --all"})
+	if run := mustDispatch(t, "shop", "--all"); run.command != "shop" {
+		t.Errorf("`cg shop --all` matched %q, want the bare namespace", run.command)
+	}
+}

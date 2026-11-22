@@ -138,7 +138,9 @@ Each `{ command, binary }` declares that `cg <command> …` runs your
 `bin/<binary>`. A command is one or more lowercase words (`[a-z0-9-]+`)
 separated by single spaces; the first word is its namespace. Your binary
 receives every argument after the namespace word, so `cg foo sync --dry-run`
-runs `bin/cg-foo sync --dry-run`. One binary may serve several commands.
+runs `bin/cg-foo sync --dry-run`, and `CG_COMMAND` in its environment says which
+declared command cg matched (`foo sync`). One binary may serve several
+commands.
 
 Declare every command your binary handles, not just the namespace: agents grant
 permissions by the typed command (`Bash(cg foo sync *)`), and cg only runs a

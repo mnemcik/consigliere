@@ -463,10 +463,35 @@ earlier. `cg extension list` flags such a command; it no longer runs.
 
 ### Dispatch
 
-When `cg <namespace> …` is not a built-in, cg runs the binary of an installed
-extension that declares a command in that namespace, with every argument after
-the namespace word; failing that, a `cg-<namespace>` executable on `$PATH`.
-Built-in commands always win over extension commands and `$PATH` programs.
+When `cg <words> …` is not a built-in, cg matches the typed words (the leading
+arguments after cg's own flags, up to the first one starting with `-`) against
+the workspace's declared commands:
+
+1. When any installed extension's ledger has a command in the typed namespace
+   (whether or not it checks out, see 3), that workspace decides it. The longest declared command the typed words start
+   with wins, and its binary runs with every argument after the namespace word,
+   as git and gh do: `cg live run --until-pane x` runs `bin/cg-live run
+   --until-pane x`. The binary finds the command cg matched in `CG_COMMAND`
+   (`live run`, or `live` for a bare-namespace entry).
+2. A typed command that matches none of the namespace's declared commands is a
+   usage error that lists them. Because matching stops at the first flag,
+   `cg live --x run` matches only `live`: an extension that wants a bare
+   namespace to reach its binary declares the namespace itself too.
+3. Before running a binary, cg re-checks the entry against the extension's
+   manifest in its tree at the recorded commit, as above. An entry that fails
+   stops dispatch with an error naming the extension and `cg init` /
+   `cg extension update <name>` as the fix; cg never falls back to another
+   program for it. Two ledgers declaring the same command in the namespace (a
+   hand-edited or pulled `.cg.json`) stop dispatch too.
+4. When no installed extension declares any command in the namespace, cg runs a
+   `cg-<namespace>` executable on `$PATH`, if there is one, with the arguments
+   after the namespace. A namespace an extension declares never reaches
+   `$PATH`, whether or not the full command matched.
+
+Otherwise cobra's "unknown command" error is shown, with a hint that an
+extension's command runs inside the workspace that installed it, and whether
+`CG_WORKSPACE` is set. Built-in commands always win over extension commands
+and `$PATH` programs. No extension `bin/` directory is added to `$PATH`.
 
 ## `.cg.json` v1.2 additions
 

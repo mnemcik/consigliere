@@ -12,13 +12,13 @@
 - [x] Manifest v2, ledger, `CheckCommands`, pinned-manifest helper, install/update/init wiring, `extension list`, interim dispatch
 - [x] Mutation checks for S5–S11
 - [x] Docs
-- [ ] `make check`; independent review
+- [x] `make check`; independent review (round 1: 2 fixed, 3 to the owner; round 2 clean)
 
 ## M2 — dispatch by command table
 
-- [ ] Failing tests for S15–S19, S28/S29 (`CG_COMMAND` parts), S30, S32–S34
-- [ ] Table, per-root matching, stop-on-unverified, errors, hint
-- [ ] Mutation checks for S16–S18, S29 (`CG_COMMAND` strip), S33
+- [x] Failing tests for S15–S19, S28/S29 (`CG_COMMAND` parts), S30, S32–S34
+- [x] Table, per-root matching, stop-on-unverified, errors, hint
+- [x] Mutation checks for S16–S18, S29 (`CG_COMMAND` strip), S33
 - [ ] `make check`; independent review
 
 ## M3 — the session carries its workspace
