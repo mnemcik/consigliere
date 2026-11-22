@@ -35,7 +35,7 @@
 - [x] Mutation checks for S36, S38, S38b, S39
 - [x] Docs; `make check`; independent review (3 rounds; round 3 clean)
 
-## Amendments A–E (after the new agreement)
+## Amendments A–F (after the new agreement)
 
 - [ ] S9: owned-command exemption with a warning (ownership from the installed version's manifest only, per command; `cg init` only warns), test-first, with the mutation checks plan.md lists
 - [ ] S2: command words match `[a-z0-9][a-z0-9-]*`, test-first
@@ -45,6 +45,9 @@
 - [ ] S38b: a recorded main checkout counts as "no valid worktree recorded", test-first
 - [ ] S14: list wording (a built-in-namespace command can't run)
 - [ ] S35: `cg worktree create` records only worktrees of the session's workspace repo (`CG_WORKSPACE`'s, else the current workspace's); test-first: create in another repo leaves the record unchanged
+- [ ] S35: the session repo is the session root's (`CG_WORKSPACE` unless S25 ignores it, else the cwd's workspace root); a worktree belongs to it when the session root's cleaned-env `git worktree list --porcelain` lists it and it isn't the main checkout, compared after resolving symlinks; test-first, with mutation checks: no session repo (no valid `CG_WORKSPACE`, cwd outside any workspace) records nothing; a symlinked session root still matches
+- [ ] S36: `set-context --worktree` refuses a path that isn't one of the session repo's linked worktrees, test-first
+- [ ] S37: `remove` clears only the same path (compared as in S35); removing a worktree of another repo leaves the record, test-first, with a mutation check
 
 ## PR
 
