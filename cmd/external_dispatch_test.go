@@ -180,6 +180,12 @@ func TestDispatchStopsOnUnverifiedEntry(t *testing.T) {
 			if err := led.Save(ws); err != nil {
 				t.Fatal(err)
 			}
+			// The ledger's binary exists in the tree, so only the manifest
+			// mismatch can refuse it.
+			other := filepath.Join(filepath.Dir(binOf(t, ws, "alpha")), "cg-other")
+			if err := os.WriteFile(other, []byte("#!/bin/sh\n"), 0o755); err != nil { //nolint:gosec // an executable test fixture
+				t.Fatal(err)
+			}
 		}, []string{"shop"}},
 		{"manifest doesn't validate", func(t *testing.T, ws string) {
 			p := filepath.Join(filepath.Dir(filepath.Dir(binOf(t, ws, "alpha"))), extension.ManifestFile)
@@ -641,4 +647,54 @@ func TestDispatchLegacyEntry(t *testing.T) {
 	if run := mustDispatch(t, "secret", "get"); run.path != bin || run.command != "secret" {
 		t.Errorf("legacy run = %+v, want %s", run, bin)
 	}
+}
+
+// Cobra's completion requests, with and without descriptions, are never
+// dispatched externally, even with an unreadable ledger.
+func TestDispatchCompletionBypass(t *testing.T) {
+	requireGit(t)
+	ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"})
+	if err := os.WriteFile(extension.LedgerPath(ws, "alpha"), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, verb := range []string{"__complete", "__completeNoDesc"} {
+		if run, err := externalDispatch([]string{verb, "shop", ""}); run != nil || err != nil {
+			t.Errorf("externalDispatch(%s) = %+v, %v; want cobra to handle it", verb, run, err)
+		}
+	}
+}
+
+// The S17 remedy names the workspace to run it in; a damaged tree gets a
+// procedure that re-exports the recorded commit.
+func TestDispatchUnverifiedRemedy(t *testing.T) {
+	requireGit(t)
+	ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"})
+	tree := filepath.Dir(filepath.Dir(binOf(t, ws, "alpha")))
+	if err := os.Remove(filepath.Join(tree, extension.ManifestFile)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := externalDispatch([]string{"shop"})
+	if err == nil {
+		t.Fatal("no error")
+	}
+	for _, want := range []string{"in " + ws, "remove " + tree} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+}
+
+// A dangling .cg.json symlink in the current directory stops dispatch instead
+// of reaching a PATH program.
+func TestDispatchDanglingCwdConfig(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	dir := t.TempDir()
+	if err := os.Symlink(filepath.Join(dir, "nowhere"), filepath.Join(dir, workspace.ConfigFile)); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	pathProgram(t, "shop")
+	dispatchErr(t, []string{"shop"}, filepath.Join(dir, workspace.ConfigFile))
 }

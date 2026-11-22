@@ -17,6 +17,8 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
+	"github.com/spf13/cobra"
+
 	"github.com/mnemcik/consigliere/internal/cgerr"
 	"github.com/mnemcik/consigliere/internal/extension"
 	"github.com/mnemcik/consigliere/internal/gitx"
@@ -127,7 +129,8 @@ func externalDispatch(args []string) (*externalRun, error) {
 	if verbIdx < 0 {
 		return nil, nil // no verb (flags only)
 	}
-	if verb := args[verbIdx]; verb == cmdHelp || verb == "completion" || verb == "__complete" {
+	if verb := args[verbIdx]; verb == cmdHelp || verb == "completion" ||
+		verb == cobra.ShellCompRequestCmd || verb == cobra.ShellCompNoDescRequestCmd {
 		return nil, nil
 	}
 	// If cobra can resolve the verb onward to a real (non-root) command, it's a
@@ -611,8 +614,11 @@ type commandEntry struct {
 	bin string
 	// unverified says why the entry can't run; "" when it is verified.
 	unverified string
-	// badPath says the extension's .cg.json entry has an invalid path.
+	// badPath says the extension's .cg.json entry has an invalid path: only
+	// editing it helps.
 	badPath bool
+	// tree is the extension's directory in its pinned tree.
+	tree string
 }
 
 // namespaceEntries returns the ledger command entries of the workspace at root
@@ -642,10 +648,15 @@ func namespaceEntries(root, ns string) ([]commandEntry, error) {
 			continue
 		}
 		var (
-			dir, why         string
-			m                *extension.Manifest
-			checked, badPath bool
+			dir, why string
+			m        *extension.Manifest
+			checked  bool
+			badPath  bool
 		)
+		tree := ""
+		if sub, serr := extension.CleanSubdir(e.Path); serr == nil {
+			tree = filepath.Join(extension.SourceRoot(e), sub)
+		}
 		for _, c := range led.Commands {
 			if extension.CommandNamespace(c.Command) != ns {
 				continue
@@ -658,11 +669,14 @@ func namespaceEntries(root, ns string) ([]commandEntry, error) {
 					badPath = errors.Is(verr, errBadPath)
 				}
 			}
-			entry := commandEntry{ext: c, name: e.Name, unverified: why, badPath: badPath}
+			entry := commandEntry{ext: c, name: e.Name, unverified: why, badPath: badPath, tree: tree}
 			if why == "" {
 				entry.bin = filepath.Join(dir, "bin", c.Binary)
-				if !verifiedCommand(dir, m, c) {
-					entry.unverified = "its manifest doesn't declare that command with that binary, or the binary is missing"
+				switch {
+				case !slices.Contains(m.Contributes.Commands, c):
+					entry.unverified = "its manifest doesn't declare that command with that binary"
+				case !verifiedCommand(dir, m, c):
+					entry.unverified = "its binary " + entry.bin + " is missing"
 				}
 			}
 			out = append(out, entry)
@@ -735,7 +749,10 @@ func dispatchIn(root string, typed []string) (run *externalRun, decided bool, er
 			strings.Join(typed, " "), root, ns, strings.Join(cmds, "\n"))
 	}
 	if best.unverified != "" {
-		fix := fmt.Sprintf("run `cg init` to restore the recorded version, or `cg extension update %s`", best.name)
+		// Both remedies rewrite the ledger from a manifest; cg init skips a
+		// tree that is present, so a damaged one has to go first.
+		fix := fmt.Sprintf("remove %s if it is still there and run `cg init` in %s to re-export the recorded version, or run `cg extension update %s` there to move to its latest",
+			best.tree, root, best.name)
 		if best.badPath {
 			fix = fmt.Sprintf("correct its entry in %s", filepath.Join(root, workspace.ConfigFile))
 		}

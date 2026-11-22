@@ -258,7 +258,14 @@ func ClearWorktreeAll(root, path string) error {
 		if !ok || e.IsDir() || !ValidSessionID(id) {
 			continue
 		}
-		if m, rerr := readContextMap(ContextFile(root, id)); rerr != nil || !sameRecord(m, path) {
+		m, rerr := readContextMap(ContextFile(root, id))
+		if rerr != nil {
+			if !errors.Is(rerr, fs.ErrNotExist) {
+				errs = append(errs, fmt.Errorf("%s: %w", ContextFile(root, id), rerr))
+			}
+			continue
+		}
+		if !sameRecord(m, path) {
 			continue
 		}
 		if _, err := ClearWorktree(root, id, path); err != nil {

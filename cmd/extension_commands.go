@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/mnemcik/consigliere/internal/cgerr"
 	"github.com/mnemcik/consigliere/internal/extension"
 	"github.com/mnemcik/consigliere/internal/workspace"
@@ -92,7 +94,7 @@ func installedCommands(root string, exts []workspace.ExtensionRef, anyIncoming b
 // command: each command's name and aliases, hidden ones included, and the
 // help and completion commands cobra adds itself.
 func builtinCommandNames() []string {
-	names := []string{cmdHelp, "completion", "__complete"}
+	names := []string{cmdHelp, "completion", cobra.ShellCompRequestCmd, cobra.ShellCompNoDescRequestCmd}
 	for _, c := range rootCmd.Commands() {
 		names = append(names, c.Name())
 		names = append(names, c.Aliases...)

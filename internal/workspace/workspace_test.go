@@ -250,3 +250,21 @@ func TestSaveReportsSymlinkLoop(t *testing.T) {
 		t.Errorf(".cg.json is no longer the symlink (err %v)", err)
 	}
 }
+
+// A .cg.json that is a dangling symlink is broken, not absent: Detect and
+// FindRoot report it rather than walking past it.
+func TestDetectDanglingSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	dir := t.TempDir()
+	if err := os.Symlink(filepath.Join(dir, "nowhere"), filepath.Join(dir, ConfigFile)); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, err := Detect(dir); err == nil {
+		t.Errorf("Detect = %+v, nil; want an error", cfg)
+	}
+	if root, _, err := FindRoot(dir); err == nil {
+		t.Errorf("FindRoot = %q, nil; want an error", root)
+	}
+}

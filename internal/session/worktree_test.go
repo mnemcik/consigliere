@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -181,5 +183,31 @@ func TestClearWorktreeOSFormRecord(t *testing.T) {
 	writeCtx(t, root, "s1", string(data))
 	if cleared, err := ClearWorktree(root, "s1", p); err != nil || !cleared {
 		t.Errorf("clear: %v %v", cleared, err)
+	}
+}
+
+// ClearWorktreeAll reports a state file it can't read, and goes on with the
+// others.
+func TestClearWorktreeAllReportsUnreadable(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions and a non-root user")
+	}
+	root := t.TempDir()
+	if err := SetWorktree(root, "a", "/w/x"); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetWorktree(root, "b", "/w/x"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(ContextFile(root, "a"), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(ContextFile(root, "a"), 0o644) }) //nolint:gosec // restore the fixture
+	err := ClearWorktreeAll(root, "/w/x")
+	if err == nil || !strings.Contains(err.Error(), "a.json") {
+		t.Errorf("err = %v, want one naming a.json", err)
+	}
+	if c, _ := ReadContext(root, "b"); c == nil || c.Worktree != "" {
+		t.Errorf("b not cleared: %+v", c)
 	}
 }

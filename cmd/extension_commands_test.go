@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -371,18 +372,40 @@ func TestInitRefusesConflictingReinstalls(t *testing.T) {
 	requireGit(t)
 	t.Run("all missing", func(t *testing.T) {
 		cfgHome := t.TempDir()
-		ws, _, _ := conflictingWorkspace(t, cfgHome)
+		ws, refs, _ := conflictingWorkspace(t, cfgHome)
 		if err := os.RemoveAll(filepath.Join(cfgHome, "consigliere", "extensions")); err != nil {
 			t.Fatal(err)
 		}
 		out, err := runInitForce(t, cfgHome, ws)
 		wantConflict(t, err, out, `"shop add"`, `"alpha"`, `"beta"`)
 		for _, n := range []string{"alpha", "beta", "gamma"} {
-			if _, serr := os.Stat(filepath.Join(ws, "notes", n+".md")); serr == nil {
-				t.Errorf("%s was applied despite the conflict", n)
+			if _, serr := os.Lstat(filepath.Join(ws, "notes", n+".md")); !errors.Is(serr, fs.ErrNotExist) {
+				t.Errorf("%s was applied despite the conflict (%v)", n, serr)
 			}
-			if led, _ := extension.LoadLedger(ws, n); led != nil {
-				t.Errorf("%s has a ledger despite the conflict", n)
+			if _, serr := os.Lstat(extension.LedgerPath(ws, n)); !errors.Is(serr, fs.ErrNotExist) {
+				t.Errorf("%s has a ledger despite the conflict (%v)", n, serr)
+			}
+			// The trees this run fetched are gone again, so a later init,
+			// once the conflict is resolved, restores the extensions instead
+			// of finding their source present.
+			r := refs[n]
+			if _, serr := os.Lstat(extension.SourceRoot(&r)); !errors.Is(serr, fs.ErrNotExist) {
+				t.Errorf("%s's tree left behind by the refused init (%v)", n, serr)
+			}
+		}
+		// Resolve the conflict (drop beta) and init again: alpha and gamma
+		// are restored.
+		cfg, _ := workspace.Detect(ws)
+		cfg.RemoveExtension("beta")
+		if err := cfg.Save(ws); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := runInitForce(t, cfgHome, ws); err != nil {
+			t.Fatalf("init after resolving: %v\n%s", err, out)
+		}
+		for _, n := range []string{"alpha", "gamma"} {
+			if led, lerr := extension.LoadLedger(ws, n); lerr != nil || led == nil {
+				t.Errorf("%s not restored after the conflict was resolved: %v", n, lerr)
 			}
 		}
 	})

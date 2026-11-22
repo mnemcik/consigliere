@@ -362,8 +362,22 @@ func printGitHookWarnings(w io.Writer, msgs []string) {
 // the whole set checked, before the first is applied, so a conflict applies
 // none. It returns the entries, with any newly recorded commits, and short
 // descriptions for the init summary.
-func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspace.ExtensionRef) ([]workspace.ExtensionRef, []string, error) {
+func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspace.ExtensionRef) (_ []workspace.ExtensionRef, _ []string, retErr error) {
 	out := append([]workspace.ExtensionRef(nil), exts...)
+	// The trees this run fetches for pinned entries were missing, which is
+	// how this run tells "not restored yet". If it stops before applying any
+	// of them (a fetch or the command check fails), they are removed again,
+	// so the next cg init restores those extensions instead of taking their
+	// source for present.
+	var fetched []string
+	applying := false
+	defer func() {
+		if retErr != nil && !applying {
+			for _, t := range fetched {
+				_ = os.RemoveAll(t)
+			}
+		}
+	}()
 	type restore struct {
 		e           *workspace.ExtensionRef
 		m           *extension.Manifest
@@ -400,6 +414,7 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 			if err != nil {
 				return out, nil, cgerr.New(cgerr.ExitUsage, "restoring %q at %s: %v", e.Name, commit[:12], err)
 			}
+			fetched = append(fetched, extension.SourceRoot(e))
 			m, err = loadValidManifest(filepath.Join(tree, path), e.Name)
 		} else {
 			m, tree, commit, err = installFrom(cmd.Context(), e.Repo, "", path)
@@ -424,6 +439,7 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		return out, nil, err
 	}
 	printCommandWarnings(commandErr(cmd), warnings)
+	applying = true
 	var done []string
 	for _, r := range todo {
 		if _, err := reapply(root, r.manifestDir, r.m, r.prev, r.prev != "", false); err != nil {
