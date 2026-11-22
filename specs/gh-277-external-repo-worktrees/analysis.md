@@ -3,7 +3,7 @@ title: "Analysis — session worktrees for repositories outside the workspace (#
 created: 2026-11-22
 item: "https://github.com/mnemcik/consigliere/issues/277"
 size: full
-verdict: pending review
+verdict: needs clarification
 ---
 
 # Analysis — session worktrees for repositories outside the workspace (#277)
@@ -197,8 +197,9 @@ In two parts, so the prompt ships without waiting for cg 2.0.0.
    that means to work in the primary clone retries once. `additionalContext` alone would arrive after the write it
    warns about (Hook facts). The "already warned" state lives in a cg-owned per-session file under the workspace's
    `.claude/session-context/`, named outside the `*.json` and `*.lock` globs that badge readers and pruning use
-   (`internal/session/gate.go:206`, `internal/session/active.go:54`), for example `<id>.repogate`, and pruned with the
-   badges. The workspace is found from the hook's cwd, else `$CLAUDE_PROJECT_DIR`, not from `CG_WORKSPACE`, so it
+   (`internal/session/gate.go:206`, `internal/session/active.go:54`), for example `<id>.repogate`. Pruning needs a third glob for it,
+   with the lock files' rule: delete it when its badge is gone and it is older than `pruneDays`
+   (`internal/session/gate.go:215-220`). The workspace is found from the hook's cwd, else `$CLAUDE_PROJECT_DIR`, not from `CG_WORKSPACE`, so it
    needs nothing from #259. The deny reason says that retrying is allowed. **Assumption (med):** Claude retries or
    moves to a worktree after such a reason rather than stopping to ask; a subagent may give up instead.
 2b. **Start gate outside the workspace.** When the hook's cwd is in another repository, the start gate names that
@@ -346,9 +347,26 @@ Keep the manual recipe. Credible only because the issue is Low; it leaves the pu
   `--strategy` forms).
 - Not verified: #259 at `decbfc0` (reviewer had `b939c7d` only); the empirical runs; Claude Code's cwd after `cd`.
 
+**Review 3** (delta): same file @ content hash `72eda98` (commit `6bf9441`) · 2026-11-22: **clean**
+- Reviewers: doc-reviewer (delta, all five lenses)
+- Findings: 0 blocker, 0 should-fix, 1 nit → fixed after the round (wording only, no re-review): the `.repogate` file
+  needs its own pruning rule; today's prune globs only `*.json` and `*.lock`. Round 2 findings 1-5: confirmed resolved.
+- Builder questions: none left.
+- Verified true: the push-policy hook already sees `cg worktree land` (matcher `Bash`, no `if`); the policy lookup
+  works from a linked worktree (keyed on `origin`'s URL).
+- Not verified: `CLAUDE_PROJECT_DIR` in the hook environment for the Go process (tagged assumption, high); the
+  hooks page was not re-read for the paraphrase.
+
+Reviews cover content hash `72eda98` plus the wording-only nit fix; not verified: the empirical runs (reproduced
+only by the author), Claude Code's cwd after a `cd` outside the working directories, and Claude's behaviour after a
+deny reason.
+
 ## Verdict
 
-pending review
+**Needs clarification:** the item is partly valid and the recommendation is settled after three review rounds,
+but it waits on the owner. Decisions 1-14 are all open. Decision 2's recommended answer rests on an assumption
+(Claude retries after a deny reason, med). Decision 13 is input for #259's owner, and the record (part 2) depends on
+how #259 settles it.
 
 ## Q→A log
 
