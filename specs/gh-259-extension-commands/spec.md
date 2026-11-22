@@ -16,6 +16,9 @@ beyond the decision, for the owner's agreement.
   `completion` and `__complete`).
 - **Session root:** the absolute directory named by `CG_WORKSPACE`. **Cwd root:** the root `workspace.FindRoot`
   finds from the current directory.
+- **Session repo root:** the session root when S25 doesn't ignore `CG_WORKSPACE`, else the cwd root; with neither,
+  there is none. Its repo is the **session repo**. Used only for the worktree record (S35–S38b) and the badge root;
+  dispatch uses the session root alone (S19–S26).
 - **Consulted roots:** the roots dispatch looks at, in the order S20–S24 give.
 - **Pinned tree:** the extension's source at the commit recorded in `.cg.json` (`extension.SourceRoot`).
 - **Verified entry:** a ledger command entry whose extension's manifest in the pinned tree validates and declares
@@ -163,15 +166,14 @@ Roots are checked in the consulted order. The first root whose ledgers have **an
 ### Session worktree
 
 The session state file is `<badge root>/.claude/session-context/<id>.json`, where the badge root is
-`gitx.CommonRoot` of the session root (as `sessionRoots` computes it today).
+`gitx.CommonRoot` of the session repo root (as `sessionRoots` computes it today).
 
 - **S35** WHEN `cg worktree create <slug>` runs with a session ID from `CG_SESSION_ID` or `CLAUDE_CODE_SESSION_ID`
   that passes `ValidSessionID`, and the new worktree belongs to the **session repo** THEN the session's state file
-  records the worktree's absolute path (`worktree`), keeping its other fields and creating the file when absent. The
-  session repo is the repo of the session root: `CG_WORKSPACE` when S25 doesn't ignore it, else the current
-  directory's workspace root; with neither, there is no session repo and nothing is recorded. A worktree belongs to
-  it when it is one of the session root's linked worktrees: listed by `git worktree list --porcelain` run in the
-  session root with the cleaned environment (S27), not the main checkout, compared after `filepath.EvalSymlinks`
+  records the worktree's absolute path (`worktree`), keeping its other fields and creating the file when absent.
+  With no session repo root (Terms), nothing is recorded. A worktree belongs to the session repo when it is one of
+  its linked worktrees: listed by `git worktree list --porcelain` run in the session repo root with the cleaned
+  environment (S27), not the main checkout, compared after `filepath.EvalSymlinks`
   (as in S21). A worktree created in any other repo (an external repo the session works in) leaves the record
   unchanged.
 - **S36** WHEN `cg session set-context --worktree <path>` runs THEN the path is recorded the same way, for
