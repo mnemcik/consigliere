@@ -578,6 +578,11 @@ func runSessionStartGate(cmd *cobra.Command, _ []string) error {
 	if cwd == "" {
 		cwd, _ = os.Getwd()
 	}
+	// Prompts the gate lets through need no roots (and no git); stale badge
+	// pruning waits for the next prompt that shows the gate.
+	if session.SkipsPrompt(in.Prompt) {
+		return nil
+	}
 
 	// Badge files live at the main worktree root of the session repo root
 	// (CG_WORKSPACE, else cwd's workspace), as for every other badge command,
@@ -597,8 +602,10 @@ func runSessionStartGate(cmd *cobra.Command, _ []string) error {
 	tpl := s.GateTemplate
 	if tpl != "" && !filepath.IsAbs(tpl) {
 		base := root
-		if c, derr := workspace.Detect(wsRoot); wsRoot != "" && derr == nil && c != nil {
-			base = wsRoot
+		if wsRoot != "" {
+			if c, derr := workspace.Detect(wsRoot); derr == nil && c != nil {
+				base = wsRoot
+			}
 		}
 		tpl = filepath.Join(base, tpl)
 	}

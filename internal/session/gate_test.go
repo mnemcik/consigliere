@@ -162,3 +162,12 @@ func TestGateEmptyTemplateStartsWithBlock(t *testing.T) {
 		t.Errorf("empty template should render just the block, got:\n%q", got)
 	}
 }
+
+// SkipsPrompt matches the prompts Gate lets through silently.
+func TestSkipsPrompt(t *testing.T) {
+	for p, want := range map[string]bool{"/wrap": true, "  idea: x": true, "fix the bug": false} {
+		if got := SkipsPrompt(p); got != want {
+			t.Errorf("SkipsPrompt(%q) = %v, want %v", p, got, want)
+		}
+	}
+}

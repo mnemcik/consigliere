@@ -65,6 +65,12 @@ type GateInput struct {
 	WorkspaceRoot string
 }
 
+// SkipsPrompt reports whether the gate lets prompt through silently (slash
+// commands, quick questions), so a caller can skip resolving anything first.
+func SkipsPrompt(prompt string) bool {
+	return skipAllPattern.MatchString(strings.TrimSpace(prompt))
+}
+
 // Gate renders the session-start gate text for a prompt, or returns emit=false
 // when the prompt should be let through silently (slash commands, quick
 // questions). It also best-effort prunes stale per-session badge files. Ports
@@ -74,7 +80,7 @@ type GateInput struct {
 func Gate(ctx context.Context, root string, in *GateInput, gateTemplatePath string, pruneDays int) (text string, emit bool) {
 	pruneStaleContexts(root, pruneDays)
 
-	if skipAllPattern.MatchString(strings.TrimSpace(in.Prompt)) {
+	if SkipsPrompt(in.Prompt) {
 		return "", false
 	}
 

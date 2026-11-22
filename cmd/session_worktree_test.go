@@ -625,8 +625,8 @@ func TestStartGateTemplateFromSessionWorktree(t *testing.T) {
 }
 
 // A relative gateTemplate is resolved against the directory whose .cg.json
-// was read: when the session's worktree has none, the main checkout's
-// config and template are used.
+// was read: when the session worktree's .cg.json can't be read, the main
+// checkout's config and template are used.
 func TestStartGateTemplateFollowsConfigSource(t *testing.T) {
 	requireGit(t)
 	ws := gitWorkspace(t)
