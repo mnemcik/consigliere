@@ -12,7 +12,7 @@ verdict: pending review
   analysed early by the owner's choice)
 - **Size:** full: several decisions, and part of the recommendation depends on #259's session state.
 - **Evidence base:** consigliere `origin/main` at `61abdfd`; #259's spec on branch `gh-259-extension-commands` at
-  `decbfc0` (PR #303, draft); #300's and #301's analyses on their branches; a cg binary built from `61abdfd` and run
+  `b939c7d` (PR #303, draft; S24, S31, S35-S40 and X4 unchanged in substance since `decbfc0`); #300's and #301's analyses on their branches; a cg binary built from `61abdfd` and run
   against throwaway local repositories (2026-11-22); Claude Code 2.1.330 and its hooks reference
   https://code.claude.com/docs/en/hooks (read 2026-11-22; the page shows no date).
 - **Status:** analysis only. Nothing is implemented.
@@ -57,17 +57,26 @@ defaults for the workspace only.
 
 ### Nothing points a session to a worktree in another repo
 
-- The session-start gate (UserPromptSubmit) warns only when the cwd is the **workspace's** main worktree:
-  `inMainWorktree(ctx, in.CWD, root)` compares the cwd's toplevel with the workspace root
-  (`internal/session/gate.go:92,174-188`), and the warning text names `cg worktree create`
-  (`internal/session/gate.go:53-55`). The repo a session will write to is not known when the prompt arrives.
+- The session-start gate (UserPromptSubmit) warns when the hook's cwd is the main worktree **of the cwd's own
+  repository**: `runSessionStartGate` takes `root` from `gitx.CommonRoot(cwd)` (`cmd/session.go:520-524`) and
+  `inMainWorktree` compares the cwd's toplevel with it (`internal/session/gate.go:92,174-188`); the warning names
+  `cg worktree create` (`internal/session/gate.go:53-55`). So it speaks for an external repo only when a prompt
+  arrives while the session's cwd is that repo's primary clone. Run that way (2026-11-22, cg from `61abdfd`), it
+  printed the MAIN-worktree warning, and also named a badge file **inside the external repo**
+  (`<repo>/.claude/session-context/<id>.json`), where `cg session set-context` refuses ("not inside a Consigliere
+  workspace"); no file was written there. Usually the cwd is the workspace when a prompt arrives, and the repo a
+  session will write to is not known yet. **Assumption (med):** Claude Code keeps a `cd` across Bash calls only
+  inside the session's working directories, so for most external repos the hook's cwd stays the workspace.
 - The only per-tool-call hooks cg installs are a PostToolUse dirty marker on `Write|Edit|NotebookEdit` and a PreToolUse
   push-policy gate on `Bash` (`templates/workspace/.claude/settings.json:19-41`). The dirty marker records only that
   the session wrote something (`cmd/session.go:100-130`).
 - **The push-policy gate is cg's existing per-call hook for external repos.** It reads a repo's declared policy
   (`direct` or `pr`) from the workspace's area files and allows or denies a Bash `git push`
   (`internal/pushpolicy/pushpolicy.go:28-63,94-112`). It matches only the text `git push`
-  (`internal/pushpolicy/pushpolicy.go:67,95`).
+  (`internal/pushpolicy/pushpolicy.go:67,95`), finds the target from a `cd <dir>` in the command, else
+  `tool_input.cwd`, else the hook's cwd (`internal/pushpolicy/pushpolicy.go:115-131`), and finds the workspace (for
+  its `areas/`) from the hook's cwd (`cmd/pushpolicy.go:69-74`): it is the one place that already holds both the
+  workspace and the external repo.
 - **Side finding: `cg worktree land` gets past that gate.** Its pushes run inside cg (`internal/worktree/land.go:213,596`),
   so the Bash command the hook sees is `cg worktree land`, which `gitPushRe` doesn't match. Run in an external repo
   declared `pr`, the default `direct-to-main` strategy would push to its default branch unchecked (code reading plus
@@ -99,8 +108,14 @@ defaults for the workspace only.
 - A state file with only `worktree` shows in the badge and `cg active` as one without it (S40).
 
 Two consequences for this item: (a) a record written from an external repo can find the session's state file only
-through `CG_WORKSPACE`, so recording depends on #259; (b) an external repo's worktree **must not** go into #259's
-`worktree` key, or an extension such as `cg shop` would write workspace data into the external repo (X4).
+through `CG_WORKSPACE`, so recording depends on #259; (b) **S35 as written is not limited to the session's
+repository**: any `cg worktree create` with a valid session ID records `worktree` in the state file under the
+badge root of the session root. Once #259 ships, a `cg worktree create` in an external repo with
+`CLAUDE_CODE_SESSION_ID` set (which Bash commands have, below) would replace the session's workspace-worktree record
+with the external path. S38's re-check against the session repo's worktree list keeps that path out of
+`CG_SESSION_WORKTREE`, but the workspace record is lost, and writers then refuse (X4) or fall back (S38b). This
+analysis doesn't assume how #259 resolves it; it is listed as input for #259's owner (decision 13). Without a fix
+there, external worktrees must never be recorded in `worktree`.
 
 #300 (extension skills) and #301 (extension hook filters, decided 2026-11-22) don't touch worktrees or session state.
 #301's `if` and `matcher` fields would matter only if the trigger below shipped as an extension hook instead of in core.
@@ -125,9 +140,10 @@ session reaches by `cd`, and both are specific to one agent, while cg supports o
 
 From https://code.claude.com/docs/en/hooks (read 2026-11-22): PreToolUse input carries a top-level `cwd`;
 `Write`/`Edit` carry an absolute `tool_input.file_path`; Bash carries `tool_input.command` and no cwd of its own.
-PreToolUse output can carry `permissionDecision` (`allow`, `deny`, `ask`, `defer`) and `additionalContext`, a string
-added to Claude's context and not shown as a chat message. A hook entry can carry an `if` permission rule such as
-`Bash(git *)`.
+PreToolUse output can carry `permissionDecision` (`allow`, `deny`, `ask`, `defer`); a `deny` reason is shown to
+Claude and the call doesn't run. It can also carry `additionalContext`, "added to Claude's context alongside the tool
+result", so Claude reads it **after** the call has run. A hook entry can carry an `if` field holding exactly one
+permission rule (such as `Bash(git *)`), with no list syntax.
 
 **Assumption (high):** hooks in the workspace's `.claude/settings.json` run for every matching tool call in the
 session, wherever the file is, because matchers select on the tool name and `if` on the permission rule, not on the
@@ -163,18 +179,26 @@ In two parts, so the prompt ships without waiting for cg 2.0.0.
 **Part 1 (independent of #259):**
 
 1. **Defaults outside a workspace.** When the repository has no `.cg.json`, `cg worktree` uses the remote's default
-   branch (`gitx.DefaultBranch`) as the landing branch, and `land` defaults to `pr`, not `direct-to-main`. A direct
-   land must be asked for with `--strategy direct-to-main`, and is refused when the area files declare the repo `pr`
-   (`pushpolicy.Lookup`), which closes the push-policy bypass. Path (`<repo>--<slug>`) and branch prefix
-   (`session/`) stay as today.
+   branch as the landing branch, and `land` defaults to `pr`, not `direct-to-main`; a direct land must be asked for
+   with `--strategy direct-to-main`. `land` itself can't find the workspace from a sibling repo (`cmd/worktree.go:49-53`
+   reads `.cg.json` in the cwd's repo), so the **policy check goes in the push-policy hook**, which already finds the
+   workspace from the hook's cwd: it also matches `cg worktree land` and denies a non-`pr` land in a repo the area
+   files declare `pr`. That closes the bypass without #259. Path (`<repo>--<slug>`) and branch prefix (`session/`)
+   stay as today.
 2. **Write-time prompt.** A new hidden `cg session repo-gate` behind a PreToolUse hook in the workspace's
    `settings.json` on `Write|Edit|NotebookEdit`, and on `Bash` for git commands that change the index or branch
    (`git add`, `commit`, `switch`/`checkout`, `stash`, `rebase`, `merge`, `reset`). It resolves the target's git
-   toplevel (the file's directory; for Bash, a leading `cd <dir>` or `git -C <dir>`, else `cwd`, as the push-policy
-   gate does). When that toplevel is **the main worktree of a repository other than the workspace**, it adds
-   `additionalContext` naming the repo and `cg worktree create <slug>` run there. It doesn't block, and it speaks
-   once per repo per session (state in the session's own state file). The workspace's own main worktree keeps the
-   start-gate warning.
+   toplevel (the file's directory; for Bash, a `cd <dir>` in the command, `git -C <dir>`, else `tool_input.cwd`, else
+   the hook's cwd; the push-policy gate parses only the `cd` form today). When that toplevel is **the main worktree of
+   a repository other than the workspace**, it **denies the first such call per repo per session** with a reason
+   naming the repo and `cg worktree create <slug>` run there, and lets later calls in that repo through, so a session
+   that means to work in the primary clone retries once. `additionalContext` alone would arrive after the write it
+   warns about (Hook facts). The "already warned" state lives in a cg-owned per-session file under the workspace's
+   `.claude/session-context/`, found from `CLAUDE_PROJECT_DIR` or the hook's cwd, not from `CG_WORKSPACE`, so it
+   needs nothing from #259.
+2b. **Start gate outside the workspace.** When the hook's cwd is in another repository, the start gate names that
+   repo in its warning and keeps the badge path in the session's workspace (found as in item 2) instead of naming a
+   badge file inside the external repo.
 3. **Docs and `/wrap`.** `docs/cg-subcommands.md` describes the external-repo behaviour; a trigger-only paragraph in
    `notes/area-rules.md` (External Repo lookup) says to work in a `cg worktree` there; `/wrap` end mode lists
    worktrees of external repos it finds by branch prefix (`git worktree list` in repos touched this session) and
@@ -184,8 +208,9 @@ In two parts, so the prompt ships without waiting for cg 2.0.0.
 
 4. **Record.** `cg worktree create`/`remove` run outside the workspace add/remove an entry in a **separate** key of
    the session state file (for example `repoWorktrees: [{repo, path, branch}]`), found through `CG_WORKSPACE` and
-   the session ID; #259's `worktree` key is untouched. With no `CG_WORKSPACE` or no session ID, the worktree is
-   still created and cg prints that it isn't recorded.
+   the session ID; #259's `worktree` key is untouched, which needs S35 scoped to the session's repository
+   (decision 13). With no `CG_WORKSPACE` or no session ID, the worktree is still created and cg prints that it isn't
+   recorded.
 5. **Visibility.** `cg active --json` carries each live session's external worktrees; a `cg worktree create` in a
    repo where another live session already records a worktree prints that session (a warning, not a refusal).
 6. **Cleanup.** `/wrap` end mode removes the session's recorded external worktrees with an unforced
@@ -197,7 +222,11 @@ In two parts, so the prompt ships without waiting for cg 2.0.0.
 - **Wrong choice when:** the owner wants cg to stay out of other repositories altogether (then: docs only, below), or
   sessions mostly write external repos through tools the hook can't see (subagents in other tools, scripts).
 - **Rabbit holes:** parsing every shell form of a git write (compound commands, aliases, `-C` with quoting): keep it
-  best effort, as the push-policy gate is; submodules and LFS in the new worktree (out of scope: say so in the docs);
+  best effort, as the push-policy gate is; an `if` rule such as `Bash(git *)` won't match `cd x && git add`, so the
+  Bash side filters in cg, not only in `if`; the remote's default branch when `origin/HEAD` is unset
+  (`gitx.DefaultBranch` then falls back to `main`, `internal/gitx/gitx.go:323-327`, common after `git init` plus
+  `git remote add`): ask the remote (`git ls-remote --symref origin HEAD`) or refuse with a hint;
+  submodules and LFS in the new worktree (out of scope: say so in the docs);
   a branch name the external repo's conventions require (`feat/…`): use `--branch` (decision 6), not per-repo config;
   recording worktrees from sessions not started with `cg` (decision 8).
 
@@ -235,7 +264,7 @@ Keep the manual recipe. Credible only because the issue is Low; it leaves the pu
   rule: unknown keys don't change the badge).
 - **Failure mid-operation:** `create` already creates the worktree before anything else; the record (part 2) is
   written after, so a failed record leaves an unrecorded worktree, which the `/wrap` listing (item 3) still finds.
-- **Security:** the trigger only adds context; it grants nothing. Item 1 narrows what `land` can push. The repo-gate
+- **Security:** the trigger only refuses or annotates a call; it grants nothing. Item 1 narrows what `land` can push. The repo-gate
   reads paths from hook input: it must not follow them anywhere but `git rev-parse` in that directory.
 - **Performance:** today a PreToolUse hook already starts on every Bash call (push policy), and a PostToolUse hook on
   every write. The repo-gate adds one process per write and per matching git command; an `if` rule
@@ -246,8 +275,17 @@ Keep the manual recipe. Credible only because the issue is Low; it leaves the pu
 - **Permissions (assumption, med):** a sibling `<repo>--<slug>` directory may sit outside the session's allowed
   working directories, so in Claude Code's default permission mode edits there can prompt. Docs should say so; cg
   doesn't change permissions.
-- **Dependencies:** part 2 needs #259's `CG_WORKSPACE` and session-ID handling (cg 2.0.0). Part 1 needs nothing in
-  flight.
+- **Dependencies:** part 2 needs #259's `CG_WORKSPACE` and session-ID handling (cg 2.0.0), and S35 scoped to the
+  session's repository (decision 13). Part 1 needs nothing in flight: the policy check and the prompt's state find
+  the workspace from the hook's context, not from `land` or `CG_WORKSPACE`.
+- **Hosting:** the `pr` strategy needs the GitHub CLI and opens GitHub PRs only (`internal/worktree/land.go:589-593`);
+  an external repo on another host can't land with the new default and would push the branch by hand. Decision 5.
+- **Hook cwd:** both the push-policy gate and the proposed repo-gate find the workspace from the hook's cwd; if a
+  session's cwd stays in an external repo (an added working directory), that lookup fails and the gate stays silent
+  today (`cmd/pushpolicy.go:69-74`). `CLAUDE_PROJECT_DIR` in the hook environment is the fallback (assumption, high:
+  the hook wrappers already use it, `templates/workspace/.claude/settings.json:7`).
+- **Denying once:** the first write per repo fails by design; a session that meant to write the primary clone retries.
+  A subagent or scripted run sees the same refusal once.
 - **Who else is affected:** every workspace on `cg sync` gets the new hook entry in `settings.json` and the note
   paragraph; workspaces that edited `settings.json` see it as drifted. External repos see `session/<slug>` branches
   pushed when a `pr` land runs.
@@ -259,10 +297,10 @@ Keep the manual recipe. Credible only because the issue is Low; it leaves the pu
 | # | Decision | Recommended answer | Status |
 |---|---|---|---|
 | 1 | Scope | Recommended option: part 1 now, part 2 after #259 merges | open |
-| 2 | Prompt strength | `additionalContext`, once per repo per session, never blocks (not `ask` or `deny`) | open |
+| 2 | Prompt strength | `deny` the first write per repo per session with a reason, then let calls through. (`additionalContext` only: never blocks, but arrives after the write; `ask`: the user decides each time; `deny` always: forces worktrees) | open |
 | 3 | What the prompt watches | `Write`/`Edit`/`NotebookEdit` plus Bash git commands that change the index or branch; best effort | open |
 | 4 | Command surface | Reuse `cg worktree` from the repo's directory; optionally `--repo <path>` so it runs from anywhere | open |
-| 5 | `land` outside a workspace | Landing branch = remote default branch; default strategy `pr`; `direct-to-main` only with the flag and refused when the area files declare the repo `pr` | open |
+| 5 | `land` outside a workspace | Landing branch = remote default branch; default strategy `pr`; `direct-to-main` only with the flag, and denied by the push-policy hook when the area files declare the repo `pr`. On a non-GitHub host `pr` fails (needs `gh`): the docs say to push the branch by hand | open |
 | 6 | Branch name in external repos | `session/<slug>` by default, `--branch <name>` to follow a repo's convention | open |
 | 7 | Where the record lives | A separate state-file key (name to agree, e.g. `repoWorktrees`); never #259's `worktree` | open |
 | 8 | Sessions not started with `cg` (no `CG_WORKSPACE`) | Create works, record skipped with a printed note; no `--workspace` flag | open |
@@ -270,10 +308,27 @@ Keep the manual recipe. Credible only because the issue is Low; it leaves the pu
 | 10 | `cg active` output | Add to `--json` and warn at `create`; leave the default tab-separated output unchanged | open |
 | 11 | Release | Part 1 as `feat` (the old `land` default outside a workspace is undocumented); part 2 after 2.0.0. `feat!` if the owner counts the `land` default as public | open |
 | 12 | Layer | Core, not an extension | open |
+| 13 | Input for #259's owner (not decided here) | Raise on #259 before it merges: scope S35's `worktree` record to worktrees of the session's own repository, so a `cg worktree create` in an external repo doesn't replace it | open |
+| 14 | Start gate outside the workspace (item 2b) | In Part 1: name the repo, keep the badge path in the workspace | open |
 
 ## Review
 
-pending
+**Review 1**: `specs/gh-277-external-repo-worktrees/analysis.md` @ content hash `e26e4a3` (commit `65d4e8c`) · 2026-11-22
+- Reviewers: doc-reviewer (builder check, claim check, missed option, hidden constraints, governing rules)
+- Tests: not applicable (analysis document)
+- Findings: 1 blocker, 4 should-fix, 3 nit → fixed: Part 1's push-policy refusal had no way to find the workspace
+  (moved into the push-policy hook); start-gate claim corrected (it uses the cwd's repo; reproduced) and item 2b
+  added; `additionalContext` arrives after the call (decision 2 now recommends deny-once); #259 S35 interaction
+  restated (decision 13); `pr` needs `gh` (hosting constraint, decision 5); nits on `cd`/`-C` parsing, the
+  `origin/HEAD` fallback and single-rule `if`. Dropped in validation: "the gate and dirty marker write badge files
+  into the external repo" (no file is created: the badge must already exist, and the run left the repo clean).
+- Builder questions: 5 → answered by fixes: how Part 1 finds the workspace; non-GitHub default (decision 5);
+  owner's: deny vs annotate (decision 2), the S35 dependency (decision 13), whether the start-gate fix belongs here
+  (decision 14).
+- Verified true: defaults outside a workspace; fixed `main`; `land` pushes inside cg past `gitPushRe`; `/wrap` scope;
+  #259 S24, S31, S35-S38, S40, X4 at `b939c7d`; hooks facts; no private context; no in-flight decision assumed.
+- Not verified: the empirical runs and the `EnterWorktree` description (not reproducible by the reviewer); whether
+  Claude Code resets the cwd after a `cd` outside the working directories.
 
 ## Verdict
 
