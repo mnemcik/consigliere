@@ -506,8 +506,9 @@ and `$PATH` programs. No extension `bin/` directory is added to `$PATH`.
 
 `cg start` (and bare `cg`) starts the session with `CG_WORKSPACE` set to the
 absolute workspace root it resolved, a worktree's root when started in one. A
-launcher passes it on; `cg-tmux` passes it into the tmux session. Dispatch reads
-it (and never rewrites it) to pick the workspaces it consults:
+launcher must pass it on into the session it creates (a terminal multiplexer
+doesn't by default: `tmux new-session` needs `-e CG_WORKSPACE=…`). Dispatch
+reads it (and never rewrites it) to pick the workspaces it consults:
 
 | Where the command runs | Consulted, in order |
 |---|---|
@@ -519,9 +520,14 @@ it (and never rewrites it) to pick the workspaces it consults:
 
 The worktree list is read from the session's workspace only, with git's
 repository variables (`GIT_DIR`, `GIT_WORK_TREE`, …) removed, and paths are
-compared after resolving symlinks. When it can't be read or trusted (no git, the
-session's workspace isn't the top level of its repository), the current
-directory's workspace counts as another workspace. A `CG_WORKSPACE` that is
+compared as the directories themselves (symlinks and, on a case-insensitive
+filesystem, letter case don't matter). A listed path counts only while it is
+still that worktree: its `.git` must point into the session's repository, so a
+directory put where a deleted worktree was doesn't. When the list can't be read
+or trusted (no git, the session's workspace isn't the top level of its
+repository), the current directory's workspace counts as another workspace. A
+`.cg.json` above the current directory that can't be read stops a command only
+when the session's workspace doesn't declare its namespace. A `CG_WORKSPACE` that is
 relative, or names a directory without a valid `.cg.json` (a worktree removed
 since the session started), is ignored, and the unknown-command hint says so.
 

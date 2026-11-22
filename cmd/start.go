@@ -154,9 +154,14 @@ func (r agentRun) exec() error {
 // workspace at root: CG_WORKSPACE set to root, so extension commands find the
 // workspace from any directory the session works in, and without the per-run
 // variables, which describe one dispatched run and mustn't leak into a
-// session started from inside an extension's binary.
+// session started from inside an extension's binary. A workspace found only
+// by its folder markers has no .cg.json for dispatch to use, so it gets no
+// CG_WORKSPACE (and an inherited one, naming another workspace, is dropped).
 func sessionEnv(root string) []string {
 	env := withoutEnv(os.Environ(), append([]string{envWorkspace}, perRunVars...)...)
+	if cfg, err := workspace.Detect(root); err != nil || cfg == nil {
+		return env
+	}
 	return append(env, envWorkspace+"="+root)
 }
 

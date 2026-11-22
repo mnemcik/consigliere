@@ -386,3 +386,151 @@ func TestConsultedRootsIgnorePerRunVariables(t *testing.T) {
 }
 
 var errUnknownForTest = errors.New(`unknown command "frob" for "cg"`)
+
+// samePath compares the directories themselves: a different spelling of the
+// same directory (case on a case-insensitive filesystem, a symlink) matches.
+func TestSamePathSameDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "CaseDir")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !samePath(dir, dir+string(filepath.Separator)) {
+		t.Error("a trailing separator must not matter")
+	}
+	upper := filepath.Join(filepath.Dir(dir), "CASEDIR")
+	if _, err := os.Stat(upper); err == nil && !samePath(dir, upper) {
+		t.Errorf("case-insensitive filesystem: %s and %s are one directory", dir, upper)
+	}
+	if samePath(dir, filepath.Join(filepath.Dir(dir), "nope")) {
+		t.Error("a missing directory matches nothing")
+	}
+}
+
+// A listed worktree path now holding another repository (the worktree was
+// deleted without `git worktree remove` and something else put there) is not
+// the session's worktree.
+func TestConsultedRootsReplacedWorktree(t *testing.T) {
+	requireGit(t)
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	session := sessionWorkspace(t, cfgHome)
+	wt := addBranchWorktree(t, session, "gone")
+	if err := os.RemoveAll(wt); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(wt, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&workspace.Config{Type: workspace.TypeConsigliere, Version: "1.3.0"}).Save(wt); err != nil {
+		t.Fatal(err)
+	}
+	gitCommitAll(t, wt)
+	t.Setenv(envWorkspace, session)
+	wantRoots(t, wt, session, wt)
+
+	// Planted instead: the .git file of another, live worktree of the session
+	// repo, copied to where the deleted one was.
+	other := addBranchWorktree(t, session, "live")
+	planted := addBranchWorktree(t, session, "planted")
+	if err := os.RemoveAll(planted); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(planted, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&workspace.Config{Type: workspace.TypeConsigliere, Version: "1.3.0"}).Save(planted); err != nil {
+		t.Fatal(err)
+	}
+	gitFile, err := os.ReadFile(filepath.Join(other, ".git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(planted, ".git"), gitFile, 0o644); err != nil { //nolint:gosec // a test fixture in its own temp dir
+		t.Fatal(err)
+	}
+	wantRoots(t, planted, session, planted)
+}
+
+// A worktree path ending in a space is matched exactly.
+func TestConsultedRootsWorktreePathWithTrailingSpace(t *testing.T) {
+	requireGit(t)
+	if isWindowsOS {
+		t.Skip("Windows paths can't end in a space")
+	}
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	session := sessionWorkspace(t, cfgHome)
+	wt := filepath.Join(t.TempDir(), "spaced ")
+	if _, err := gitx.Run(context.Background(), session, "worktree", "add", "--quiet", "-b", "spaced", wt); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envWorkspace, session)
+	wantRoots(t, wt, wt)
+}
+
+// An unreadable .cg.json in the current directory's tree doesn't stop a
+// command the session's workspace declares; it stops one the session doesn't
+// decide.
+func TestUnreadableCwdConfigWithSession(t *testing.T) {
+	requireGit(t)
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	session := sessionWorkspace(t, cfgHome, []string{"alpha", "shop"})
+	ext := t.TempDir()
+	if err := os.WriteFile(filepath.Join(ext, workspace.ConfigFile), []byte(`{"version": 2}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envWorkspace, session)
+	t.Chdir(ext)
+	if run := mustDispatch(t, "shop"); run.root != session {
+		t.Errorf("shop = %+v, want the session's", run)
+	}
+	dispatchErr(t, []string{"pr"}, filepath.Join(ext, workspace.ConfigFile))
+}
+
+// A workspace found by its folder markers alone has no .cg.json for dispatch
+// to use: cg start doesn't put it in CG_WORKSPACE, and removes an inherited
+// one.
+func TestStartLegacyWorkspaceSetsNoSessionWorkspace(t *testing.T) {
+	ws := t.TempDir()
+	for _, f := range []string{"CLAUDE.md", filepath.Join("areas", "INDEX.md"), filepath.Join("projects", "TODO.md")} {
+		p := filepath.Join(ws, f)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(ws)
+	t.Setenv(envWorkspace, "/elsewhere")
+	// The default agent, `claude`, as a copy of the test binary on PATH.
+	bin := t.TempDir()
+	name := workspace.DefaultAgentCommand
+	if isWindowsOS {
+		name += ".exe"
+	}
+	data, err := os.ReadFile(testAgent(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, name), data, 0o755); err != nil { //nolint:gosec // an executable test fixture
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	s := newStubStart(t, true)
+	if err := startCmd.RunE(startCmd, nil); err != nil {
+		t.Fatalf("legacy workspace start: %v", err)
+	}
+	if v, ok := envOf(s.env, envWorkspace); ok {
+		t.Errorf("CG_WORKSPACE=%q set for a workspace without .cg.json", v)
+	}
+}
+
+// The hint tells an empty CG_WORKSPACE from an unset one.
+func TestHintEmptySessionWorkspace(t *testing.T) {
+	t.Setenv(envWorkspace, "")
+	if h := unknownCommandHint(errUnknownForTest); !strings.Contains(h, "ignored") || !strings.Contains(h, "empty") {
+		t.Errorf("hint %q", h)
+	}
+}

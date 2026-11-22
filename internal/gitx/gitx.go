@@ -95,9 +95,16 @@ func RunEnv(ctx context.Context, dir string, env []string, args ...string) (stri
 // environment must not redirect. RunEnv can only add variables, not remove
 // them.
 func RunClean(ctx context.Context, dir string, args ...string) (string, error) {
+	out, err := RunCleanRaw(ctx, dir, args...)
+	return strings.TrimSpace(string(out)), err
+}
+
+// RunCleanRaw is RunClean returning stdout unmodified, for NUL-separated
+// output such as `git worktree list -z`.
+func RunCleanRaw(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	env, err := cleanEnv(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	cmd := command(ctx, dir, args...)
 	cmd.Env = env
@@ -105,9 +112,9 @@ func RunClean(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
 	if err := run(cmd); err != nil {
-		return "", runError(args, err, errb.String())
+		return nil, runError(args, err, errb.String())
 	}
-	return strings.TrimSpace(out.String()), nil
+	return out.Bytes(), nil
 }
 
 // repoEnvSeed are repository variables removed even before git lists the rest,
