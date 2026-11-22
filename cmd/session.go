@@ -440,7 +440,7 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 	// claim, so a refused path or a failed claim changes nothing about it.
 	var wtPath string
 	if worktreeSet {
-		p, werr := listedWorktree(cmd.Context(), root, setContextWorktree)
+		p, werr := listedWorktree(cmd.Context(), wsRoot, setContextWorktree)
 		if werr != nil {
 			return werr
 		}
@@ -485,23 +485,18 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 }
 
 // listedWorktree resolves p (relative to the current directory) and returns it,
-// symlinks resolved, when it is one of the worktrees of the repository whose
-// main checkout is root; otherwise an error.
-func listedWorktree(ctx context.Context, root, p string) (string, error) {
+// symlinks resolved, when it is one of the linked worktrees of the session
+// repo, whose root is repoRoot (S36: listed by its `git worktree list`, not the
+// main checkout); otherwise an error.
+func listedWorktree(ctx context.Context, repoRoot, p string) (string, error) {
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		return "", err
 	}
-	paths, err := gitx.WorktreePaths(ctx, root)
-	if err != nil {
-		return "", fmt.Errorf("listing the repository's worktrees: %w", err)
+	if !sessionRepoWorktree(ctx, repoRoot, abs) {
+		return "", fmt.Errorf("%s is not one of the session repository's linked worktrees (see `git worktree list` in %s; the main checkout doesn't count)", abs, repoRoot)
 	}
-	for _, w := range paths {
-		if samePath(w, abs) {
-			return recordPath(w), nil // the spelling create and remove use
-		}
-	}
-	return "", fmt.Errorf("%s is not one of this repository's worktrees (see `git worktree list`)", abs)
+	return canonicalPath(abs), nil
 }
 
 // printResumeNotice tells the agent claiming a paused project where its pickup
@@ -640,15 +635,21 @@ func runSessionStatusline(cmd *cobra.Command, _ []string) error {
 }
 
 // sessionRoots resolves where a session's badge file lives and which workspace
-// cwd belongs to. badgeRoot is the main worktree root (where start-gate puts
-// badge files), so a session in a linked worktree still finds its badge; it
-// falls back to the walk-up workspace root outside a git repo. wsRoot is the
-// walk-up workspace root ("" when cwd is not in a workspace). cfg is the
-// workspace config, read from wsRoot and else from badgeRoot, so a workspace
-// nested below the git top level keeps its settings.
+// the session serves. wsRoot is the session repo root: the session's workspace
+// (CG_WORKSPACE, when it isn't ignored), else the walk-up workspace root of cwd
+// ("" when there is neither), so a session working in an external repo still
+// reads and writes its own badge. badgeRoot is the main worktree root of
+// wsRoot's repository (where start-gate puts badge files), so a session in a
+// linked worktree still finds its badge; it falls back to wsRoot outside a git
+// repo. cfg is the workspace config, read from wsRoot and else from
+// badgeRoot, so a workspace nested below the git top level keeps its settings.
 func sessionRoots(ctx context.Context, cwd string) (badgeRoot, wsRoot string, cfg *workspace.Config) {
-	wsRoot, cfg, _ = workspace.FindRoot(cwd)
-	badgeRoot, err := gitx.CommonRoot(ctx, cwd)
+	wsRoot = sessionRepoRoot(cwd)
+	if wsRoot == "" {
+		return "", "", nil
+	}
+	cfg, _ = workspace.Detect(wsRoot)
+	badgeRoot, err := gitx.CommonRoot(ctx, wsRoot)
 	if err != nil {
 		badgeRoot = wsRoot
 	}

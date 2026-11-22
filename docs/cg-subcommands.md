@@ -218,9 +218,11 @@ repeated (a line counts as present only when its text matches exactly).
 ## Session badge file
 
 Each session's badge state lives in `.claude/session-context/<session-id>.json`
-under the **main worktree root**, so a session in a linked worktree reads and
-writes the same file. `cg session set-context` creates it; the directory is
-git-ignored.
+under the **main worktree root** of the session's workspace, so a session in a
+linked worktree reads and writes the same file. The session's workspace is the
+one `CG_WORKSPACE` names (set by `cg start`), else the current directory's, so
+a session working in an external repo still reaches its own file.
+`cg session set-context` creates it; the directory is git-ignored.
 
 ```jsonc
 {
@@ -241,14 +243,18 @@ git-ignored.
 
 - The session ID must match `[A-Za-z0-9_-]+`; cg reads and writes no file for
   any other ID. `cg worktree create` takes it from `CG_SESSION_ID`, else
-  `CLAUDE_CODE_SESSION_ID`, and records nothing without a valid one;
+  `CLAUDE_CODE_SESSION_ID`, and records nothing without a valid one. It records
+  only a linked worktree of the session's workspace repo: one created in an
+  external repo the session works in leaves the record unchanged.
   `cg worktree remove` clears the removed worktree from every session's file,
   with or without a session ID.
 - A file with only `worktree` (no area or project) shows no badge and no
   session in `cg active`.
 - `cg session set-context --worktree <path>` records a worktree the
-  workspace's own scripts created; the path must be in `git worktree list`.
-  It may be given alone or with `--area` and `--project`.
+  workspace's own scripts created; it must be one of the workspace repo's
+  linked worktrees (in `git worktree list`, and not the main checkout, so
+  writers are never sent there; symlinks are resolved). It may be given alone
+  or with `--area` and `--project`.
 - Writers merge into the existing file and keep fields they do not own.
 - Each read-modify-write holds a per-session OS advisory lock (`flock` on
   Linux and macOS, `LockFileEx` on Windows) on `<session-id>.lock` next to the

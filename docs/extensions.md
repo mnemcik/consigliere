@@ -578,8 +578,9 @@ where:
 1. `CG_SESSION_WORKTREE`, when set: the session's worktree. Dispatch takes it
    from the session's state file (`worktree`, recorded by `cg worktree create`
    or `cg session set-context --worktree`; the session ID comes from
-   `CG_SESSION_ID`, else `CLAUDE_CODE_SESSION_ID`), and only while
-   `git worktree list` in the session's workspace still lists it. Without such
+   `CG_SESSION_ID`, else `CLAUDE_CODE_SESSION_ID`), and only while it is still
+   one of the session repo's linked worktrees (`git worktree list` in the
+   session's workspace lists it, and it isn't the main checkout). Without such
    a record, a session started in a linked worktree gets that worktree (the
    session's workspace itself); one started in the main checkout gets none.
    The linked-worktree test needs git 2.31 or later (`rev-parse

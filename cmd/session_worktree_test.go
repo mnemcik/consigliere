@@ -354,3 +354,161 @@ func TestDispatchSessionWorktreeFallbackRoots(t *testing.T) {
 		t.Errorf("symlinked linked worktree: %q, want %s", got, linked2)
 	}
 }
+
+// plainRepo is a committed git repo on main that isn't a workspace: an
+// external repo the session works in.
+func plainRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCommitAll(t, dir)
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resolved
+}
+
+// S35, S37: a worktree created or removed in another repo (an external repo
+// the session works in) leaves the session's record unchanged.
+func TestWorktreeInAnotherRepoLeavesRecord(t *testing.T) {
+	requireGit(t)
+	ws := gitWorkspace(t)
+	own := addBranchWorktree(t, ws, "own")
+	if err := session.SetWorktree(ws, "s1", recordPath(own)); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envWorkspace, ws)
+	t.Setenv("CG_SESSION_ID", "s1")
+	ext := plainRepo(t)
+	if out, err := runCg(t, ext, "worktree", "create", "x"); err != nil {
+		t.Fatalf("create in the external repo: %v\n%s", err, out)
+	}
+	if got := recordedWorktree(t, ws, "s1"); !samePath(got, own) {
+		t.Errorf("after create elsewhere, record = %q, want %s", got, own)
+	}
+	if _, err := os.Stat(session.ContextDir(ext)); !os.IsNotExist(err) {
+		t.Error("a state file was written in the external repo")
+	}
+	if out, err := runCg(t, ext, "worktree", "remove", "x"); err != nil {
+		t.Fatalf("remove in the external repo: %v\n%s", err, out)
+	}
+	if got := recordedWorktree(t, ws, "s1"); !samePath(got, own) {
+		t.Errorf("after remove elsewhere, record = %q, want %s", got, own)
+	}
+}
+
+// S35: with no session repo root (no usable CG_WORKSPACE, the current
+// directory outside any workspace), create records nothing.
+func TestWorktreeCreateWithoutSessionRepo(t *testing.T) {
+	requireGit(t)
+	ext := plainRepo(t)
+	t.Setenv("CG_SESSION_ID", "s1")
+	t.Setenv(envWorkspace, "relative/ws")
+	if out, err := runCg(t, ext, "worktree", "create", "y"); err != nil {
+		t.Fatalf("create: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(session.ContextDir(ext)); !os.IsNotExist(err) {
+		t.Error("a state file was written without a session repo")
+	}
+}
+
+// S35: a session root given through a symlink still matches its worktrees.
+func TestWorktreeCreateSymlinkedSessionRoot(t *testing.T) {
+	requireGit(t)
+	if isWindowsOS {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	ws := gitWorkspace(t)
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(ws, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envWorkspace, link)
+	t.Setenv("CG_SESSION_ID", "s1")
+	out, err := runCg(t, ws, "worktree", "create", "z")
+	if err != nil {
+		t.Fatalf("create: %v\n%s", err, out)
+	}
+	if got := recordedWorktree(t, ws, "s1"); !samePath(got, strings.TrimSpace(lastLine(out))) {
+		t.Errorf("record = %q, want the new worktree", got)
+	}
+}
+
+// S36: set-context --worktree refuses the main checkout and another repo's
+// worktree, and accepts a symlinked path to one of the session repo's linked
+// worktrees.
+func TestSetContextWorktreeLinkedOnly(t *testing.T) {
+	requireGit(t)
+	ws := gitWorkspace(t)
+	wt := addBranchWorktree(t, ws, "lk")
+	ext := plainRepo(t)
+	extWT := addBranchWorktree(t, ext, "ex")
+	for _, bad := range []string{ws, extWT} {
+		out, err := runCg(t, ws, "session", "set-context", "--session-id", "s1", "--worktree", bad)
+		if err == nil {
+			t.Errorf("%s accepted:\n%s", bad, out)
+		}
+		if got := recordedWorktree(t, ws, "s1"); got != "" {
+			t.Errorf("%s recorded as %q", bad, got)
+		}
+	}
+	if isWindowsOS {
+		return // symlinks need privileges on Windows
+	}
+	link := filepath.Join(t.TempDir(), "wt-link")
+	if err := os.Symlink(wt, link); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := runCg(t, ws, "session", "set-context", "--session-id", "s1", "--worktree", link); err != nil {
+		t.Fatalf("symlinked worktree: %v\n%s", err, out)
+	}
+	if got := recordedWorktree(t, ws, "s1"); !samePath(got, wt) {
+		t.Errorf("recorded %q, want %s", got, wt)
+	}
+}
+
+// The badge root is the session repo root's: set-context from an external
+// repo, in a session that carries its workspace, writes the session's state
+// file under that workspace.
+func TestSetContextBadgeRootFromSessionRepo(t *testing.T) {
+	requireGit(t)
+	ws := gitWorkspace(t)
+	t.Setenv(envWorkspace, ws)
+	ext := plainRepo(t)
+	if out, err := runCg(t, ext, "session", "set-context", "--session-id", "s9", "--area", "a", "--project", "p"); err != nil {
+		t.Fatalf("set-context from outside: %v\n%s", err, out)
+	}
+	if c, _ := session.ReadContext(ws, "s9"); c == nil || c.Project != "p" {
+		t.Errorf("state file under the session's workspace: %+v", c)
+	}
+}
+
+// S38/S38b: a recorded main checkout isn't a valid record: a linked-worktree
+// session root then gets itself, a main-checkout one gets nothing.
+func TestDispatchIgnoresRecordedMainCheckout(t *testing.T) {
+	requireGit(t)
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	main := sessionWorkspace(t, cfgHome, []string{"alpha", "shop"})
+	linked := addBranchWorktree(t, main, "ses")
+	if err := os.MkdirAll(session.ContextDir(main), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data := []byte(`{"worktree":"` + filepath.ToSlash(main) + `"}`)
+	if err := os.WriteFile(session.ContextFile(main, "s1"), data, 0o644); err != nil { //nolint:gosec // a test fixture
+		t.Fatal(err)
+	}
+	t.Setenv("CG_SESSION_ID", "s1")
+	t.Chdir(t.TempDir())
+	t.Setenv(envWorkspace, main)
+	if got := sessionWorktreeOf(t); got != "" {
+		t.Errorf("main-checkout session, recorded main: %q, want unset", got)
+	}
+	t.Setenv(envWorkspace, linked)
+	if got := sessionWorktreeOf(t); !samePath(got, linked) {
+		t.Errorf("linked session, recorded main: %q, want %s", got, linked)
+	}
+}

@@ -362,8 +362,9 @@ func servedFromOutside(root string) bool {
 
 // sessionWorktreeFor returns the session's worktree for a binary the session
 // root serves from outside it: the worktree recorded in the session's state
-// file (the session ID from CG_SESSION_ID or CLAUDE_CODE_SESSION_ID) while
-// the session repo still lists it; else the session root itself when it is a
+// file (the session ID from CG_SESSION_ID or CLAUDE_CODE_SESSION_ID) while it
+// is still one of the session repo's linked worktrees (listed, not the main
+// checkout); else the session root itself when it is a
 // linked worktree; else "". The state file is the one under the session repo's
 // main checkout. git runs in the session root with its repository variables
 // removed, and any failure means no worktree.
@@ -382,7 +383,7 @@ func sessionWorktreeFor(sroot string) string {
 	if id := resolveSessionID(""); session.ValidSessionID(id) {
 		// The state file lives under the main checkout: the common dir's parent.
 		if c, rerr := session.ReadContext(canonicalPath(filepath.Dir(common)), id); rerr == nil && c != nil && c.Worktree != "" &&
-			listedWorktreeOf(ctx, sroot, common, c.Worktree) {
+			sessionRepoWorktree(ctx, sroot, c.Worktree) {
 			return c.Worktree
 		}
 	}
@@ -450,6 +451,64 @@ func sessionWorktree(sroot, dir string) bool {
 		common = filepath.Join(sroot, common) // relative to where git ran
 	}
 	return listedWorktreeOf(ctx, sroot, common, dir)
+}
+
+// sessionRepoRoot is the session repo root (spec Terms): the session root
+// when CG_WORKSPACE isn't ignored (usable, or naming a .cg.json that can't be
+// read), else the current directory's workspace root, else "". It decides the
+// badge root and the worktree record; dispatch uses the session root alone.
+func sessionRepoRoot(cwd string) string {
+	value, _, ignored, _ := readSession()
+	if value != "" && ignored == "" {
+		return filepath.Clean(value)
+	}
+	root, _, err := workspace.FindRoot(cwd)
+	if err != nil {
+		return ""
+	}
+	return root
+}
+
+// sessionRepoWorktree reports whether dir is one of the linked worktrees of
+// the repo at repoRoot: listed by `git worktree list --porcelain` run in
+// repoRoot with git's repository variables removed, not the main checkout (the
+// list's first entry), compared after resolving symlinks, and its .git still
+// pointing back into the repo (gitDirIn). Any failure means no.
+func sessionRepoWorktree(ctx context.Context, repoRoot, dir string) bool {
+	out, err := gitx.RunCleanRaw(ctx, repoRoot, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return false
+	}
+	lines := gitLines(out)
+	if len(lines) != 1 {
+		return false
+	}
+	common := gitx.OSPath(lines[0])
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(repoRoot, common) // relative to where git ran
+	}
+	list, err := gitx.RunCleanRaw(ctx, repoRoot, "worktree", "list", "--porcelain")
+	if err != nil {
+		return false
+	}
+	first := true
+	for _, line := range strings.Split(string(list), "\n") {
+		p, ok := strings.CutPrefix(strings.TrimSuffix(line, "\r"), "worktree ")
+		if !ok {
+			continue
+		}
+		if first { // the main checkout
+			first = false
+			if samePath(gitx.OSPath(p), dir) {
+				return false
+			}
+			continue
+		}
+		if samePath(gitx.OSPath(p), dir) {
+			return gitDirIn(dir, common)
+		}
+	}
+	return false
 }
 
 // listedWorktreeOf reports whether dir is listed by `git worktree list` run in

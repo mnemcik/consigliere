@@ -126,23 +126,30 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	recordSessionWorktree(cmd.ErrOrStderr(), root, path)
+	recordSessionWorktree(ctx, cmd.ErrOrStderr(), path)
 
 	_, _ = fmt.Fprintln(cmd.OutOrStdout(), path)
 	return nil
 }
 
 // recordSessionWorktree records path as the worktree of the session named by
-// CG_SESSION_ID or CLAUDE_CODE_SESSION_ID, in its state file under the main
-// checkout root, so the session's extension commands write there from other
-// directories. Without a valid session ID nothing is recorded. A failure is a
-// warning: the worktree itself is ready.
-func recordSessionWorktree(errw io.Writer, root, path string) {
+// CG_SESSION_ID or CLAUDE_CODE_SESSION_ID, in its state file under the session
+// repo's badge root, so the session's extension commands write there from
+// other directories (S35). It records only one of the session repo's linked
+// worktrees: one created in another repo (an external repo the session works
+// in) leaves the record unchanged. Without a valid session ID, or without a
+// session repo root, nothing is recorded. A failure is a warning: the worktree
+// itself is ready.
+func recordSessionWorktree(ctx context.Context, errw io.Writer, path string) {
 	id := resolveSessionID("")
 	if !session.ValidSessionID(id) {
 		return
 	}
-	if err := session.SetWorktree(root, id, recordPath(path)); err != nil {
+	badge, ok := sessionRepoBadge(ctx, path)
+	if !ok {
+		return
+	}
+	if err := session.SetWorktree(badge, id, recordPath(path)); err != nil {
 		_, _ = fmt.Fprintf(errw, "warning: could not record the worktree for session %s: %v\n", id, err)
 	}
 }
@@ -308,12 +315,41 @@ func runWorktreeRemove(cmd *cobra.Command, args []string) error {
 	if err := worktree.Remove(ctx, args[0], opts, cmd.ErrOrStderr()); err != nil {
 		return err
 	}
-	// Every session's record of this worktree goes with it, so a worktree
-	// created at the same path later isn't taken for theirs.
-	if err := session.ClearWorktreeAll(root, path); err != nil {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not clear worktree records of %s: %v\n", path, err)
+	// Every session's record of this worktree goes with it (S37), so a
+	// worktree created at the same path later isn't taken for theirs. Records
+	// live under the session repo's badge root; a worktree of another repo
+	// matches none of them.
+	if badge := sessionBadgeRoot(ctx); badge != "" {
+		if err := session.ClearWorktreeAll(badge, path); err != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not clear worktree records of %s: %v\n", path, err)
+		}
 	}
 	return nil
+}
+
+// sessionBadgeRoot is the badge root of the session repo root (the main
+// checkout of its repository), or "" when there is no session repo root.
+func sessionBadgeRoot(ctx context.Context) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	badge, _, _ := sessionRoots(ctx, cwd)
+	return badge
+}
+
+// sessionRepoBadge returns the session repo's badge root when path is one of
+// the session repo's linked worktrees (S35).
+func sessionRepoBadge(ctx context.Context, path string) (string, bool) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", false
+	}
+	badge, srr, _ := sessionRoots(ctx, cwd)
+	if srr == "" || badge == "" || !sessionRepoWorktree(ctx, srr, path) {
+		return "", false
+	}
+	return badge, true
 }
 
 // recordPath is the spelling of a worktree path cg records: its parent
