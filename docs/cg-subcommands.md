@@ -233,14 +233,17 @@ git-ignored.
                             //   cleared by `cg session set-context`
   "worktree": "/home/me/ws--api-gateway" // the session's worktree (absolute):
                             //   set by `cg worktree create` and `cg session
-                            //   set-context --worktree`, cleared by
-                            //   `cg worktree remove` of that worktree
+                            //   set-context --worktree`, cleared from every
+                            //   session's file by `cg worktree remove` of
+                            //   that worktree
 }
 ```
 
 - The session ID must match `[A-Za-z0-9_-]+`; cg reads and writes no file for
-  any other ID. `cg worktree create` and `remove` take it from `CG_SESSION_ID`,
-  else `CLAUDE_CODE_SESSION_ID`, and record nothing without a valid one.
+  any other ID. `cg worktree create` takes it from `CG_SESSION_ID`, else
+  `CLAUDE_CODE_SESSION_ID`, and records nothing without a valid one;
+  `cg worktree remove` clears the removed worktree from every session's file,
+  with or without a session ID.
 - A file with only `worktree` (no area or project) shows no badge and no
   session in `cg active`.
 - `cg session set-context --worktree <path>` records a worktree the

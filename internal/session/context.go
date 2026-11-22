@@ -229,7 +229,7 @@ func ClearWorktree(root, sessionID, path string) (bool, error) {
 		if err != nil {
 			return err
 		}
-		if v, _ := m[keyWorktree].(string); v == "" || v != filepath.ToSlash(path) {
+		if !sameRecord(m, path) {
 			return nil
 		}
 		delete(m, keyWorktree)
@@ -241,15 +241,24 @@ func ClearWorktree(root, sessionID, path string) (bool, error) {
 
 // ClearWorktreeAll clears every session's record of the worktree path, so a
 // worktree created again at that path later isn't taken for theirs.
+// The directory is listed, not globbed: the root's path may contain glob
+// metacharacters. A file whose record doesn't match is read without its lock,
+// so sessions this doesn't concern aren't waited on.
 func ClearWorktreeAll(root, path string) error {
-	matches, err := filepath.Glob(filepath.Join(ContextDir(root), "*.json"))
+	entries, err := os.ReadDir(ContextDir(root))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
 	var errs []error
-	for _, f := range matches {
-		id := strings.TrimSuffix(filepath.Base(f), ".json")
-		if !ValidSessionID(id) {
+	for _, e := range entries {
+		id, ok := strings.CutSuffix(e.Name(), ".json")
+		if !ok || e.IsDir() || !ValidSessionID(id) {
+			continue
+		}
+		if m, rerr := readContextMap(ContextFile(root, id)); rerr != nil || !sameRecord(m, path) {
 			continue
 		}
 		if _, err := ClearWorktree(root, id, path); err != nil {
@@ -257,4 +266,12 @@ func ClearWorktreeAll(root, path string) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// sameRecord reports whether the state map records the worktree path,
+// comparing both with '/' separators (a record written in the OS's form by an
+// earlier build still matches).
+func sameRecord(m map[string]any, path string) bool {
+	v, _ := m[keyWorktree].(string)
+	return v != "" && filepath.ToSlash(v) == filepath.ToSlash(path)
 }

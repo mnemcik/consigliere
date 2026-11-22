@@ -463,6 +463,10 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 	if err := session.WriteContext(root, id, session.Claim{Area: setContextArea, Project: setContextProject}); err != nil {
 		return err
 	}
+	// Right after the claim, before the hand-over steps that may fail.
+	if err := recordWorktree(); err != nil {
+		return err
+	}
 	_, _ = fmt.Fprintf(out, "Session badge set: [%s/%s] (%s)\n",
 		setContextArea, setContextProject, session.ContextFile(root, id))
 	retired, err := session.HandOver(root, wsRoot, id, setContextProject)
@@ -477,7 +481,7 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	printResumeNotice(out, setContextProject, resumes, cfg.WorktreeSettings().BranchPrefix)
-	return recordWorktree()
+	return nil
 }
 
 // listedWorktree resolves p (relative to the current directory) and returns it,
@@ -494,7 +498,7 @@ func listedWorktree(ctx context.Context, root, p string) (string, error) {
 	}
 	for _, w := range paths {
 		if samePath(w, abs) {
-			return canonicalPath(w), nil // git's spelling of it
+			return recordPath(w), nil // the spelling create and remove use
 		}
 	}
 	return "", fmt.Errorf("%s is not one of this repository's worktrees (see `git worktree list`)", abs)

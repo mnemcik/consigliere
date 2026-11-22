@@ -135,9 +135,13 @@ func TestWorktreeStoredWithSlashes(t *testing.T) {
 	}
 }
 
-// ClearWorktreeAll clears every session's record of a worktree.
+// ClearWorktreeAll clears every session's record of a worktree, even under a
+// root whose path has glob metacharacters.
 func TestClearWorktreeAll(t *testing.T) {
-	root := t.TempDir()
+	root := filepath.Join(t.TempDir(), "proj[2]")
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	for _, id := range []string{"a", "b"} {
 		if err := SetWorktree(root, id, "/w/x"); err != nil {
 			t.Fatal(err)
@@ -156,15 +160,26 @@ func TestClearWorktreeAll(t *testing.T) {
 	}
 }
 
-// A session that never claimed a project leaves no state file behind at its
-// end, even when the dirty hook marked it.
-func TestEndSessionDropsWorktreeOnlyFile(t *testing.T) {
+// A dirty state file keeps its worktree record at session end, claim or not:
+// a resumed session (same ID) still writes into its worktree.
+func TestEndSessionKeepsDirtyWorktreeRecord(t *testing.T) {
 	root := t.TempDir()
 	writeCtx(t, root, "s1", `{"worktree":"/w/x","dirty":true}`)
-	if released, err := EndSession(root, root, "s1"); err != nil || !released {
+	if released, err := EndSession(root, root, "s1"); err != nil || released {
 		t.Errorf("EndSession: %v %v", released, err)
 	}
-	if _, err := os.Stat(ContextFile(root, "s1")); !os.IsNotExist(err) {
-		t.Error("worktree-only state file left behind")
+	if c, _ := ReadContext(root, "s1"); c == nil || c.Worktree != filepath.FromSlash("/w/x") {
+		t.Errorf("worktree record lost: %+v", c)
+	}
+}
+
+// A record written in the OS's form (by an earlier build) is still cleared.
+func TestClearWorktreeOSFormRecord(t *testing.T) {
+	root := t.TempDir()
+	p := filepath.Join(root, "ws--x")
+	data, _ := json.Marshal(map[string]any{"worktree": p})
+	writeCtx(t, root, "s1", string(data))
+	if cleared, err := ClearWorktree(root, "s1", p); err != nil || !cleared {
+		t.Errorf("clear: %v %v", cleared, err)
 	}
 }
