@@ -63,7 +63,11 @@ Scenarios: S20–S31.
 
 - `cmd/start.go` / `start_exec_*`: set `CG_WORKSPACE` to the absolute resolved root in the environment of the agent
   or launcher, and remove the three per-run variables (S31).
-- `cmd/external.go`: consulted roots per S20–S24; `CG_WORKSPACE` ignored when relative or invalid (S25).
+- `cmd/external.go`: consulted roots per S20–S24; `CG_WORKSPACE` ignored or stopping per S25's two branches. Guard
+  tests with mutation checks: each S25 stop case (directory, empty, unreadable, invalid JSON, non-object, `null`)
+  stops from S22 and S24 and doesn't stop inside a listed worktree (S21); S9 (in M1's code, changed with this
+  amendment): an owned built-in-namespace command passes update with the warning, a new command in the same
+  built-in namespace is refused, a moved command is refused, `cg init` only warns.
 - Cross-root tests: a session root whose `shop` entry is unverified (S17), or that declares only
   `shop add` (S16), blocks a clone's verified `shop …` typed from inside the clone (guard tests, with mutation
   checks).

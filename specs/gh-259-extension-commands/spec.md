@@ -65,11 +65,15 @@ extension installed in the workspace (from their pinned manifests, not their led
 - **S8** WHEN two extensions declare different commands in one namespace (`pr merge` and `pr watch`) THEN both
   install, and each command dispatches to its own extension.
 - **S9** WHEN an extension declares a command whose namespace is a built-in (`start …`, `extension …`, `help …`)
-  and the extension doesn't already own that command THEN install, update and `cg init` fail, naming the built-in.
-  An extension already owns a command when its installed version declares it (on update: the version being
-  replaced; on `cg init`: the version recorded in `.cg.json`). An owned command whose namespace a later cg made a
-  built-in doesn't block update or `cg init`: cg prints a warning naming the command and the built-in, S14 flags
-  it, and the built-in still wins at dispatch (U1).
+  and the extension doesn't already own that command THEN install and update fail, naming the built-in. An
+  extension owns a command when the verified commands of its installed version include it: read from that
+  version's manifest at its recorded commit (as in "Verified entry"), never from the ledger alone; an extension
+  whose tree can't be read owns nothing, so `cg init` has to restore it first. Ownership is per command: owning
+  `foo run` doesn't let an update add `foo watch` when `foo` is a built-in, and a command moved to another extension
+  in one update isn't owned by the receiving extension. An owned command whose namespace a later cg made a built-in
+  doesn't block update: cg prints a warning naming the command and the built-in, S14 flags it, and the built-in
+  still wins at dispatch (U1). `cg init` restores the versions recorded in `.cg.json`, so every command it
+  restores is owned: it only warns.
 - **S10** WHEN `cg extension update` (one target or all) brings versions whose commands conflict, with each other or
   with an extension not being updated, THEN the update fails before any target is applied, and every installed
   version stays. Moving a command from one extension to another in a single `cg extension update` (both targets)
@@ -118,11 +122,13 @@ Roots are checked in the consulted order. The first root whose ledgers have **an
   the check fail.
 - **S24** WHEN the current directory is not inside any workspace and `CG_WORKSPACE` is set THEN the session root is
   consulted, then the `PATH` fallback. *(The external-repo case of #248.)*
-- **S25** WHEN `CG_WORKSPACE` is relative, or names a directory that is missing, has no `.cg.json`, or whose
-  `.cg.json` isn't a Consigliere workspace's (for example a worktree the session started in and that was removed
-  since) THEN it is ignored, dispatch behaves as S19, and the unknown-command hint says so. WHEN the `.cg.json`
-  exists but can't be read or parsed THEN dispatch stops with a usage error naming the file, as for an unreadable
-  current-directory workspace; it doesn't fall back to another workspace or the `PATH` fallback.
+- **S25** WHEN `CG_WORKSPACE` is relative, names a directory that doesn't exist, or names one with no `.cg.json`
+  file, or whose `.cg.json` is a JSON object whose `type` isn't `consigliere` (for example a worktree the session
+  started in and that was removed since) THEN it is ignored, dispatch behaves as S19, and the unknown-command hint
+  says so. WHEN the `.cg.json` exists but is a directory, empty, unreadable, not valid JSON, not a JSON object, or
+  `null` THEN dispatch stops with a usage error naming the file, and doesn't fall back to another workspace or the
+  `PATH` fallback. This applies only where the session root would be consulted (S22, S24): inside one of the
+  session's own worktrees (S21) only that worktree's `.cg.json` counts.
 - **S26** WHEN an external checkout has a planted `.cg.json` and a `.git` file pointing at the session's repo THEN it
   still counts as another workspace (the list is read from the session root only).
 - **S27** WHEN the caller's environment has `GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR` or any other variable git
