@@ -270,8 +270,11 @@ func brokenSessionRoots(sdir string, broken error) ([]string, error) {
 		return nil, broken
 	}
 	root, _, err := workspace.FindRoot(cwd)
-	if err != nil || root == "" || samePath(root, sdir) || danglingConfig(cwd, root) != "" || !sessionWorktree(sdir, root) {
+	if err != nil || root == "" || samePath(root, sdir) || !sessionWorktree(sdir, root) {
 		return nil, broken
+	}
+	if dangling := danglingConfig(cwd, root); dangling != "" {
+		return nil, fmt.Errorf("%w; %s is a dangling symlink too", broken, dangling)
 	}
 	return []string{root}, nil
 }

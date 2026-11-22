@@ -499,8 +499,8 @@ the declared commands of the workspaces it consults, in order (see
    `cg extension update <name>`. For a ledger that disagrees with an intact
    manifest: `cg extension update <name>`, which also moves it to its latest
    version (the tree is shared by other workspaces, so it stays). For a legacy
-   entry without a recorded commit, `cg init --force` reinstalls it from its
-   default branch. For an invalid `path` in `.cg.json`: correct the entry. cg never falls back to another program for it. Two
+   entry without a recorded commit, remove its clone if it is still there;
+   `cg init --force` then reinstalls it from its default branch. For an invalid `path` in `.cg.json`: correct the entry. cg never falls back to another program for it. Two
    ledgers declaring the same command in the namespace (a hand-edited or pulled
    `.cg.json`) stop dispatch too. So does a `.cg.json` or ledger that can't be
    read (it might declare the command; the error names the file to restore),

@@ -785,3 +785,43 @@ func TestInitPartialFailureOnSharedTree(t *testing.T) {
 		t.Errorf("shared tree kept though two wasn't applied (%v)", err)
 	}
 }
+
+// The tree a legacy entry's re-install exports at the default branch is the
+// tree of a later entry pinned there: if that entry then fails, the tree goes
+// too, so the next cg init restores it.
+func TestInitPartialFailureAfterLegacyExport(t *testing.T) {
+	requireGit(t)
+	cfgHome := t.TempDir()
+	ws := newWorkspace(t)
+	repo := makeMonorepo(t, map[string]string{
+		"one": commandsManifest("one", "0.1.0", "uno"),
+		"two": commandsManifest("two", "0.1.0", "dos"),
+	})
+	for _, sub := range []string{"one", "two"} {
+		if out, err := runExtCfg(t, cfgHome, ws, "install", repo, "--path", sub); err != nil {
+			t.Fatalf("install %s: %v\n%s", sub, err, out)
+		}
+	}
+	cfg, _ := workspace.Detect(ws)
+	tree := extension.SourceRoot(findRef(cfg.Extensions, "two"))
+	findRef(cfg.Extensions, "one").Commit = ""
+	if err := cfg.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(cfgHome, "consigliere", "extensions")); err != nil {
+		t.Fatal(err)
+	}
+	note := filepath.Join(ws, "notes", "two.md")
+	if err := os.Remove(note); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(note, "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := runInitForce(t, cfgHome, ws); err == nil {
+		t.Fatalf("init succeeded despite the blocked note:\n%s", out)
+	}
+	if _, err := os.Lstat(tree); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("tree kept though two wasn't applied (%v)", err)
+	}
+}

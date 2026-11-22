@@ -370,7 +370,19 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 	// so the next cg init restores that entry instead of taking its source
 	// for present. (A tree two entries share stays only when both applied.)
 	var fetched []string
-	fetchedSet := map[string]bool{}
+	fetchedSet := map[string]bool{} // fetched, as a set
+	// Sources missing when the run starts. A tree this run creates for an
+	// earlier entry (two extensions of one repo at one commit share it,
+	// also when the earlier one is legacy) still counts as missing; a tree
+	// that was already there is never removed.
+	missing := map[string]bool{}
+	for i := range out {
+		if t := extension.SourceRoot(&out[i]); t != "" {
+			if _, err := os.Stat(t); err != nil {
+				missing[t] = true
+			}
+		}
+	}
 	users := map[string]int{}   // entries to restore from each fetched tree
 	applied := map[string]int{} // of them, the ones already applied
 	defer func() {
@@ -403,9 +415,7 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 	incoming := map[string][]extension.CommandContribution{}
 	for i := range out {
 		e := &out[i]
-		// A tree this run fetched for an earlier entry (two extensions of
-		// one repo at one commit share it) still counts as missing.
-		if _, err := os.Stat(extension.SourceRoot(e)); err == nil && !fetchedSet[extension.SourceRoot(e)] {
+		if !missing[extension.SourceRoot(e)] {
 			present = append(present, *e)
 			continue // source present; nothing to restore
 		}
@@ -434,12 +444,6 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 			m, err = loadValidManifest(filepath.Join(tree, path), e.Name)
 		} else {
 			m, tree, commit, err = installFrom(cmd.Context(), e.Repo, "", path)
-			if err == nil {
-				// A later pinned entry at the same commit must not take
-				// this export for present (it may predate this run, so it
-				// isn't removed on failure).
-				fetchedSet[tree] = true
-			}
 		}
 		if err != nil {
 			return out, nil, err
