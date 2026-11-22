@@ -92,15 +92,21 @@ func externalDispatch(args []string) (*externalRun, error) {
 			return run, nil
 		}
 	}
-	// Only a plain name is looked up: with a path separator, LookPath would
-	// take cg-<namespace> as a path relative to the current directory.
-	if strings.ContainsAny(typed[0], `/\`) {
+	if !plainName(typed[0]) {
 		return nil, nil
 	}
 	if p, err := exec.LookPath("cg-" + typed[0]); err == nil {
 		return &externalRun{path: p, args: rest}, nil
 	}
 	return nil, nil
+}
+
+// plainName reports whether cg-<ns> is a plain program name for the PATH
+// fallback. LookPath takes a name with a path separator, or (on Windows) a
+// colon, as a path relative to the current directory instead of searching
+// PATH.
+func plainName(ns string) bool {
+	return ns != "" && !strings.ContainsAny(ns, `/\:`)
 }
 
 // typedWords returns the leading arguments up to the first that starts with
@@ -119,16 +125,32 @@ func typedWords(args []string) []string {
 func consultedRoots() ([]string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return nil, nil
+		return nil, cgerr.New(cgerr.ExitUsage, "can't determine the current directory (%v), so cg can't tell which workspace's extension commands apply", err)
 	}
 	root, _, err := workspace.FindRoot(cwd)
 	if err != nil {
-		return nil, cgerr.New(cgerr.ExitUsage, "can't read the workspace's %s (%v), so cg can't tell which extension commands it declares", workspace.ConfigFile, err)
+		return nil, cgerr.New(cgerr.ExitUsage, "can't read %s (%v), so cg can't tell which extension commands it declares",
+			unreadableConfig(cwd), err)
 	}
 	if root == "" {
 		return nil, nil
 	}
 	return []string{root}, nil
+}
+
+// unreadableConfig names the first .cg.json from dir upwards that
+// workspace.Detect can't read, the one FindRoot stopped at.
+func unreadableConfig(dir string) string {
+	for d := filepath.Clean(dir); ; {
+		if _, err := workspace.Detect(d); err != nil {
+			return filepath.Join(d, workspace.ConfigFile)
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			return workspace.ConfigFile
+		}
+		d = parent
+	}
 }
 
 // commandEntry is one ledger command entry of a workspace, checked against the
@@ -147,9 +169,10 @@ type commandEntry struct {
 
 // namespaceEntries returns the ledger command entries of the workspace at root
 // whose namespace is ns, in .cg.json order, each verified against its
-// extension's manifest in its pinned tree. A .cg.json or ledger that can't be
-// read is an error: it might declare the namespace, so dispatch must not hand
-// it to a later root or to PATH.
+// extension's manifest in its pinned tree. A .cg.json that can't be read is an
+// error. So is a ledger that can't be read, when no readable ledger declares
+// the namespace: the broken one might, so dispatch must not hand the
+// namespace to a later root or to PATH.
 func namespaceEntries(root, ns string) ([]commandEntry, error) {
 	cfg, err := workspace.Detect(root)
 	if err != nil {
@@ -159,13 +182,18 @@ func namespaceEntries(root, ns string) ([]commandEntry, error) {
 	if cfg == nil {
 		return nil, nil
 	}
-	var out []commandEntry
+	var (
+		out        []commandEntry
+		unreadable error
+	)
 	for i := range cfg.Extensions {
 		e := &cfg.Extensions[i]
 		led, lerr := extension.LoadLedger(root, e.Name)
 		if lerr != nil {
-			return nil, cgerr.New(cgerr.ExitUsage, "can't read %s (%v), so cg can't tell which commands extension %q declares; restore the file, or run `cg extension update %s`",
-				extension.LedgerPath(root, e.Name), lerr, e.Name, e.Name)
+			if unreadable == nil {
+				unreadable = unreadableLedgerError(root, e.Name, lerr)
+			}
+			continue
 		}
 		if led == nil {
 			continue
@@ -197,7 +225,18 @@ func namespaceEntries(root, ns string) ([]commandEntry, error) {
 			out = append(out, entry)
 		}
 	}
+	if len(out) == 0 && unreadable != nil {
+		return nil, unreadable
+	}
 	return out, nil
+}
+
+// unreadableLedgerError says that extension name's ledger in the workspace at
+// root can't be read. Restoring the file is the fix: `cg extension update` and
+// `remove` read the same ledger.
+func unreadableLedgerError(root, name string, err error) error {
+	return cgerr.New(cgerr.ExitUsage, "can't read %s (%v), so cg can't tell which commands extension %q declares; restore it, for example from git",
+		extension.LedgerPath(root, name), err, name)
 }
 
 // dispatchIn looks for the typed command among the declared commands of the
@@ -231,7 +270,13 @@ func dispatchIn(root string, typed []string) (run *externalRun, decided bool, er
 	bestLen := 0
 	for i := range entries {
 		words := strings.Split(entries[i].ext.Command, " ")
-		if len(words) > len(typed) || len(words) <= bestLen || !wordsPrefix(words, typed) {
+		if len(words) > len(typed) || len(words) < bestLen || !wordsPrefix(words, typed) {
+			continue
+		}
+		// An equal match is the same command of the same extension (two
+		// extensions declaring it stopped above), listed twice in .cg.json:
+		// take a verified one, as the install-time check counts either.
+		if len(words) == bestLen && (best.unverified == "" || entries[i].unverified != "") {
 			continue
 		}
 		best, bestLen = &entries[i], len(words)

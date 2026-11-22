@@ -56,13 +56,17 @@ func verifiedCommand(dir string, m *extension.Manifest, c extension.CommandContr
 // ledger, or whose tree can't be read, contributes none. An extension listed
 // twice (a hand-edited .cg.json) contributes the union of what each entry
 // verifies, each command once: for a refusal check, counting more is the safe
-// side.
-func installedCommands(root string, exts []workspace.ExtensionRef) map[string][]extension.CommandContribution {
+// side. A ledger that can't be read is an error, since it might declare any
+// command.
+func installedCommands(root string, exts []workspace.ExtensionRef) (map[string][]extension.CommandContribution, error) {
 	out := map[string][]extension.CommandContribution{}
 	for i := range exts {
 		e := &exts[i]
 		led, err := extension.LoadLedger(root, e.Name)
-		if err != nil || led == nil || len(led.Commands) == 0 {
+		if err != nil {
+			return nil, unreadableLedgerError(root, e.Name, err)
+		}
+		if led == nil || len(led.Commands) == 0 {
 			continue
 		}
 		dir, m, err := verifiedManifest(e)
@@ -75,7 +79,7 @@ func installedCommands(root string, exts []workspace.ExtensionRef) map[string][]
 			}
 		}
 	}
-	return out
+	return out, nil
 }
 
 // builtinCommandNames lists every name cobra resolves as a top-level cg
@@ -103,7 +107,11 @@ func builtinFor(command string) string {
 // by extension name) that conflict with each other, with the verified commands
 // of the extensions installed in the workspace at root, or with a built-in.
 func checkCommands(root string, installed []workspace.ExtensionRef, incoming map[string][]extension.CommandContribution) error {
-	conflicts := extension.CheckCommands(installedCommands(root, installed), incoming, builtinCommandNames())
+	have, err := installedCommands(root, installed)
+	if err != nil {
+		return err
+	}
+	conflicts := extension.CheckCommands(have, incoming, builtinCommandNames())
 	if len(conflicts) == 0 {
 		return nil
 	}

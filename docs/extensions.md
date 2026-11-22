@@ -479,12 +479,13 @@ the workspace's declared commands:
    namespace to reach its binary declares the namespace itself too.
 3. Before running a binary, cg re-checks the entry against the extension's
    manifest in its tree at the recorded commit, as above. An entry that fails
-   stops dispatch with an error naming the extension and `cg init` /
-   `cg extension update <name>` as the fix; cg never falls back to another
-   program for it. Two ledgers declaring the same command in the namespace (a
-   hand-edited or pulled `.cg.json`) stop dispatch too, and so does a
-   `.cg.json` or ledger that can't be read, since it might declare the
-   command.
+   stops dispatch with an error naming the extension and the fix: `cg init` or
+   `cg extension update <name>`, or correcting the entry when its `path` in
+   `.cg.json` is invalid. cg never falls back to another program for it. Two
+   ledgers declaring the same command in the namespace (a hand-edited or pulled
+   `.cg.json`) stop dispatch too. So does a `.cg.json` that can't be read, and a
+   ledger that can't be read when no readable ledger declares the namespace,
+   since it might: the error names the file to restore.
 4. When no installed extension declares any command in the namespace, cg runs a
    `cg-<namespace>` executable on `$PATH`, if there is one, with the arguments
    after the namespace (a plain name: one with a path separator is never looked

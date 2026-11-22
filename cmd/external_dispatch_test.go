@@ -415,7 +415,11 @@ func TestDispatchUnreadableStateFailsClosed(t *testing.T) {
 			t.Fatal(err)
 		}
 		pathProgram(t, "shop")
-		dispatchErr(t, []string{"shop", "add"}, "alpha.json")
+		dispatchErr(t, []string{"shop", "add"}, extension.LedgerPath(ws, "alpha"), "restore it")
+		// update and remove read the same ledger, so they can't be the fix.
+		if _, err := externalDispatch([]string{"shop", "add"}); err != nil && strings.Contains(err.Error(), "cg extension") {
+			t.Errorf("error %q suggests a cg extension command, which fails on the same ledger", err)
+		}
 	})
 	t.Run(".cg.json", func(t *testing.T) {
 		ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"})
@@ -423,15 +427,33 @@ func TestDispatchUnreadableStateFailsClosed(t *testing.T) {
 			t.Fatal(err)
 		}
 		pathProgram(t, "shop")
-		dispatchErr(t, []string{"shop", "add"}, workspace.ConfigFile)
+		dispatchErr(t, []string{"shop", "add"}, filepath.Join(ws, workspace.ConfigFile))
+		// From a subdirectory too: the error names the file, wherever it is.
+		sub := filepath.Join(ws, "sub")
+		if err := os.Mkdir(sub, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Chdir(sub)
+		dispatchErr(t, []string{"shop", "add"}, filepath.Join(ws, workspace.ConfigFile))
 	})
 }
 
-// The PATH fallback only looks up a plain name: a namespace with a path
-// separator never makes cg-<namespace> a path to run.
+// The PATH fallback only looks up a plain name: a namespace that LookPath
+// would take as a path (a separator, or a colon on Windows) is never run.
+func TestPlainName(t *testing.T) {
+	for ns, want := range map[string]bool{
+		"greet": true, "gh-dash": true, "Foo_2": true,
+		"x/../tool": false, `x\..\tool`: false, "x:tool": false, "": false,
+	} {
+		if got := plainName(ns); got != want {
+			t.Errorf("plainName(%q) = %v, want %v", ns, got, want)
+		}
+	}
+}
+
 func TestDispatchPathFallbackRefusesSeparators(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("executable-bit fixture is POSIX")
+		t.Skip("executable-bit fixture is POSIX; TestPlainName covers the Windows forms")
 	}
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -442,11 +464,53 @@ func TestDispatchPathFallbackRefusesSeparators(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", t.TempDir())
-	for _, ns := range []string{"x/../tool", `x\..\tool`} {
-		if run, err := externalDispatch([]string{ns}); run != nil || err != nil {
-			t.Errorf("externalDispatch(%q) = %+v, %v; want nothing", ns, run, err)
-		}
+	if run, err := externalDispatch([]string{"x/../tool"}); run != nil || err != nil {
+		t.Errorf("externalDispatch(x/../tool) = %+v, %v; want nothing", run, err)
 	}
+}
+
+// A broken ledger blocks only a namespace no readable entry declares: one a
+// readable ledger declares still runs.
+func TestDispatchUnreadableLedgerBlocksOnlyUndecided(t *testing.T) {
+	requireGit(t)
+	ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"}, []string{"beta", "pr"})
+	if err := os.WriteFile(extension.LedgerPath(ws, "alpha"), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if run := mustDispatch(t, "pr"); run.path != binOf(t, ws, "beta") {
+		t.Errorf("pr = %+v, want beta's", run)
+	}
+}
+
+// With an extension listed twice in .cg.json, dispatch runs a verified entry
+// when one of them verifies, as the install-time check counts it.
+func TestDispatchDuplicateEntryPrefersVerified(t *testing.T) {
+	requireGit(t)
+	ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"})
+	cfg, _ := workspace.Detect(ws)
+	stale := cfg.Extensions[0]
+	stale.Commit = strings.Repeat("0", 40) // a tree that isn't there
+	cfg.Extensions = append([]workspace.ExtensionRef{stale}, cfg.Extensions...)
+	if err := cfg.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	if run := mustDispatch(t, "shop"); run.command != "shop" {
+		t.Errorf("shop = %+v", run)
+	}
+}
+
+// The install-time check refuses when a ledger can't be read: it might
+// declare the incoming command.
+func TestInstallRefusesWithUnreadableLedger(t *testing.T) {
+	requireGit(t)
+	cfgHome, ws := t.TempDir(), newWorkspace(t)
+	installRepo(t, cfgHome, ws, commandsManifest("alpha", "1.0.0", "shop add"))
+	if err := os.WriteFile(extension.LedgerPath(ws, "alpha"), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repo := makeExtRepo(t, commandsManifest("beta", "1.0.0", "shop add"))
+	out, err := runExtCfg(t, cfgHome, ws, "install", repo)
+	wantConflict(t, err, out, extension.LedgerPath(ws, "alpha"))
 }
 
 // The S17 error names its remedy once.
