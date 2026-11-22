@@ -166,8 +166,10 @@ The session state file is `<badge root>/.claude/session-context/<id>.json`, wher
 `gitx.CommonRoot` of the session root (as `sessionRoots` computes it today).
 
 - **S35** WHEN `cg worktree create <slug>` runs with a session ID from `CG_SESSION_ID` or `CLAUDE_CODE_SESSION_ID`
-  that passes `ValidSessionID` THEN the session's state file records the worktree's absolute path (`worktree`),
-  keeping its other fields and creating the file when absent.
+  that passes `ValidSessionID`, and the new worktree belongs to the session's workspace repo (the repo of
+  `CG_WORKSPACE`, or of the current workspace when `CG_WORKSPACE` is unset) THEN the session's state file records
+  the worktree's absolute path (`worktree`), keeping its other fields and creating the file when absent. A worktree
+  created in any other repo (an external repo the session works in) leaves the record unchanged.
 - **S36** WHEN `cg session set-context --worktree <path>` runs THEN the path is recorded the same way, for
   workspaces that create worktrees with their own scripts (Q5). A path that isn't one of the repo's linked
   worktrees is refused: one not in `git worktree list`, and the main checkout (the list's first entry), so writers
