@@ -6,8 +6,9 @@ beyond the decision, for the owner's agreement.
 
 ## Terms
 
-- **Command:** one or more words, each matching `[a-z0-9-]+`, separated by single spaces, for example `live run`
-  or `coderabbit approve`. Its first word is its **namespace**.
+- **Command:** one or more words, each matching `[a-z0-9][a-z0-9-]*` (a letter or digit first, then letters, digits
+  or `-`), separated by single spaces, for example `live run` or `coderabbit approve`. Its first word is its
+  **namespace**.
 - **Declared command:** a command an installed extension's manifest lists under `contributes.commands`.
 - **Typed words:** the leading tokens after cg's own persistent flags, up to the first token that starts with `-`
   (or the end). `cg live run --until-pane x` has typed words `live run`.
@@ -42,8 +43,9 @@ the namespace word (Q4), so `cg live run --until-pane x` runs `bin/cg-live run -
 ### Manifest
 
 - **S1** WHEN a manifest declares `commands` entries with valid command words and binaries THEN it validates.
-- **S2** WHEN a `commands` entry has an empty command, a word outside `[a-z0-9-]+`, a double space, a leading or
-  trailing space, or an invalid binary THEN validation fails, naming the entry's index and the rule.
+- **S2** WHEN a `commands` entry has an empty command, a word outside `[a-z0-9][a-z0-9-]*` (a word starting with
+  `-` could never be typed, since typed words end at the first `-` token, Q7), a double space, a leading or trailing
+  space, or an invalid binary THEN validation fails, naming the entry's index and the rule.
 - **S3** WHEN one manifest declares the same command twice THEN validation fails, naming both indexes.
 - **S4** WHEN one manifest declares both `shop` and `shop add` THEN it validates: nesting inside one extension is
   allowed, and dispatch picks the longest match (S15).
@@ -62,8 +64,12 @@ extension installed in the workspace (from their pinned manifests, not their led
   fails the same way: a command inside another extension's command is a conflict in either direction.
 - **S8** WHEN two extensions declare different commands in one namespace (`pr merge` and `pr watch`) THEN both
   install, and each command dispatches to its own extension.
-- **S9** WHEN it declares a command whose namespace is a built-in (`start …`, `extension …`, `help …`) THEN install
-  fails, naming the built-in.
+- **S9** WHEN an extension declares a command whose namespace is a built-in (`start …`, `extension …`, `help …`)
+  and the extension doesn't already own that command THEN install, update and `cg init` fail, naming the built-in.
+  An extension already owns a command when its installed version declares it (on update: the version being
+  replaced; on `cg init`: the version recorded in `.cg.json`). An owned command whose namespace a later cg made a
+  built-in doesn't block update or `cg init`: cg prints a warning naming the command and the built-in, S14 flags
+  it, and the built-in still wins at dispatch (U1).
 - **S10** WHEN `cg extension update` (one target or all) brings versions whose commands conflict, with each other or
   with an extension not being updated, THEN the update fails before any target is applied, and every installed
   version stays. Moving a command from one extension to another in a single `cg extension update` (both targets)
@@ -112,9 +118,11 @@ Roots are checked in the consulted order. The first root whose ledgers have **an
   the check fail.
 - **S24** WHEN the current directory is not inside any workspace and `CG_WORKSPACE` is set THEN the session root is
   consulted, then the `PATH` fallback. *(The external-repo case of #248.)*
-- **S25** WHEN `CG_WORKSPACE` is relative, or names a directory with no valid `.cg.json` (for example a worktree the
-  session started in and that was removed since) THEN it is ignored, dispatch behaves as S19, and the
-  unknown-command hint says so.
+- **S25** WHEN `CG_WORKSPACE` is relative, or names a directory that is missing, has no `.cg.json`, or whose
+  `.cg.json` isn't a Consigliere workspace's (for example a worktree the session started in and that was removed
+  since) THEN it is ignored, dispatch behaves as S19, and the unknown-command hint says so. WHEN the `.cg.json`
+  exists but can't be read or parsed THEN dispatch stops with a usage error naming the file, as for an unreadable
+  current-directory workspace; it doesn't fall back to another workspace or the `PATH` fallback.
 - **S26** WHEN an external checkout has a planted `.cg.json` and a `.git` file pointing at the session's repo THEN it
   still counts as another workspace (the list is read from the session root only).
 - **S27** WHEN the caller's environment has `GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR` or any other variable git
