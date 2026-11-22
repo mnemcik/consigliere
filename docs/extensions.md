@@ -493,10 +493,13 @@ the declared commands of the workspaces it consults, in order (see
 3. Before running a binary, cg re-checks the entry against the extension's
    manifest in its tree at the recorded commit, as above. An entry that fails
    stops dispatch with an error naming the extension and the fix, to run in the
-   workspace that served it: remove the extension's store tree if it is still
-   there and run `cg init --force` (which restores only a missing tree), or
-   `cg extension update <name>`; or correct the entry when its `path` in
-   `.cg.json` is invalid. cg never falls back to another program for it. Two
+   workspace that served it. For a damaged tree (its manifest can't be read, or
+   the binary is gone): remove the extension's store tree if it is still there
+   and run `cg init --force` (which restores only a missing tree), or
+   `cg extension update <name>`. For a ledger that disagrees with an intact
+   manifest: `cg extension update <name>` (the tree is shared by other
+   workspaces, so it stays). For an invalid `path` in `.cg.json`: correct the
+   entry. cg never falls back to another program for it. Two
    ledgers declaring the same command in the namespace (a hand-edited or pulled
    `.cg.json`) stop dispatch too. So does a `.cg.json` or ledger that can't be
    read (it might declare the command; the error names the file to restore),

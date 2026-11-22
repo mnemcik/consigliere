@@ -678,3 +678,75 @@ func TestVerifiedCommandBinaryMismatch(t *testing.T) {
 		t.Error("a missing binary was accepted")
 	}
 }
+
+// Two extensions from one repo at one commit share a store tree. After the
+// tree is removed, cg init --force re-applies both: a tree this run fetched
+// counts as missing for a later entry too.
+func TestInitRestoresBothExtensionsOfASharedTree(t *testing.T) {
+	requireGit(t)
+	cfgHome := t.TempDir()
+	ws := newWorkspace(t)
+	repo := makeMonorepo(t, map[string]string{
+		"one": commandsManifest("one", "0.1.0", "uno"),
+		"two": commandsManifest("two", "0.1.0", "dos"),
+	})
+	for _, sub := range []string{"one", "two"} {
+		if out, err := runExtCfg(t, cfgHome, ws, "install", repo, "--path", sub); err != nil {
+			t.Fatalf("install %s: %v\n%s", sub, err, out)
+		}
+	}
+	// Both ledgers lose their commands; only re-applying restores them.
+	for _, n := range []string{"one", "two"} {
+		led := ledgerOf(t, ws, n)
+		led.Commands = nil
+		if err := led.Save(ws); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg, _ := workspace.Detect(ws)
+	if err := os.RemoveAll(extension.SourceRoot(findRef(cfg.Extensions, "one"))); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := runInitForce(t, cfgHome, ws); err != nil {
+		t.Fatalf("init: %v\n%s", err, out)
+	}
+	for _, n := range []string{"one", "two"} {
+		if led := ledgerOf(t, ws, n); len(led.Commands) != 1 {
+			t.Errorf("%s not re-applied: %+v", n, led.Commands)
+		}
+	}
+}
+
+// A restore that fails while applying removes the trees it fetched for the
+// entries it didn't apply, so the next cg init restores them, and keeps the
+// trees of the entries it did apply.
+func TestInitApplyFailureLeavesUnappliedTreesMissing(t *testing.T) {
+	requireGit(t)
+	cfgHome := t.TempDir()
+	ws := newWorkspace(t)
+	installRepo(t, cfgHome, ws, commandsManifest("alpha", "1.0.0", "aa"))
+	installRepo(t, cfgHome, ws, commandsManifest("beta", "1.0.0", "bb"))
+	cfg, _ := workspace.Detect(ws)
+	alphaRef, betaRef := *findRef(cfg.Extensions, "alpha"), *findRef(cfg.Extensions, "beta")
+	if err := os.RemoveAll(filepath.Join(cfgHome, "consigliere", "extensions")); err != nil {
+		t.Fatal(err)
+	}
+	// beta's note is replaced by a directory, so applying beta (after alpha)
+	// fails.
+	note := filepath.Join(ws, "notes", "beta.md")
+	if err := os.Remove(note); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(note, "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := runInitForce(t, cfgHome, ws); err == nil {
+		t.Fatalf("init succeeded despite the blocked note:\n%s", out)
+	}
+	if _, err := os.Lstat(extension.SourceRoot(&betaRef)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("beta's unapplied tree left behind (%v)", err)
+	}
+	if _, err := os.Stat(extension.SourceRoot(&alphaRef)); err != nil {
+		t.Errorf("alpha was applied, but its tree was removed (%v)", err)
+	}
+}

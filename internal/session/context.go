@@ -289,7 +289,7 @@ func sameRecord(m map[string]any, path string) bool {
 		return false
 	}
 	a, b := filepath.ToSlash(v), filepath.ToSlash(path)
-	if isWindows { // drive letters and paths are case-insensitive there
+	if isWindows || runtime.GOOS == "darwin" { // case-insensitive filesystems by default
 		return strings.EqualFold(a, b)
 	}
 	return a == b

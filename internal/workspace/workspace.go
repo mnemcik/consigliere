@@ -3,7 +3,6 @@ package workspace
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -277,11 +276,6 @@ func Detect(dir string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			// A .cg.json entry that exists but can't be followed (a
-			// dangling symlink) is broken, not absent.
-			if _, lerr := os.Lstat(path); lerr == nil {
-				return nil, fmt.Errorf("%s: %w", path, err)
-			}
 			return nil, nil
 		}
 		return nil, err

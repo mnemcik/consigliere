@@ -365,20 +365,24 @@ func printGitHookWarnings(w io.Writer, msgs []string) {
 func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspace.ExtensionRef) (_ []workspace.ExtensionRef, _ []string, retErr error) {
 	out := append([]workspace.ExtensionRef(nil), exts...)
 	// The trees this run fetches for pinned entries were missing, which is
-	// how this run tells "not restored yet". If it stops before applying any
-	// of them (a fetch or the command check fails), they are removed again,
-	// so the next cg init restores those extensions instead of taking their
-	// source for present.
+	// how cg init tells "not restored yet". If it stops with an error, the
+	// ones no applied entry uses are removed again, so the next cg init
+	// restores those extensions instead of taking their source for present.
 	var fetched []string
-	applying := false
+	fetchedSet := map[string]bool{}
+	applied := map[string]bool{} // trees of entries already applied
 	defer func() {
-		if retErr != nil && !applying {
-			for _, t := range fetched {
-				if rerr := os.RemoveAll(t); rerr != nil {
-					// Left in place, the tree would look restored to the
-					// next cg init.
-					retErr = fmt.Errorf("%w; also couldn't remove %s (%w): remove it before the next cg init", retErr, t, rerr)
-				}
+		if retErr == nil {
+			return
+		}
+		for _, t := range fetched {
+			if applied[t] {
+				continue
+			}
+			if rerr := os.RemoveAll(t); rerr != nil {
+				// Left in place, the tree would look restored to the next
+				// cg init.
+				retErr = fmt.Errorf("%w; also couldn't remove %s (%w): remove it before the next cg init", retErr, t, rerr)
 			}
 		}
 	}()
@@ -388,6 +392,7 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		manifestDir string
 		prev        string // base for a ledger that predates content ids
 		commit      string
+		tree        string // the entry's source root in the store
 	}
 	var (
 		todo    []restore
@@ -396,7 +401,9 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 	incoming := map[string][]extension.CommandContribution{}
 	for i := range out {
 		e := &out[i]
-		if _, err := os.Stat(extension.SourceRoot(e)); err == nil {
+		// A tree this run fetched for an earlier entry (two extensions of
+		// one repo at one commit share it) still counts as missing.
+		if _, err := os.Stat(extension.SourceRoot(e)); err == nil && !fetchedSet[extension.SourceRoot(e)] {
 			present = append(present, *e)
 			continue // source present; nothing to restore
 		}
@@ -418,7 +425,10 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 			if err != nil {
 				return out, nil, cgerr.New(cgerr.ExitUsage, "restoring %q at %s: %v", e.Name, commit[:12], err)
 			}
-			fetched = append(fetched, extension.SourceRoot(e))
+			if t := extension.SourceRoot(e); !fetchedSet[t] {
+				fetchedSet[t] = true
+				fetched = append(fetched, t)
+			}
 			m, err = loadValidManifest(filepath.Join(tree, path), e.Name)
 		} else {
 			m, tree, commit, err = installFrom(cmd.Context(), e.Repo, "", path)
@@ -433,7 +443,7 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		if extension.ValidCommit(e.Commit) {
 			prev = filepath.Join(tree, path)
 		}
-		todo = append(todo, restore{e: e, m: m, manifestDir: filepath.Join(tree, path), prev: prev, commit: commit})
+		todo = append(todo, restore{e: e, m: m, manifestDir: filepath.Join(tree, path), prev: prev, commit: commit, tree: extension.SourceRoot(e)})
 		incoming[m.Name] = m.Contributes.Commands
 	}
 	// S9: every command cg init restores counts as owned, so a built-in
@@ -443,12 +453,12 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		return out, nil, err
 	}
 	printCommandWarnings(commandErr(cmd), warnings)
-	applying = true
 	var done []string
 	for _, r := range todo {
 		if _, err := reapply(root, r.manifestDir, r.m, r.prev, r.prev != "", false); err != nil {
 			return out, done, err
 		}
+		applied[r.tree] = true
 		r.e.Commit = r.commit
 		done = append(done, fmt.Sprintf("extension %q v%s (re-installed at %s)", r.m.Name, r.m.Version, r.commit[:12]))
 	}

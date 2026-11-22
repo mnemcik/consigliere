@@ -219,8 +219,19 @@ func consultedRoots() (roots []string, cwdErr error) {
 		return sessionOnly(sroot), cwdErr
 	}
 	root, _, err := workspace.FindRoot(cwd)
+	if err == nil {
+		// FindRoot walks past a .cg.json it can't follow (a dangling
+		// symlink, read as absent); for dispatch it might declare the
+		// command, so it counts as unreadable.
+		if dangling := danglingConfig(cwd, root); dangling != "" {
+			err = fmt.Errorf("%s is a dangling symlink", dangling)
+		}
+	}
 	if err != nil {
 		broken := unreadableConfig(cwd)
+		if broken == "" {
+			broken = danglingConfig(cwd, root)
+		}
 		name := broken
 		if name == "" {
 			name = "a " + workspace.ConfigFile + " in or above " + cwd
@@ -601,6 +612,28 @@ func gitDirIn(dir, common string) bool {
 	return samePath(bp, dotGit)
 }
 
+// danglingConfig names the first .cg.json from dir upwards, up to and
+// including stop (the root FindRoot found; "" walks to the filesystem root),
+// that is an entry whose target doesn't exist (a dangling symlink), or "".
+func danglingConfig(dir, stop string) string {
+	for d := filepath.Clean(dir); ; {
+		p := filepath.Join(d, workspace.ConfigFile)
+		if _, lerr := os.Lstat(p); lerr == nil {
+			if _, serr := os.Stat(p); errors.Is(serr, fs.ErrNotExist) {
+				return p
+			}
+		}
+		if stop != "" && d == filepath.Clean(stop) {
+			return ""
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			return ""
+		}
+		d = parent
+	}
+}
+
 // unreadableConfig names the first .cg.json from dir upwards that
 // workspace.Detect can't read, the one FindRoot stopped at, or "" when none
 // fails any more (a transient error).
@@ -634,6 +667,13 @@ type commandEntry struct {
 	// badPath says the extension's .cg.json entry has an invalid path: only
 	// editing it helps.
 	badPath bool
+	// mismatch says the tree is intact but the ledger disagrees with its
+	// manifest: cg extension update rewrites the ledger (removing the tree,
+	// which other workspaces share, would only break them).
+	mismatch bool
+	// legacy says the entry records no commit: its source is the legacy
+	// clone, and cg init reinstalls it from the default branch.
+	legacy bool
 	// tree is the extension's whole pinned tree in the store (its source
 	// root, not the subdirectory of a co-located extension): what cg init
 	// checks before restoring.
@@ -685,12 +725,13 @@ func namespaceEntries(root, ns string) ([]commandEntry, error) {
 					badPath = errors.Is(verr, errBadPath)
 				}
 			}
-			entry := commandEntry{ext: c, name: e.Name, unverified: why, badPath: badPath, tree: tree}
+			entry := commandEntry{ext: c, name: e.Name, unverified: why, badPath: badPath, tree: tree, legacy: !extension.ValidCommit(e.Commit)}
 			if why == "" {
 				entry.bin = filepath.Join(dir, "bin", c.Binary)
 				switch {
 				case !slices.Contains(m.Contributes.Commands, c):
 					entry.unverified = "its manifest doesn't declare that command with that binary"
+					entry.mismatch = true
 				case !verifiedCommand(dir, m, c):
 					entry.unverified = "its binary " + entry.bin + " is missing"
 				}
@@ -765,13 +806,21 @@ func dispatchIn(root string, typed []string) (run *externalRun, decided bool, er
 			strings.Join(typed, " "), root, ns, strings.Join(cmds, "\n"))
 	}
 	if best.unverified != "" {
-		// Both remedies rewrite the ledger from a manifest. cg init restores
-		// only a tree that is missing, and re-initialises an existing
-		// workspace only with --force, so a damaged tree has to go first.
+		// A damaged tree (manifest unreadable, binary missing): cg init
+		// restores only a tree that is missing, and re-initialises an
+		// existing workspace only with --force, so it has to go first; other
+		// workspaces sharing it were damaged too and re-export it the same
+		// way. update moves to the latest version instead.
 		fix := fmt.Sprintf("remove %s if it is still there and run `cg init --force` in %s to re-export the recorded version, or run `cg extension update %s` there to move to its latest",
 			best.tree, root, best.name)
-		if best.badPath {
+		switch {
+		case best.badPath:
 			fix = fmt.Sprintf("correct its entry in %s", filepath.Join(root, workspace.ConfigFile))
+		case best.legacy && !best.mismatch:
+			fix = fmt.Sprintf("remove %s if it is still there and run `cg init --force` in %s to reinstall it from its default branch, or run `cg extension update %s` there",
+				best.tree, root, best.name)
+		case best.mismatch:
+			fix = fmt.Sprintf("run `cg extension update %s` in %s to rewrite its record (its tree is intact and shared with other workspaces, so leave it)", best.name, root)
 		}
 		return nil, true, cgerr.New(cgerr.ExitUsage,
 			"cg %s: extension %q (installed in %s) can't run it: %s; %s",
@@ -884,29 +933,23 @@ func workspaceRootForDispatch() string {
 }
 
 // fallbackNamespace folds a typed namespace to the name the PATH lookup would
-// match: lower-cased (LookPath matches case-insensitively on macOS and
-// Windows filesystems) and, on Windows, without a PATHEXT suffix (cg-shop.exe
-// is cg-shop there).
+// match: lower-cased where the filesystem is case-insensitive (macOS,
+// Windows), and on Windows without an extension.
 func fallbackNamespace(ns string) string {
-	ns = strings.ToLower(ns)
-	if !isWindowsOS {
-		return ns
+	if foldsCase {
+		ns = strings.ToLower(ns)
 	}
-	ext := strings.ToLower(filepath.Ext(ns))
-	if ext == "" {
-		return ns
-	}
-	pathext := os.Getenv("PATHEXT")
-	if pathext == "" {
-		pathext = ".com;.exe;.bat;.cmd"
-	}
-	for _, e := range strings.Split(strings.ToLower(pathext), ";") {
-		if e != "" && e == ext {
-			return strings.TrimSuffix(ns, ext)
-		}
+	if isWindowsOS {
+		// LookPath tries a name that already has any extension as is, so
+		// cg-shop.bat is reachable as `cg shop.bat` whatever PATHEXT says.
+		ns = strings.TrimSuffix(ns, filepath.Ext(ns))
 	}
 	return ns
 }
+
+// foldsCase says the PATH lookup matches names case-insensitively, as the
+// default filesystems on macOS and Windows do.
+const foldsCase = isWindowsOS || runtime.GOOS == "darwin"
 
 // declaredSpelling returns the namespace a consulted root declares that the
 // typed namespace spells differently but the PATH lookup would still match

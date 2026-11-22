@@ -209,7 +209,19 @@ func TestDispatchStopsOnUnverifiedEntry(t *testing.T) {
 			ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"})
 			tc.setup(t, ws)
 			pathProgram(t, "shop")
-			dispatchErr(t, tc.args, `"alpha"`, "cg init", "cg extension update alpha")
+			// A damaged tree is re-exported by cg init; a ledger that
+			// disagrees with an intact manifest is rewritten by update
+			// (the tree is shared: removing it would break other workspaces).
+			fix := "cg init --force"
+			if tc.name == "command not in the manifest" || tc.name == "binary differs" {
+				fix = "cg extension update alpha"
+			}
+			dispatchErr(t, tc.args, `"alpha"`, fix)
+			if fix == "cg extension update alpha" {
+				if _, err := externalDispatch(tc.args); err != nil && strings.Contains(err.Error(), "remove ") {
+					t.Errorf("a ledger mismatch must not advise removing the shared tree: %v", err)
+				}
+			}
 		})
 	}
 }
@@ -647,6 +659,13 @@ func TestDispatchLegacyEntry(t *testing.T) {
 	if run := mustDispatch(t, "secret", "get"); run.path != bin || run.command != "secret" {
 		t.Errorf("legacy run = %+v, want %s", run, bin)
 	}
+	// Damaged: the remedy says init reinstalls it from the default branch.
+	if err := os.Remove(bin); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := externalDispatch([]string{"secret"}); err == nil || !strings.Contains(err.Error(), "default branch") {
+		t.Errorf("legacy remedy = %v, want it to say init reinstalls from the default branch", err)
+	}
 }
 
 // Cobra's completion requests, with and without descriptions, are never
@@ -728,29 +747,46 @@ func TestDispatchPathFallbackRefusesDeclaredNamespaceSpellings(t *testing.T) {
 	requireGit(t)
 	dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"})
 	pathProgram(t, "shop")
-	spellings := []string{"Shop", "SHOP"}
+	var spellings []string
+	if foldsCase {
+		spellings = append(spellings, "Shop", "SHOP")
+	}
 	if isWindowsOS {
-		spellings = append(spellings, "shop.exe", "Shop.EXE")
+		// LookPath tries a name that already has any extension as is.
+		spellings = append(spellings, "shop.exe", "Shop.EXE", "shop.bat", "shop.anything")
+	}
+	if len(spellings) == 0 {
+		t.Skip("PATH lookups are case-sensitive and take no extensions here")
 	}
 	for _, ns := range spellings {
 		dispatchErr(t, []string{ns, "add"}, `"shop"`)
 	}
-	// An undeclared namespace in another case still reaches PATH.
+	// An undeclared namespace, in any case, still reaches PATH.
 	p := pathProgram(t, "greet")
 	if run := mustDispatch(t, "greet"); run.path != p {
 		t.Errorf("greet = %+v", run)
+	}
+	if foldsCase {
+		if run, err := externalDispatch([]string{"Greet"}); err != nil || run == nil {
+			t.Errorf("Greet = %+v, %v; want the PATH program", run, err)
+		}
 	}
 }
 
 // fallbackNamespace folds a typed word to the namespace LookPath would match.
 func TestFallbackNamespace(t *testing.T) {
-	t.Setenv("PATHEXT", ".COM;.EXE;.BAT")
-	cases := map[string]string{"Shop": "shop", "shop": "shop", "gh-dash": "gh-dash"}
-	if isWindowsOS {
+	cases := map[string]string{"shop": "shop", "gh-dash": "gh-dash"}
+	switch {
+	case isWindowsOS:
+		cases["Shop"] = "shop"
 		cases["shop.exe"] = "shop"
 		cases["Shop.Bat"] = "shop"
-		cases["shop.txt"] = "shop.txt"
-	} else {
+		cases["shop.txt"] = "shop"
+	case foldsCase: // macOS
+		cases["Shop"] = "shop"
+		cases["shop.exe"] = "shop.exe"
+	default: // Linux: case-sensitive, no extensions
+		cases["Shop"] = "Shop"
 		cases["shop.exe"] = "shop.exe"
 	}
 	for in, want := range cases {
