@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -57,19 +58,15 @@ func verifiedCommand(dir string, m *extension.Manifest, c extension.CommandContr
 // twice (a hand-edited .cg.json) contributes the union of what each entry
 // verifies, each command once: for a refusal check, counting more is the safe
 // side. A ledger that can't be read is an error, since it might declare any
-// command, unless nothing incoming declares a command or the extension is
-// itself being replaced (skip), when it can't conflict.
-func installedCommands(root string, exts []workspace.ExtensionRef, skip map[string][]extension.CommandContribution) (map[string][]extension.CommandContribution, error) {
+// command, unless nothing incoming declares a command (anyIncoming false), when
+// it can't conflict.
+func installedCommands(root string, exts []workspace.ExtensionRef, anyIncoming bool) (map[string][]extension.CommandContribution, error) {
 	out := map[string][]extension.CommandContribution{}
-	anyIncoming := false
-	for _, cs := range skip {
-		anyIncoming = anyIncoming || len(cs) > 0
-	}
 	for i := range exts {
 		e := &exts[i]
 		led, err := extension.LoadLedger(root, e.Name)
 		if err != nil {
-			if _, replaced := skip[e.Name]; replaced || !anyIncoming {
+			if !anyIncoming {
 				continue
 			}
 			return nil, unreadableLedgerError(root, e.Name, err)
@@ -114,8 +111,18 @@ func builtinFor(command string) string {
 // checkCommands refuses, before anything is applied, incoming commands (keyed
 // by extension name) that conflict with each other, with the verified commands
 // of the extensions installed in the workspace at root, or with a built-in.
+// Each incoming extension's own ledger must be readable too: applying it
+// reads that ledger, and failing there would leave a multi-extension
+// operation half applied.
 func checkCommands(root string, installed []workspace.ExtensionRef, incoming map[string][]extension.CommandContribution) error {
-	have, err := installedCommands(root, installed, incoming)
+	anyIncoming := false
+	for _, name := range slices.Sorted(maps.Keys(incoming)) {
+		if _, err := extension.LoadLedger(root, name); err != nil {
+			return unreadableLedgerError(root, name, err)
+		}
+		anyIncoming = anyIncoming || len(incoming[name]) > 0
+	}
+	have, err := installedCommands(root, installed, anyIncoming)
 	if err != nil {
 		return err
 	}

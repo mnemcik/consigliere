@@ -541,9 +541,37 @@ func TestUnreadableLedgerBlocksOnlyIncomingCommands(t *testing.T) {
 	if err := checkCommands(ws, cfg.Extensions, map[string][]extension.CommandContribution{"beta": nil}); err != nil {
 		t.Errorf("no incoming command: %v", err)
 	}
-	if err := checkCommands(ws, cfg.Extensions, map[string][]extension.CommandContribution{
-		"alpha": {{Command: "shop add", Binary: "cg-alpha"}}}); err != nil {
+	// Replacing alpha itself would fail later, reading the same ledger:
+	// refuse up front, naming it.
+	err := checkCommands(ws, cfg.Extensions, map[string][]extension.CommandContribution{
+		"alpha": {{Command: "shop add", Binary: "cg-alpha"}}})
+	if err == nil || !strings.Contains(err.Error(), extension.LedgerPath(ws, "alpha")) {
 		t.Errorf("replacing alpha itself: %v", err)
+	}
+}
+
+// A multi-target update refuses before applying any target when one target's
+// ledger can't be read.
+func TestUpdateRefusesBeforeApplyingWithUnreadableTargetLedger(t *testing.T) {
+	requireGit(t)
+	for name, cmds := range map[string][][]string{
+		"with commands":    {{"shop"}, {"pr"}},
+		"without commands": {nil, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfgHome, ws := t.TempDir(), newWorkspace(t)
+			alpha := installRepo(t, cfgHome, ws, commandsManifest("alpha", "1.0.0", cmds[0]...))
+			beta := installRepo(t, cfgHome, ws, commandsManifest("beta", "1.0.0", cmds[1]...))
+			updateExtRepo(t, alpha, commandsManifest("alpha", "1.1.0", cmds[0]...), "")
+			updateExtRepo(t, beta, commandsManifest("beta", "1.1.0", cmds[1]...), "")
+			if err := os.WriteFile(extension.LedgerPath(ws, "beta"), []byte("{"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			before := snapshotDir(t, ws)
+			out, err := runExtCfg(t, cfgHome, ws, "update")
+			wantConflict(t, err, out, extension.LedgerPath(ws, "beta"), "restore it")
+			assertUnchanged(t, ws, before)
+		})
 	}
 }
 

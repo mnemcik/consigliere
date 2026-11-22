@@ -456,8 +456,8 @@ An installed extension's commands are read from its ledger and counted only
 when its manifest, in its tree at the recorded commit, declares the same
 command with the same binary and that binary exists. A ledger that can't be
 read might declare anything, so install, update and `cg init` refuse incoming
-commands until it is restored (unless it belongs to the extension being
-replaced). The ledger is committed
+commands until it is restored; and an extension being installed, updated or
+restored needs its own ledger readable, so nothing is applied when one isn't. The ledger is committed
 in the workspace, so it isn't trusted on its own, just as for the
 [launcher](#contribution-points).
 
@@ -487,8 +487,8 @@ the workspace's declared commands:
    `.cg.json` is invalid. cg never falls back to another program for it. Two
    ledgers declaring the same command in the namespace (a hand-edited or pulled
    `.cg.json`) stop dispatch too. So does a `.cg.json` or ledger that can't be
-   read (it might declare the command), and a current directory cg can't
-   determine: the error names the file to restore.
+   read (it might declare the command; the error names the file to restore),
+   and a current directory cg can't determine.
 4. When no installed extension declares any command in the namespace, cg runs a
    `cg-<namespace>` executable on `$PATH`, if there is one, with the arguments
    after the namespace (a plain name: one with a path separator or a colon is
