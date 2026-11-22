@@ -51,7 +51,7 @@
 
 ## PR
 
-- [ ] Final independent review over the whole PR
+- [x] Final independent review over the whole PR (4 rounds; round 4 clean; follow-ups in #307)
 - [ ] PR opened, CI green on Linux, macOS, Windows; CodeRabbit handled
 - [ ] Cross-repo PRs (registry schema, cg-extensions manifests, `cg-shop`, `cg-tmux`, note)
 - [ ] Maintainer merges; release 2.0.0; X5 end to end
