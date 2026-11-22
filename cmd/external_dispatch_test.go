@@ -664,23 +664,45 @@ func TestDispatchCompletionBypass(t *testing.T) {
 	}
 }
 
-// The S17 remedy names the workspace to run it in; a damaged tree gets a
-// procedure that re-exports the recorded commit.
-func TestDispatchUnverifiedRemedy(t *testing.T) {
+// The S17 remedy names the workspace to run it in, and following it repairs
+// a damaged tree, also for an extension in a subdirectory of its repo: the
+// whole store tree is removed and `cg init --force` re-exports it.
+func TestDispatchUnverifiedRemedyRepairs(t *testing.T) {
 	requireGit(t)
-	ws := dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"})
-	tree := filepath.Dir(filepath.Dir(binOf(t, ws, "alpha")))
-	if err := os.Remove(filepath.Join(tree, extension.ManifestFile)); err != nil {
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	ws := newWorkspace(t)
+	repo := makeMonorepo(t, map[string]string{"shopping": commandsManifest("shopping", "0.1.0", "shop")})
+	if out, err := runExtCfg(t, cfgHome, ws, "install", repo, "--path", "shopping"); err != nil {
+		t.Fatalf("install: %v\n%s", err, out)
+	}
+	cfg, _ := workspace.Detect(ws)
+	ref := findRef(cfg.Extensions, "shopping")
+	root := extension.SourceRoot(ref)
+	// Damage the tree: the binary is gone.
+	if err := os.Remove(filepath.Join(root, "shopping", "bin", "cg-shopping")); err != nil {
 		t.Fatal(err)
 	}
+	t.Chdir(ws)
 	_, err := externalDispatch([]string{"shop"})
 	if err == nil {
-		t.Fatal("no error")
+		t.Fatal("no error for a damaged tree")
 	}
-	for _, want := range []string{"in " + ws, "remove " + tree} {
+	for _, want := range []string{"remove " + root + " ", "`cg init --force` in " + ws, "cg extension update shopping"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q lacks %q", err, want)
 		}
+	}
+	// Follow it.
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+	if out, ierr := runInitForce(t, cfgHome, ws); ierr != nil {
+		t.Fatalf("cg init --force: %v\n%s", ierr, out)
+	}
+	t.Chdir(ws)
+	if run := mustDispatch(t, "shop"); run.command != "shop" {
+		t.Errorf("after the repair: %+v", run)
 	}
 }
 
@@ -697,4 +719,43 @@ func TestDispatchDanglingCwdConfig(t *testing.T) {
 	t.Chdir(dir)
 	pathProgram(t, "shop")
 	dispatchErr(t, []string{"shop"}, filepath.Join(dir, workspace.ConfigFile))
+}
+
+// S33: a declared namespace never reaches PATH, also when typed in another
+// case (LookPath matches case-insensitively on macOS and Windows) or, on
+// Windows, with a PATHEXT suffix.
+func TestDispatchPathFallbackRefusesDeclaredNamespaceSpellings(t *testing.T) {
+	requireGit(t)
+	dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"})
+	pathProgram(t, "shop")
+	spellings := []string{"Shop", "SHOP"}
+	if isWindowsOS {
+		spellings = append(spellings, "shop.exe", "Shop.EXE")
+	}
+	for _, ns := range spellings {
+		dispatchErr(t, []string{ns, "add"}, `"shop"`)
+	}
+	// An undeclared namespace in another case still reaches PATH.
+	p := pathProgram(t, "greet")
+	if run := mustDispatch(t, "greet"); run.path != p {
+		t.Errorf("greet = %+v", run)
+	}
+}
+
+// fallbackNamespace folds a typed word to the namespace LookPath would match.
+func TestFallbackNamespace(t *testing.T) {
+	t.Setenv("PATHEXT", ".COM;.EXE;.BAT")
+	cases := map[string]string{"Shop": "shop", "shop": "shop", "gh-dash": "gh-dash"}
+	if isWindowsOS {
+		cases["shop.exe"] = "shop"
+		cases["Shop.Bat"] = "shop"
+		cases["shop.txt"] = "shop.txt"
+	} else {
+		cases["shop.exe"] = "shop.exe"
+	}
+	for in, want := range cases {
+		if got := fallbackNamespace(in); got != want {
+			t.Errorf("fallbackNamespace(%q) = %q, want %q", in, got, want)
+		}
+	}
 }

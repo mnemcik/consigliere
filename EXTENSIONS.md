@@ -169,7 +169,7 @@ anything, if another installed extension declares the same command or one nested
 with it (`pr` against `pr merge`), or if your namespace is a built-in `cg`
 command (`start`, `extension`, `help`, …): built-ins always take precedence, so
 you cannot shadow the framework. If a later `cg` adds a built-in in a namespace
-you already use, your installed commands keep working through updates with a
+you already use, your installed commands stay installed through updates, with a
 warning (they can't run while the built-in exists), but you can't add new ones
 there: move them to another namespace.
 

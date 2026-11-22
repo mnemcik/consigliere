@@ -99,8 +99,8 @@ func RunClean(ctx context.Context, dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-// RunCleanRaw is RunClean returning stdout unmodified, for NUL-separated
-// output such as `git worktree list -z`.
+// RunCleanRaw is RunClean returning stdout unmodified, for output whose exact
+// bytes matter (paths with leading or trailing spaces).
 func RunCleanRaw(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	env, err := cleanEnv(ctx)
 	if err != nil {

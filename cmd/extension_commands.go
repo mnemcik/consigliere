@@ -148,7 +148,7 @@ func checkCommands(root string, installed []workspace.ExtensionRef, incoming map
 	for i, c := range conflicts {
 		lines[i] = "  " + c.String()
 	}
-	return nil, cgerr.New(cgerr.ExitUsage, "extension commands conflict, so nothing was changed:\n%s", strings.Join(lines, "\n"))
+	return nil, cgerr.New(cgerr.ExitUsage, "extension commands conflict, so no extension was applied:\n%s", strings.Join(lines, "\n"))
 }
 
 // ownedCommands returns, for each incoming extension that is installed, the

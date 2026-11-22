@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -280,5 +281,12 @@ func ClearWorktreeAll(root, path string) error {
 // earlier build still matches).
 func sameRecord(m map[string]any, path string) bool {
 	v, _ := m[keyWorktree].(string)
-	return v != "" && filepath.ToSlash(v) == filepath.ToSlash(path)
+	if v == "" {
+		return false
+	}
+	a, b := filepath.ToSlash(v), filepath.ToSlash(path)
+	if runtime.GOOS == "windows" { // drive letters and paths are case-insensitive there
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }

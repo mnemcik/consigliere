@@ -492,8 +492,10 @@ the declared commands of the workspaces it consults, in order (see
    namespace to reach its binary declares the namespace itself too.
 3. Before running a binary, cg re-checks the entry against the extension's
    manifest in its tree at the recorded commit, as above. An entry that fails
-   stops dispatch with an error naming the extension and the fix: `cg init` or
-   `cg extension update <name>`, or correcting the entry when its `path` in
+   stops dispatch with an error naming the extension and the fix, to run in the
+   workspace that served it: remove the extension's store tree if it is still
+   there and run `cg init --force` (which restores only a missing tree), or
+   `cg extension update <name>`; or correct the entry when its `path` in
    `.cg.json` is invalid. cg never falls back to another program for it. Two
    ledgers declaring the same command in the namespace (a hand-edited or pulled
    `.cg.json`) stop dispatch too. So does a `.cg.json` or ledger that can't be
@@ -582,8 +584,8 @@ where:
    session's workspace lists it, and it isn't the main checkout). Without such
    a record, a session started in a linked worktree gets that worktree (the
    session's workspace itself); one started in the main checkout gets none.
-   The linked-worktree test needs git 2.31 or later (`rev-parse
-   --path-format`); with an older git it is never set.
+   That fallback (the linked-worktree test) needs git 2.31 or later (`rev-parse
+   --path-format`); with an older git only a recorded worktree is passed on.
 2. Else `CG_EXTENSION_WORKSPACE`, when the current directory is inside it.
 3. Else, when `CG_EXTENSION_WORKSPACE` is set (the session's workspace served a
    command for an outside directory, with no worktree known), refuse, naming

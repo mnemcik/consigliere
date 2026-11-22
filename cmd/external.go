@@ -160,6 +160,12 @@ func externalDispatch(args []string) (*externalRun, error) {
 	if !plainName(typed[0]) {
 		return nil, nil
 	}
+	// A declared namespace never reaches PATH (S33), also when typed in a
+	// spelling the PATH lookup would still match.
+	if ns := declaredSpelling(roots, typed[0]); ns != "" {
+		return nil, cgerr.New(cgerr.ExitUsage,
+			"unknown command \"cg %s\": the namespace %q is an extension's (did you mean `cg %s`?)", typed[0], ns, ns)
+	}
 	if p, err := exec.LookPath("cg-" + typed[0]); err == nil {
 		return &externalRun{path: p, args: rest}, nil
 	}
@@ -374,6 +380,25 @@ func servedFromOutside(root string) bool {
 func sessionWorktreeFor(sroot string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	// S38: the recorded worktree. Only the common dir is needed (no
+	// --path-format, which needs git 2.31).
+	if id := resolveSessionID(""); session.ValidSessionID(id) {
+		if out, err := gitx.RunCleanRaw(ctx, sroot, "rev-parse", "--git-common-dir"); err == nil {
+			if lines := gitLines(out); len(lines) == 1 {
+				common := gitx.OSPath(lines[0])
+				if !filepath.IsAbs(common) {
+					common = filepath.Join(sroot, common) // relative to where git ran
+				}
+				// The state file lives under the main checkout: the common dir's parent.
+				if c, rerr := session.ReadContext(canonicalPath(filepath.Dir(common)), id); rerr == nil && c != nil && c.Worktree != "" &&
+					sessionRepoWorktree(ctx, sroot, c.Worktree) {
+					return c.Worktree
+				}
+			}
+		}
+	}
+	// S38b: the session root itself when it is a linked worktree, decided
+	// exactly as the spec states.
 	out, err := gitx.RunCleanRaw(ctx, sroot, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir", "--git-common-dir")
 	if err != nil {
 		return ""
@@ -382,15 +407,7 @@ func sessionWorktreeFor(sroot string) string {
 	if len(lines) != 3 {
 		return ""
 	}
-	top, gitDir, common := gitx.OSPath(lines[0]), gitx.OSPath(lines[1]), gitx.OSPath(lines[2])
-	if id := resolveSessionID(""); session.ValidSessionID(id) {
-		// The state file lives under the main checkout: the common dir's parent.
-		if c, rerr := session.ReadContext(canonicalPath(filepath.Dir(common)), id); rerr == nil && c != nil && c.Worktree != "" &&
-			sessionRepoWorktree(ctx, sroot, c.Worktree) {
-			return c.Worktree
-		}
-	}
-	if linkedWorktreeRoot(sroot, top, gitDir, common) {
+	if linkedWorktreeRoot(sroot, gitx.OSPath(lines[0]), gitx.OSPath(lines[1]), gitx.OSPath(lines[2])) {
 		return sroot
 	}
 	return ""
@@ -617,7 +634,9 @@ type commandEntry struct {
 	// badPath says the extension's .cg.json entry has an invalid path: only
 	// editing it helps.
 	badPath bool
-	// tree is the extension's directory in its pinned tree.
+	// tree is the extension's whole pinned tree in the store (its source
+	// root, not the subdirectory of a co-located extension): what cg init
+	// checks before restoring.
 	tree string
 }
 
@@ -653,10 +672,7 @@ func namespaceEntries(root, ns string) ([]commandEntry, error) {
 			checked  bool
 			badPath  bool
 		)
-		tree := ""
-		if sub, serr := extension.CleanSubdir(e.Path); serr == nil {
-			tree = filepath.Join(extension.SourceRoot(e), sub)
-		}
+		tree := extension.SourceRoot(e)
 		for _, c := range led.Commands {
 			if extension.CommandNamespace(c.Command) != ns {
 				continue
@@ -749,9 +765,10 @@ func dispatchIn(root string, typed []string) (run *externalRun, decided bool, er
 			strings.Join(typed, " "), root, ns, strings.Join(cmds, "\n"))
 	}
 	if best.unverified != "" {
-		// Both remedies rewrite the ledger from a manifest; cg init skips a
-		// tree that is present, so a damaged one has to go first.
-		fix := fmt.Sprintf("remove %s if it is still there and run `cg init` in %s to re-export the recorded version, or run `cg extension update %s` there to move to its latest",
+		// Both remedies rewrite the ledger from a manifest. cg init restores
+		// only a tree that is missing, and re-initialises an existing
+		// workspace only with --force, so a damaged tree has to go first.
+		fix := fmt.Sprintf("remove %s if it is still there and run `cg init --force` in %s to re-export the recorded version, or run `cg extension update %s` there to move to its latest",
 			best.tree, root, best.name)
 		if best.badPath {
 			fix = fmt.Sprintf("correct its entry in %s", filepath.Join(root, workspace.ConfigFile))
@@ -864,4 +881,45 @@ func workspaceRootForDispatch() string {
 	}
 	root, _, _ := workspace.FindRoot(cwd)
 	return root
+}
+
+// fallbackNamespace folds a typed namespace to the name the PATH lookup would
+// match: lower-cased (LookPath matches case-insensitively on macOS and
+// Windows filesystems) and, on Windows, without a PATHEXT suffix (cg-shop.exe
+// is cg-shop there).
+func fallbackNamespace(ns string) string {
+	ns = strings.ToLower(ns)
+	if !isWindowsOS {
+		return ns
+	}
+	ext := strings.ToLower(filepath.Ext(ns))
+	if ext == "" {
+		return ns
+	}
+	pathext := os.Getenv("PATHEXT")
+	if pathext == "" {
+		pathext = ".com;.exe;.bat;.cmd"
+	}
+	for _, e := range strings.Split(strings.ToLower(pathext), ";") {
+		if e != "" && e == ext {
+			return strings.TrimSuffix(ns, ext)
+		}
+	}
+	return ns
+}
+
+// declaredSpelling returns the namespace a consulted root declares that the
+// typed namespace spells differently but the PATH lookup would still match
+// (S33), or "".
+func declaredSpelling(roots []string, typed string) string {
+	folded := fallbackNamespace(typed)
+	if folded == typed {
+		return ""
+	}
+	for _, root := range roots {
+		if entries, err := namespaceEntries(root, folded); err == nil && len(entries) > 0 {
+			return folded
+		}
+	}
+	return ""
 }

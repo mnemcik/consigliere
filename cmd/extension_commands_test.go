@@ -429,8 +429,8 @@ func TestInitRefusesConflictingReinstalls(t *testing.T) {
 		out, err := runInitForce(t, cfgHome, ws)
 		wantConflict(t, err, out, `"shop add"`, `"alpha"`, `"beta"`)
 		for _, n := range []string{"beta", "gamma"} {
-			if led, _ := extension.LoadLedger(ws, n); led != nil {
-				t.Errorf("%s has a ledger despite the conflict", n)
+			if _, serr := os.Lstat(extension.LedgerPath(ws, n)); !errors.Is(serr, fs.ErrNotExist) {
+				t.Errorf("%s has a ledger despite the conflict (%v)", n, serr)
 			}
 		}
 	})
@@ -617,4 +617,64 @@ func TestOwnedBuiltinCommands(t *testing.T) {
 			t.Errorf("init didn't warn about the shadowed command:\n%s", out)
 		}
 	})
+}
+
+// list marks a ledger entry dispatch would refuse, and says when a ledger
+// can't be read.
+func TestListShowsUnverifiedAndUnreadable(t *testing.T) {
+	requireGit(t)
+	cfgHome, ws := t.TempDir(), newWorkspace(t)
+	installRepo(t, cfgHome, ws, commandsManifest("alpha", "1.0.0", "shop"))
+	installRepo(t, cfgHome, ws, commandsManifest("beta", "1.0.0", "pr"))
+	led := ledgerOf(t, ws, "alpha")
+	led.Commands = append(led.Commands, extension.CommandContribution{Command: "shop add", Binary: "cg-alpha"})
+	if err := led.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(extension.LedgerPath(ws, "beta"), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runExtCfg(t, cfgHome, ws, "list")
+	if err != nil {
+		t.Fatalf("list: %v\n%s", err, out)
+	}
+	for _, want := range []string{"shop add (not verified:", "commands: (can't read"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("list output lacks %q:\n%s", want, out)
+		}
+	}
+	out, err = runExtCfg(t, cfgHome, ws, "list", "--json")
+	if err != nil {
+		t.Fatalf("list --json: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, `"unverified"`) || !strings.Contains(out, `"ledgerError"`) {
+		t.Errorf("--json lacks unverified/ledgerError:\n%s", out)
+	}
+}
+
+// verifiedCommand itself refuses a ledger entry whose binary differs from the
+// manifest's, even when that binary exists in the tree.
+func TestVerifiedCommandBinaryMismatch(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range []string{"cg-alpha", "cg-other"} {
+		if err := os.WriteFile(filepath.Join(dir, "bin", b), []byte("#!/bin/sh\n"), 0o755); err != nil { //nolint:gosec // an executable test fixture
+			t.Fatal(err)
+		}
+	}
+	m := &extension.Manifest{Contributes: extension.Contributions{Commands: []extension.CommandContribution{{Command: "shop", Binary: "cg-alpha"}}}}
+	if verifiedCommand(dir, m, extension.CommandContribution{Command: "shop", Binary: "cg-other"}) {
+		t.Error("a binary the manifest doesn't name was accepted")
+	}
+	if !verifiedCommand(dir, m, extension.CommandContribution{Command: "shop", Binary: "cg-alpha"}) {
+		t.Error("the manifest's own entry was refused")
+	}
+	if err := os.Remove(filepath.Join(dir, "bin", "cg-alpha")); err != nil {
+		t.Fatal(err)
+	}
+	if verifiedCommand(dir, m, extension.CommandContribution{Command: "shop", Binary: "cg-alpha"}) {
+		t.Error("a missing binary was accepted")
+	}
 }

@@ -374,7 +374,11 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 	defer func() {
 		if retErr != nil && !applying {
 			for _, t := range fetched {
-				_ = os.RemoveAll(t)
+				if rerr := os.RemoveAll(t); rerr != nil {
+					// Left in place, the tree would look restored to the
+					// next cg init.
+					retErr = fmt.Errorf("%w; also couldn't remove %s (%v): remove it before the next cg init", retErr, t, rerr)
+				}
 			}
 		}
 	}()
@@ -572,10 +576,24 @@ func runExtList(cmd *cobra.Command, _ []string) error {
 	listed := make([]listedExtension, len(exts))
 	for i := range exts {
 		listed[i] = listedExtension{ExtensionRef: exts[i], Commands: []listedCommand{}}
-		if led, lerr := extension.LoadLedger(root, exts[i].Name); lerr == nil && led != nil {
-			for _, c := range led.Commands {
-				listed[i].Commands = append(listed[i].Commands, listedCommand{Command: c.Command, Binary: c.Binary, ShadowedByBuiltin: builtinFor(c.Command)})
+		led, lerr := extension.LoadLedger(root, exts[i].Name)
+		if lerr != nil {
+			listed[i].LedgerError = lerr.Error()
+			continue
+		}
+		if led == nil {
+			continue
+		}
+		dir, m, verr := verifiedManifest(&exts[i])
+		for _, c := range led.Commands {
+			lc := listedCommand{Command: c.Command, Binary: c.Binary, ShadowedByBuiltin: builtinFor(c.Command)}
+			switch {
+			case verr != nil:
+				lc.Unverified = verr.Error()
+			case !verifiedCommand(dir, m, c):
+				lc.Unverified = "its manifest doesn't declare it with that binary, or the binary is missing"
 			}
+			listed[i].Commands = append(listed[i].Commands, lc)
 		}
 	}
 
@@ -606,8 +624,14 @@ func runExtList(cmd *cobra.Command, _ []string) error {
 				if c.ShadowedByBuiltin != "" {
 					cs[i] += fmt.Sprintf(" (can't run: the built-in \"cg %s\" wins)", c.ShadowedByBuiltin)
 				}
+				if c.Unverified != "" {
+					cs[i] += fmt.Sprintf(" (not verified: %s; it won't run)", c.Unverified)
+				}
 			}
 			_, _ = fmt.Fprintf(out, "  commands: %s\n", strings.Join(cs, ", "))
+		}
+		if l.LedgerError != "" {
+			_, _ = fmt.Fprintf(out, "  commands: (can't read %s: %s)\n", extension.LedgerPath(root, l.Name), l.LedgerError)
 		}
 	}
 	return nil
@@ -618,6 +642,9 @@ func runExtList(cmd *cobra.Command, _ []string) error {
 type listedExtension struct {
 	workspace.ExtensionRef
 	Commands []listedCommand `json:"commands"`
+	// LedgerError says the extension's ledger can't be read, so its
+	// commands are unknown (and dispatch stops on it).
+	LedgerError string `json:"ledgerError,omitempty"`
 }
 
 // listedCommand is a command an installed extension declares. ShadowedByBuiltin
@@ -627,6 +654,8 @@ type listedCommand struct {
 	Command           string `json:"command"`
 	Binary            string `json:"binary"`
 	ShadowedByBuiltin string `json:"shadowedByBuiltin,omitempty"`
+	// Unverified says why dispatch refuses the entry (S17), "" when it runs.
+	Unverified string `json:"unverified,omitempty"`
 }
 
 // looksLikeRepoSource reports whether s is a git URL or local path rather than a
