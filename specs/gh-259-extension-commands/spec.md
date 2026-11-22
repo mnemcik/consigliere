@@ -166,16 +166,21 @@ The session state file is `<badge root>/.claude/session-context/<id>.json`, wher
 `gitx.CommonRoot` of the session root (as `sessionRoots` computes it today).
 
 - **S35** WHEN `cg worktree create <slug>` runs with a session ID from `CG_SESSION_ID` or `CLAUDE_CODE_SESSION_ID`
-  that passes `ValidSessionID`, and the new worktree belongs to the session's workspace repo (the repo of
-  `CG_WORKSPACE`, or of the current workspace when `CG_WORKSPACE` is unset) THEN the session's state file records
-  the worktree's absolute path (`worktree`), keeping its other fields and creating the file when absent. A worktree
-  created in any other repo (an external repo the session works in) leaves the record unchanged.
+  that passes `ValidSessionID`, and the new worktree belongs to the **session repo** THEN the session's state file
+  records the worktree's absolute path (`worktree`), keeping its other fields and creating the file when absent. The
+  session repo is the repo of the session root: `CG_WORKSPACE` when S25 doesn't ignore it, else the current
+  directory's workspace root; with neither, there is no session repo and nothing is recorded. A worktree belongs to
+  it when it is one of the session root's linked worktrees: listed by `git worktree list --porcelain` run in the
+  session root with the cleaned environment (S27), not the main checkout, compared after `filepath.EvalSymlinks`
+  (as in S21). A worktree created in any other repo (an external repo the session works in) leaves the record
+  unchanged.
 - **S36** WHEN `cg session set-context --worktree <path>` runs THEN the path is recorded the same way, for
-  workspaces that create worktrees with their own scripts (Q5). A path that isn't one of the repo's linked
-  worktrees is refused: one not in `git worktree list`, and the main checkout (the list's first entry), so writers
+  workspaces that create worktrees with their own scripts (Q5). A path that isn't one of the session repo's (S35)
+  linked worktrees is refused: one not in its `git worktree list`, and the main checkout (the list's first entry), so writers
   are never sent into the main checkout. Paths are compared after `filepath.EvalSymlinks` on both sides, as in S21;
   the same comparison applies in S38.
-- **S37** WHEN `cg worktree remove` removes the recorded worktree THEN the record is cleared.
+- **S37** WHEN `cg worktree remove` removes the recorded worktree (the same path, compared as in S35) THEN the
+  record is cleared; removing a worktree of another repo leaves it unchanged.
 - **S38** WHEN the session root serves a command for a current directory outside the session root and its
   worktrees (S22/S24), the session ID is valid, and the recorded worktree is still one of the session repo's linked
   worktrees (listed, and not the main checkout) THEN `CG_SESSION_WORKTREE` is set to it (Q2).

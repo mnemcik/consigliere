@@ -87,7 +87,10 @@ Scenarios: S35–S40, S38b.
 - `internal/session/context.go`: a `worktree` key, written through the existing map-preserving writer;
   `ReadContext` and the writer refuse an invalid session ID themselves (S39), not only their callers.
 - State file location: `gitx.CommonRoot` of the session root, as `sessionRoots` does.
-- `cmd/worktree.go`: `create` records it when a session ID resolves; `remove` clears it when it matches.
+- `cmd/worktree.go`: `create` records it when a session ID resolves and the worktree belongs to the session repo
+  (S35); `remove` clears it when it matches (S37). Guard tests with mutation checks: a worktree created or removed
+  in another repo leaves the record unchanged; no session repo (no valid `CG_WORKSPACE`, cwd outside any workspace)
+  records nothing; a symlinked session root still matches.
 - `cmd/session.go`: `set-context --worktree <path>`, refused unless the path is one of the repo's linked worktrees
   (S36: not the main checkout; symlinks resolved). Guard tests with mutation checks: the main checkout refused by
   S36 and ignored by S38 (and then S38b applies); a symlinked path to a linked worktree accepted.
