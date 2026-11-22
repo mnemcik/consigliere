@@ -32,11 +32,15 @@ Scenarios: S1–S6, S16 (config part).
 
 ### 2 — reading and installing a skill
 
-Scenarios: S7–S12, S12b, S13–S15, S16b, S17, S18, S25, S25b, S27, S27b, S28, S29, S32, S33, S33b, S42, S42b.
+Scenarios: S7–S12, S12b, S12c, S13–S15, S16b, S17, S18, S25, S25b, S27, S27b, S28, S29, S32, S33, S33b, S42, S42b.
 
 - `skills.go`: read a skill from the pinned tree: walk `src` with `Lstat`, refuse symbolic links (S9), require
   `SKILL.md` and refuse a shipped `SKILL.local.md` (S11), parse its frontmatter for `name` and `description` (S8),
-  check `executables` against the files (S10), and warn when `SKILL.md` doesn't mention `SKILL.local.md` (S12b).
+  check `executables` against the files (S10). The local-file block as an exported ordered list of (version, text), newest
+  last; the finder and comparison exactly as S12c gives them, warning only when no target records a base for the skill's
+  `SKILL.md`, or its new content id differs from every recorded base (S12b). Tests: one per S12c outcome, re-wrapped, CRLF, fenced copy (backtick
+  and tilde, unclosed), no warning on a same-commit update, on a new commit touching only a sibling extension, on
+  adding a target, or on `cg init`; a warning when `SKILL.md` changes with an unchanged manifest `version`.
 - A managed-file plan, separate from `decideCopy` (which stays for notes and templates, U1): per file and target,
   checked in this order: adopt when disk already holds the new version or is absent for a drop (S27b); write when
   unedited (S27); set mode only (S32); refuse unowned (S25b); replace with message (S30) or stop (S31) when edited.
@@ -104,7 +108,9 @@ Scenarios: X3.
 - `docs/extensions.md`: the `skills` contribution point (shape, `executables`, targets, the managed model with its
   two messages, `SKILL.local.md`, conflicts, user-scope shadowing); `templates` wording; v2 for `skills`; the
   `skills.targets` setting.
-- `EXTENSIONS.md`: the authoring rule for `SKILL.local.md` (Q12), relative paths, `allowed-tools` in review.
+- `EXTENSIONS.md`: the authoring rule and the local-file block (Q12), relative paths, `allowed-tools` in review.
+- `docs/templates/extension-skill/SKILL.md`: the skill template (`name: extension-skill`); a Go test reads it and
+  fails when its block isn't the last (newest) entry of the list (Q12).
 
 ## Cross-repo (after this PR is approved, before the 2.0.0 release PR is merged)
 

@@ -83,9 +83,38 @@ These run when cg reads the extension's pinned tree, before anything is written.
 - **S11** WHEN the skill ships a file named `SKILL.local.md` (compared without regard to case) THEN install fails:
   that name is the workspace's.
 - **S12** WHEN the skill's directory holds dot-files or nested directories THEN every file in it is installed.
-- **S12b** WHEN a skill's `SKILL.md` doesn't contain the text `SKILL.local.md` THEN install and update succeed and
-  print a warning naming the skill: it gives the workspace no way to customise it, so a change would have to be
-  made by copying the skill under a new name (Q12).
+- **S12b** WHEN a skill is installed for the first time (no target records a base for its `SKILL.md`), or an update
+  brings a `SKILL.md` whose content differs from every base recorded for it, and finds a skill whose local-file block
+  (below) is missing, reworded or of an unknown version THEN it succeeds and prints one warning per skill, naming
+  the skill, the extension and its repository: the skill gives this workspace no supported way to customise it;
+  report it to the extension's maintainer. An update that leaves `SKILL.md` unchanged (a same-commit re-apply, or a
+  new commit that only touches other files or, in a repository holding several extensions, other extensions) and
+  `cg init` don't warn, nor does adding a target (S34), so the warning isn't repeated for something the workspace
+  can't fix (Q12). A run that fails before its ledger is saved (S42b), and adding a target after `skills.targets` was
+  `[]` (no base left), may warn again; accepted.
+- **S12c** WHEN cg looks for the block THEN it takes the first line, outside fenced code blocks (CommonMark fences: three or more backticks or tildes,
+  indented at most three spaces, closed by a fence of the same character at least as long; an unclosed fence runs to
+  the end of the file), that reads exactly
+  `<!-- cg:skill-local:start=<version> -->` (leading and trailing whitespace ignored) and the next line that reads
+  `<!-- cg:skill-local:end=<version> -->` with the same version. The text between them, with carriage returns
+  dropped, every run of spaces, tabs and newlines turned into one space, and the ends trimmed, must equal cg's text
+  for that version. Outcomes: no such pair, or a start without its end → missing; a version cg doesn't know →
+  unknown version; a text that differs → reworded; the block's text without its markers → missing; further pairs
+  after the first → ignored. Tested once per outcome, plus a re-wrapped block (passes), a CRLF file (passes) and a
+  block quoted inside a code fence (not counted).
+
+The local-file block is defined in cg's code as an ordered list of versions with their texts, newest last, and quoted in `EXTENSIONS.md` and the skill
+template (X3). Version `v1`:
+
+```markdown
+<!-- cg:skill-local:start=v1 -->
+If a file named `SKILL.local.md` exists in this skill's directory, read it as well: its rules add to this skill's,
+and replace them where the two conflict.
+<!-- cg:skill-local:end=v1 -->
+```
+
+Rewording it later adds `v2`; cg keeps accepting every version it has shipped, so published skills don't start
+warning. The marker form follows the framework's own `<!-- cg:section:start=ID -->` markers.
 
 ### Install
 
@@ -261,12 +290,17 @@ These run when cg reads the extension's pinned tree, before anything is written.
   "executables": ["gh-repo-watch.py"] }]` replacing the two `templates` entries into `.claude/skills/github-digest/`
   (the folder moves from `templates/skill/`, so its base name is the skill's name; the `github-digest-target.md`
   template stays a template); `SKILL.md` refers to its script relative to the skill directory (`${CLAUDE_SKILL_DIR}`
-  in Claude Code) and calls it directly, keeping its note to run it through `python`/`py` on Windows; it reads `SKILL.local.md` when present (X3); version bumped. End to end,
+  in Claude Code) and calls it directly, keeping its note to run it through `python`/`py` on Windows; it carries the local-file block (S12b); version bumped. End to end,
   `cg extension update github-digest` in a workspace that has the old version takes the move per S40.
 - **X3** `docs/extensions.md` and `EXTENSIONS.md`:
   - the contribution point and the model (managed, replaced with a message, uncommitted changes stop the update);
-  - the **authoring rule**: every skill's `SKILL.md` says, near its top, that if `SKILL.local.md` exists in the same
-    directory the agent reads it too and its rules add to or override the skill's; reviewers check for it (Q12);
+  - the **authoring rule**: every skill's `SKILL.md` carries the local-file block (S12b) near its top, word for word;
+  - a **skill template**, `docs/templates/extension-skill/SKILL.md` (frontmatter with `name: extension-skill` and a
+    `description`, the newest local-file block, a placeholder body), which `EXTENSIONS.md` tells authors to copy,
+    renaming the folder and `name` together (S8); a test fails when the template's block isn't the newest version
+    in cg's code (Q12);
+  - authors have no check before publishing beyond installing the extension locally (`cg extension install <path>`),
+    which runs every check here; recorded, not added in this PR;
   - skill authors refer to their own files relative to the skill directory;
   - reviewers check a skill's `allowed-tools` frontmatter, which in Claude Code lets the agent run those tools
     without asking;
@@ -302,7 +336,9 @@ These run when cg reads the extension's pinned tree, before anything is written.
   `cg init` replaces committed edits; every machine runs the extension's version at once, but only with a change to
   how `cg init` decides what to re-install, which belongs with #259's whole-set check for `cg init` (its S12), where
   the same question arises.
-- **Q12 — the `SKILL.local.md` line is an authoring rule, checked in review** (X3), not inserted by cg, plus a
-  warning at install and update when a skill's `SKILL.md` doesn't mention `SKILL.local.md` (S12b). *Alternative:*
+- **Q12 — one local-file block, worded once in cg's code and versioned,** carried word for word by every skill: a
+  skill template that a test keeps on the newest version, and a warning naming the extension's maintainer at install
+  and at a version-changing update when a skill lacks the block or rewords it (S12b, S12c, X3). cg doesn't insert
+  it; no scaffold command and no pre-publish check for now. *Alternative:*
   cg appends the line when it installs a skill; every skill then supports customising, but cg would be changing the
   files it installs, and the installed file would differ from the extension's.
