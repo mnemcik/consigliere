@@ -114,12 +114,11 @@ func builtinFor(command string) string {
 // of the extensions installed in the workspace at root, or with a built-in.
 // A built-in-namespace command the extension already owns (its installed
 // version's manifest at the recorded commit declares it) isn't refused but
-// returned as a warning. restored, when not nil, gives the owned commands
-// instead (cg init passes everything it restores, so it only warns). Each
-// incoming
+// returned as a warning. ownAll makes every incoming command owned: cg init,
+// which S9 says only warns. Each incoming
 // extension's own ledger must be readable too: applying it reads that ledger,
 // and failing there would leave a multi-extension operation half applied.
-func checkCommands(root string, installed []workspace.ExtensionRef, incoming, restored map[string][]extension.CommandContribution) ([]string, error) {
+func checkCommands(root string, installed []workspace.ExtensionRef, incoming map[string][]extension.CommandContribution, ownAll bool) ([]string, error) {
 	anyIncoming := false
 	for _, name := range slices.Sorted(maps.Keys(incoming)) {
 		if _, err := extension.LoadLedger(root, name); err != nil {
@@ -131,8 +130,8 @@ func checkCommands(root string, installed []workspace.ExtensionRef, incoming, re
 	if err != nil {
 		return nil, err
 	}
-	owned := restored
-	if owned == nil {
+	owned := incoming
+	if !ownAll {
 		owned = ownedCommands(installed, incoming)
 	}
 	conflicts, shadowed := extension.CheckCommands(have, incoming, owned, builtinCommandNames())

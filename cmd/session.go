@@ -592,20 +592,22 @@ func runSessionStartGate(cmd *cobra.Command, _ []string) error {
 		cfg, _ = workspace.Detect(root)
 	}
 	s := cfg.SessionSettings()
-	// A relative template is the workspace's whose .cg.json names it.
+	// A relative template belongs to the directory whose .cg.json named it:
+	// wsRoot when its own .cg.json was read, else root (sessionRoots' fallback).
 	tpl := s.GateTemplate
-	if tpl != "" && !filepath.IsAbs(tpl) && wsRoot != "" {
-		tpl = filepath.Join(wsRoot, tpl)
+	if tpl != "" && !filepath.IsAbs(tpl) {
+		base := root
+		if c, derr := workspace.Detect(wsRoot); wsRoot != "" && derr == nil && c != nil {
+			base = wsRoot
+		}
+		tpl = filepath.Join(base, tpl)
 	}
-	// The main-worktree warning is about the repo the agent works in.
-	checkout, _ := gitx.CommonRoot(cmd.Context(), cwd)
 
 	text, emit := session.Gate(cmd.Context(), root, &session.GateInput{
 		Prompt:        in.Prompt,
 		SessionID:     in.SessionID,
 		CWD:           cwd,
 		WorkspaceRoot: wsRoot,
-		CheckoutRoot:  checkout,
 	}, tpl, s.PruneDays)
 	if emit {
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), text)

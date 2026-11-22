@@ -134,7 +134,7 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	warnings, err := checkCommands(root, cfg.Extensions, map[string][]extension.CommandContribution{m.Name: m.Contributes.Commands}, nil)
+	warnings, err := checkCommands(root, cfg.Extensions, map[string][]extension.CommandContribution{m.Name: m.Contributes.Commands}, false)
 	if err != nil {
 		return err
 	}
@@ -417,9 +417,9 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		todo = append(todo, restore{e: e, m: m, manifestDir: filepath.Join(tree, path), prev: prev, commit: commit})
 		incoming[m.Name] = m.Contributes.Commands
 	}
-	// S9: cg init restores the versions .cg.json records, so every command it
-	// restores is owned: a built-in namespace only warns.
-	warnings, err := checkCommands(root, present, incoming, incoming)
+	// S9: every command cg init restores counts as owned, so a built-in
+	// namespace only warns.
+	warnings, err := checkCommands(root, present, incoming, true)
 	if err != nil {
 		return out, nil, err
 	}
@@ -801,7 +801,7 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 		updates[i] = u
 		incoming[u.ref.Name] = u.m.Contributes.Commands
 	}
-	warnings, err := checkCommands(root, cfg.Extensions, incoming, nil)
+	warnings, err := checkCommands(root, cfg.Extensions, incoming, false)
 	if err != nil {
 		return err
 	}

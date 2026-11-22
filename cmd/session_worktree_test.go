@@ -623,3 +623,37 @@ func TestStartGateTemplateFromSessionWorktree(t *testing.T) {
 		t.Errorf("worktree's gate template not used:\n%s", out)
 	}
 }
+
+// A relative gateTemplate is resolved against the directory whose .cg.json
+// was read: when the session's worktree has none, the main checkout's
+// config and template are used.
+func TestStartGateTemplateFollowsConfigSource(t *testing.T) {
+	requireGit(t)
+	ws := gitWorkspace(t)
+	wt := addBranchWorktree(t, ws, "nocfg")
+	cfg, err := workspace.Detect(ws)
+	if err != nil || cfg == nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	cfg.Session = &workspace.SessionConfig{GateTemplate: "gate.md"}
+	if err := cfg.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ws, "gate.md"), []byte("MAIN GATE {{session_id}}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The worktree's .cg.json can't be read: CG_WORKSPACE still names it
+	// (S25 doesn't ignore it), and the config comes from the main checkout.
+	if err := os.WriteFile(filepath.Join(wt, workspace.ConfigFile), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envWorkspace, wt)
+	stdin := `{"prompt":"hi","session_id":"s1","cwd":"` + filepath.ToSlash(wt) + `"}`
+	out, err := runSession(t, wt, stdin, "start-gate")
+	if err != nil {
+		t.Fatalf("start-gate: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "MAIN GATE s1") {
+		t.Errorf("the main checkout's gate template not used:\n%s", out)
+	}
+}

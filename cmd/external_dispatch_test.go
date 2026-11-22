@@ -542,16 +542,16 @@ func TestUnreadableLedgerInCommandCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg, _ := workspace.Detect(ws)
-	if _, err := checkCommands(ws, cfg.Extensions, map[string][]extension.CommandContribution{"beta": nil}, nil); err != nil {
+	if _, err := checkCommands(ws, cfg.Extensions, map[string][]extension.CommandContribution{"beta": nil}, false); err != nil {
 		t.Errorf("no incoming command: %v", err)
 	}
-	if _, err := checkCommands(ws, cfg.Extensions, map[string][]extension.CommandContribution{"alpha": nil}, nil); err == nil {
+	if _, err := checkCommands(ws, cfg.Extensions, map[string][]extension.CommandContribution{"alpha": nil}, false); err == nil {
 		t.Error("alpha's own broken ledger must block, even with no commands")
 	}
 	// Replacing alpha itself would fail later, reading the same ledger:
 	// refuse up front, naming it.
 	_, err := checkCommands(ws, cfg.Extensions, map[string][]extension.CommandContribution{
-		"alpha": {{Command: "shop add", Binary: "cg-alpha"}}}, nil)
+		"alpha": {{Command: "shop add", Binary: "cg-alpha"}}}, false)
 	if err == nil || !strings.Contains(err.Error(), extension.LedgerPath(ws, "alpha")) {
 		t.Errorf("replacing alpha itself: %v", err)
 	}

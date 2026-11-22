@@ -63,10 +63,6 @@ type GateInput struct {
 	// where paused projects are looked up (in every worktree, see Checkouts).
 	// Empty skips the lookup.
 	WorkspaceRoot string
-	// CheckoutRoot is the main checkout of cwd's own repository, for the
-	// main-worktree warning (the agent may work in another repo than the
-	// session's). Empty means root.
-	CheckoutRoot string
 }
 
 // Gate renders the session-start gate text for a prompt, or returns emit=false
@@ -93,9 +89,12 @@ func Gate(ctx context.Context, root string, in *GateInput, gateTemplatePath stri
 		}
 	}
 
-	checkout := in.CheckoutRoot
-	if checkout == "" {
-		checkout = root
+	// The main-worktree warning is about the repo the agent works in, which
+	// may not be the session's (root): resolved here, after the skip check,
+	// so a skipped prompt runs no git.
+	checkout := root
+	if cr, err := gitx.CommonRoot(ctx, in.CWD); err == nil {
+		checkout = cr
 	}
 	warning := ""
 	if inMainWorktree(ctx, in.CWD, checkout) {
