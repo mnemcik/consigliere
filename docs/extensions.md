@@ -505,7 +505,9 @@ and `$PATH` programs. No extension `bin/` directory is added to `$PATH`.
 ### Which workspace serves
 
 `cg start` (and bare `cg`) starts the session with `CG_WORKSPACE` set to the
-absolute workspace root it resolved, a worktree's root when started in one. A
+absolute workspace root it resolved, a worktree's root when started in one (not
+for an old workspace without a `.cg.json`, which has no extensions; an
+inherited `CG_WORKSPACE` is dropped then). A
 launcher must pass it on into the session it creates (a terminal multiplexer
 doesn't by default: `tmux new-session` needs `-e CG_WORKSPACE=…`). Dispatch
 reads it (and never rewrites it) to pick the workspaces it consults:

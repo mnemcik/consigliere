@@ -46,14 +46,27 @@ var perRunVars = []string{envCommand, envExtensionWorkspace, envSessionWorktree}
 
 // samePath reports whether a and b are the same existing file or directory,
 // whatever the spelling: symlinks are followed, and on a case-insensitive
-// filesystem the case of the path doesn't matter (os.SameFile compares the
-// files themselves). A path that can't be stat'ed matches nothing.
+// filesystem the case of the path doesn't matter. Both must be the same file
+// (os.SameFile) and resolve to the same path ignoring case, so a filesystem
+// that doesn't report unique file IDs can't make two directories equal. A path
+// that can't be resolved matches nothing.
 func samePath(a, b string) bool {
-	ia, err := os.Stat(a) //nolint:gosec // only compared, never opened
+	ra, err := filepath.EvalSymlinks(a)
 	if err != nil {
 		return false
 	}
-	ib, err := os.Stat(b)
+	rb, err := filepath.EvalSymlinks(b)
+	if err != nil {
+		return false
+	}
+	if !strings.EqualFold(filepath.Clean(ra), filepath.Clean(rb)) {
+		return false
+	}
+	ia, err := os.Stat(ra) //nolint:gosec // only compared, never opened
+	if err != nil {
+		return false
+	}
+	ib, err := os.Stat(rb)
 	if err != nil {
 		return false
 	}
@@ -162,10 +175,12 @@ func typedWords(args []string) []string {
 // root alone outside any workspace. A .cg.json on the way up that can't be
 // read is an error: it might be a workspace declaring the command.
 //
-// When the current directory's .cg.json can't be read, the session root is
-// still consulted (it comes first anyway), and the error is returned as
-// cwdErr: it stops dispatch only if the session root doesn't decide the
-// namespace.
+// When the current directory's .cg.json can't be read and it belongs to
+// another workspace, the session root is still consulted (it would come first
+// anyway), and the error is returned as cwdErr: it stops dispatch only if the
+// session root doesn't decide the namespace. When the broken .cg.json is the
+// session root's or one of its worktrees' (which would replace the session
+// root), it stops dispatch outright.
 func consultedRoots() (roots []string, cwdErr error) {
 	_, session, _ := sessionRoot()
 	cwd, err := os.Getwd()
@@ -175,8 +190,12 @@ func consultedRoots() (roots []string, cwdErr error) {
 	}
 	root, _, err := workspace.FindRoot(cwd)
 	if err != nil {
+		broken := unreadableConfig(cwd)
 		cwdErr = cgerr.New(cgerr.ExitUsage, "can't read %s (%v), so cg can't tell which extension commands it declares",
-			unreadableConfig(cwd), err)
+			broken, err)
+		if dir := filepath.Dir(broken); session != "" && (samePath(dir, session) || sessionWorktree(session, dir)) {
+			return nil, cwdErr
+		}
 		return sessionOnly(session), cwdErr
 	}
 	switch {
@@ -238,23 +257,28 @@ func sessionRoot() (value, root, ignored string) {
 func sessionWorktree(session, dir string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, err := gitx.RunClean(ctx, session, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir")
+	// No --path-format or -z: they need git 2.31 and 2.36.
+	// Raw output, split by line: a path may begin or end with a space.
+	out, err := gitx.RunCleanRaw(ctx, session, "rev-parse", "--show-toplevel", "--git-common-dir")
 	if err != nil {
 		return false
 	}
-	lines := strings.Split(out, "\n")
+	lines := strings.Split(strings.TrimSuffix(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n"), "\n")
 	if len(lines) != 2 || !samePath(gitx.OSPath(lines[0]), session) {
 		return false
 	}
 	common := gitx.OSPath(lines[1])
-	list, err := gitx.RunCleanRaw(ctx, session, "worktree", "list", "--porcelain", "-z")
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(session, common) // relative to where git ran
+	}
+	list, err := gitx.RunCleanRaw(ctx, session, "worktree", "list", "--porcelain")
 	if err != nil {
 		return false
 	}
-	// -z: each attribute ends with NUL, and an empty one ends a worktree's
-	// block, so paths are taken exactly (a trailing space included).
-	for _, attr := range strings.Split(string(list), "\x00") {
-		if p, ok := strings.CutPrefix(attr, "worktree "); ok && samePath(gitx.OSPath(p), dir) {
+	// One attribute per line; the path is taken exactly, without trimming
+	// (a trailing space is part of it), only a CR line ending dropped.
+	for _, line := range strings.Split(string(list), "\n") {
+		if p, ok := strings.CutPrefix(strings.TrimSuffix(line, "\r"), "worktree "); ok && samePath(gitx.OSPath(p), dir) {
 			return gitDirIn(dir, common)
 		}
 	}
@@ -264,7 +288,9 @@ func sessionWorktree(session, dir string) bool {
 // gitDirIn reports whether dir's .git belongs to the repository whose common
 // git directory is common: .git is that directory (the main checkout), or a
 // file whose "gitdir:" names an entry of its worktrees/ directory whose own
-// gitdir file names dir's .git back.
+// gitdir file names dir's .git back (a linked worktree). (A main checkout made
+// with --separate-git-dir never gets here: git lists it under the git
+// directory's path, not the checkout's.)
 func gitDirIn(dir, common string) bool {
 	dotGit := filepath.Join(dir, ".git")
 	info, err := os.Stat(dotGit)

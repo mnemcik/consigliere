@@ -534,3 +534,50 @@ func TestHintEmptySessionWorkspace(t *testing.T) {
 		t.Errorf("hint %q", h)
 	}
 }
+
+// A broken .cg.json in one of the session's own worktrees stops dispatch from
+// there: the session root isn't consulted in its place.
+func TestUnreadableWorktreeConfigStops(t *testing.T) {
+	requireGit(t)
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	session := sessionWorkspace(t, cfgHome, []string{"alpha", "shop"})
+	wt := addBranchWorktree(t, session, "broken")
+	if err := os.WriteFile(filepath.Join(wt, workspace.ConfigFile), []byte("<<<<<<< ours\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envWorkspace, session)
+	t.Chdir(wt)
+	dispatchErr(t, []string{"shop"}, filepath.Join(wt, workspace.ConfigFile))
+}
+
+// A session root whose path ends in a space still recognises its worktrees.
+func TestConsultedRootsSessionRootWithTrailingSpace(t *testing.T) {
+	requireGit(t)
+	if isWindowsOS {
+		t.Skip("Windows paths can't end in a space")
+	}
+	session := filepath.Join(t.TempDir(), "ws ")
+	if err := os.Mkdir(session, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	newWorkspaceAt(t, session)
+	gitCommitAll(t, session)
+	wt := addBranchWorktree(t, session, "sp")
+	t.Setenv(envWorkspace, session)
+	wantRoots(t, wt, wt)
+}
+
+// newWorkspaceAt writes a minimal .cg.json in dir and returns dir.
+func newWorkspaceAt(t *testing.T, dir string) string {
+	t.Helper()
+	ws := newWorkspace(t)
+	data, err := os.ReadFile(filepath.Join(ws, ".cg.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cg.json"), data, 0o644); err != nil { //nolint:gosec // a test fixture in its own temp dir
+		t.Fatal(err)
+	}
+	return dir
+}
