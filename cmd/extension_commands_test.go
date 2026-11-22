@@ -750,3 +750,38 @@ func TestInitApplyFailureLeavesUnappliedTreesMissing(t *testing.T) {
 		t.Errorf("alpha was applied, but its tree was removed (%v)", err)
 	}
 }
+
+// When one extension of a shared tree applies and the other fails, the tree
+// is removed: kept, it would make the failed one look restored next time.
+func TestInitPartialFailureOnSharedTree(t *testing.T) {
+	requireGit(t)
+	cfgHome := t.TempDir()
+	ws := newWorkspace(t)
+	repo := makeMonorepo(t, map[string]string{
+		"one": commandsManifest("one", "0.1.0", "uno"),
+		"two": commandsManifest("two", "0.1.0", "dos"),
+	})
+	for _, sub := range []string{"one", "two"} {
+		if out, err := runExtCfg(t, cfgHome, ws, "install", repo, "--path", sub); err != nil {
+			t.Fatalf("install %s: %v\n%s", sub, err, out)
+		}
+	}
+	cfg, _ := workspace.Detect(ws)
+	tree := extension.SourceRoot(findRef(cfg.Extensions, "one"))
+	if err := os.RemoveAll(tree); err != nil {
+		t.Fatal(err)
+	}
+	note := filepath.Join(ws, "notes", "two.md")
+	if err := os.Remove(note); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(note, "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := runInitForce(t, cfgHome, ws); err == nil {
+		t.Fatalf("init succeeded despite the blocked note:\n%s", out)
+	}
+	if _, err := os.Lstat(tree); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("shared tree kept though two wasn't applied (%v)", err)
+	}
+}

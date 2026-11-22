@@ -219,18 +219,19 @@ func consultedRoots() (roots []string, cwdErr error) {
 		return sessionOnly(sroot), cwdErr
 	}
 	root, _, err := workspace.FindRoot(cwd)
+	dangling := ""
 	if err == nil {
 		// FindRoot walks past a .cg.json it can't follow (a dangling
 		// symlink, read as absent); for dispatch it might declare the
 		// command, so it counts as unreadable.
-		if dangling := danglingConfig(cwd, root); dangling != "" {
+		if dangling = danglingConfig(cwd, root); dangling != "" {
 			err = fmt.Errorf("%s is a dangling symlink", dangling)
 		}
 	}
 	if err != nil {
-		broken := unreadableConfig(cwd)
+		broken := dangling
 		if broken == "" {
-			broken = danglingConfig(cwd, root)
+			broken = unreadableConfig(cwd)
 		}
 		name := broken
 		if name == "" {
@@ -269,7 +270,7 @@ func brokenSessionRoots(sdir string, broken error) ([]string, error) {
 		return nil, broken
 	}
 	root, _, err := workspace.FindRoot(cwd)
-	if err != nil || root == "" || samePath(root, sdir) || !sessionWorktree(sdir, root) {
+	if err != nil || root == "" || samePath(root, sdir) || danglingConfig(cwd, root) != "" || !sessionWorktree(sdir, root) {
 		return nil, broken
 	}
 	return []string{root}, nil
@@ -820,7 +821,7 @@ func dispatchIn(root string, typed []string) (run *externalRun, decided bool, er
 			fix = fmt.Sprintf("remove %s if it is still there and run `cg init --force` in %s to reinstall it from its default branch, or run `cg extension update %s` there",
 				best.tree, root, best.name)
 		case best.mismatch:
-			fix = fmt.Sprintf("run `cg extension update %s` in %s to rewrite its record (its tree is intact and shared with other workspaces, so leave it)", best.name, root)
+			fix = fmt.Sprintf("run `cg extension update %s` in %s, which moves it to its latest version and rewrites its record (its tree is intact and shared with other workspaces, so leave it)", best.name, root)
 		}
 		return nil, true, cgerr.New(cgerr.ExitUsage,
 			"cg %s: extension %q (installed in %s) can't run it: %s; %s",

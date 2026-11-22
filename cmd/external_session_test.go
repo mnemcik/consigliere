@@ -748,3 +748,32 @@ func TestIgnoredSessionConfig(t *testing.T) {
 		})
 	}
 }
+
+// With a broken session .cg.json, the S21 exemption still stops on a
+// dangling .cg.json under the current directory.
+func TestBrokenSessionConfigWithDanglingCwdConfig(t *testing.T) {
+	requireGit(t)
+	if isWindowsOS {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	session := sessionWorkspace(t, cfgHome, []string{"alpha", "shop"})
+	wt := addBranchWorktree(t, session, "w")
+	if !breakConfig(t, session, "invalid JSON") {
+		t.Fatal("couldn't break the session config")
+	}
+	sub := filepath.Join(wt, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dangling := filepath.Join(sub, workspace.ConfigFile)
+	if err := os.Symlink(filepath.Join(sub, "nowhere"), dangling); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envWorkspace, session)
+	t.Chdir(sub)
+	if run, err := externalDispatch([]string{"shop"}); err == nil {
+		t.Errorf("dispatch = %+v; want a stop on the dangling %s", run, dangling)
+	}
+}

@@ -365,18 +365,20 @@ func printGitHookWarnings(w io.Writer, msgs []string) {
 func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspace.ExtensionRef) (_ []workspace.ExtensionRef, _ []string, retErr error) {
 	out := append([]workspace.ExtensionRef(nil), exts...)
 	// The trees this run fetches for pinned entries were missing, which is
-	// how cg init tells "not restored yet". If it stops with an error, the
-	// ones no applied entry uses are removed again, so the next cg init
-	// restores those extensions instead of taking their source for present.
+	// how cg init tells "not restored yet". If it stops with an error, every
+	// one of them that some entry didn't get applied from is removed again,
+	// so the next cg init restores that entry instead of taking its source
+	// for present. (A tree two entries share stays only when both applied.)
 	var fetched []string
 	fetchedSet := map[string]bool{}
-	applied := map[string]bool{} // trees of entries already applied
+	users := map[string]int{}   // entries to restore from each fetched tree
+	applied := map[string]int{} // of them, the ones already applied
 	defer func() {
 		if retErr == nil {
 			return
 		}
 		for _, t := range fetched {
-			if applied[t] {
+			if applied[t] == users[t] {
 				continue
 			}
 			if rerr := os.RemoveAll(t); rerr != nil {
@@ -392,7 +394,7 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		manifestDir string
 		prev        string // base for a ledger that predates content ids
 		commit      string
-		tree        string // the entry's source root in the store
+		tree        string // the store tree the entry is restored from
 	}
 	var (
 		todo    []restore
@@ -432,6 +434,12 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 			m, err = loadValidManifest(filepath.Join(tree, path), e.Name)
 		} else {
 			m, tree, commit, err = installFrom(cmd.Context(), e.Repo, "", path)
+			if err == nil {
+				// A later pinned entry at the same commit must not take
+				// this export for present (it may predate this run, so it
+				// isn't removed on failure).
+				fetchedSet[tree] = true
+			}
 		}
 		if err != nil {
 			return out, nil, err
@@ -443,7 +451,8 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		if extension.ValidCommit(e.Commit) {
 			prev = filepath.Join(tree, path)
 		}
-		todo = append(todo, restore{e: e, m: m, manifestDir: filepath.Join(tree, path), prev: prev, commit: commit, tree: extension.SourceRoot(e)})
+		todo = append(todo, restore{e: e, m: m, manifestDir: filepath.Join(tree, path), prev: prev, commit: commit, tree: tree})
+		users[tree]++
 		incoming[m.Name] = m.Contributes.Commands
 	}
 	// S9: every command cg init restores counts as owned, so a built-in
@@ -458,7 +467,7 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		if _, err := reapply(root, r.manifestDir, r.m, r.prev, r.prev != "", false); err != nil {
 			return out, done, err
 		}
-		applied[r.tree] = true
+		applied[r.tree]++
 		r.e.Commit = r.commit
 		done = append(done, fmt.Sprintf("extension %q v%s (re-installed at %s)", r.m.Name, r.m.Version, r.commit[:12]))
 	}

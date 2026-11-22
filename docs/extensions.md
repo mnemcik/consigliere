@@ -497,9 +497,10 @@ the declared commands of the workspaces it consults, in order (see
    the binary is gone): remove the extension's store tree if it is still there
    and run `cg init --force` (which restores only a missing tree), or
    `cg extension update <name>`. For a ledger that disagrees with an intact
-   manifest: `cg extension update <name>` (the tree is shared by other
-   workspaces, so it stays). For an invalid `path` in `.cg.json`: correct the
-   entry. cg never falls back to another program for it. Two
+   manifest: `cg extension update <name>`, which also moves it to its latest
+   version (the tree is shared by other workspaces, so it stays). For a legacy
+   entry without a recorded commit, `cg init --force` reinstalls it from its
+   default branch. For an invalid `path` in `.cg.json`: correct the entry. cg never falls back to another program for it. Two
    ledgers declaring the same command in the namespace (a hand-edited or pulled
    `.cg.json`) stop dispatch too. So does a `.cg.json` or ledger that can't be
    read (it might declare the command; the error names the file to restore),
@@ -507,7 +508,10 @@ the declared commands of the workspaces it consults, in order (see
 4. When no consulted workspace declares any command in the namespace, cg runs a
    `cg-<namespace>` executable on `$PATH`, if there is one, with the arguments
    after the namespace (a plain name: one with a path separator or a colon is
-   never looked up). A namespace an extension declares never reaches `$PATH`, whether or not
+   never looked up). A spelling the lookup would still match to a declared
+   namespace is refused too: another case on macOS and Windows, and on
+   Windows any extension (so `cg shop.v2` is refused when `shop` is
+   declared). A namespace an extension declares never reaches `$PATH`, whether or not
    the full command matched.
 
 Otherwise cobra's "unknown command" error is shown, with a hint that an

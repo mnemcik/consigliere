@@ -741,8 +741,8 @@ func TestDispatchDanglingCwdConfig(t *testing.T) {
 }
 
 // S33: a declared namespace never reaches PATH, also when typed in another
-// case (LookPath matches case-insensitively on macOS and Windows) or, on
-// Windows, with a PATHEXT suffix.
+// case where lookups are case-insensitive (macOS, Windows) or, on Windows,
+// with any extension (LookPath accepts any).
 func TestDispatchPathFallbackRefusesDeclaredNamespaceSpellings(t *testing.T) {
 	requireGit(t)
 	dispatchWorkspace(t, t.TempDir(), []string{"alpha", "shop"})
