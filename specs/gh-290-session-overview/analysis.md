@@ -143,10 +143,11 @@ review gate and the todo queue are out of this item's core scope.
      `status: busy`;
   4. *Ended*: background `state: failed` / `stopped`;
   5. *Claim only*: a cg badge with no matching agent session (the session is gone or isn't a Claude Code one).
-     Badges are deleted only on release, and a crashed or dirty session releases nothing, so this group applies
-     `cg active`'s usual liveness windows and shows each badge's age; older ones appear only with the
-     `--everywhere`-style flag. A badge whose agent session is `failed` / `stopped` goes in *Ended*, since the
-     IDs join;
+     Badges are deleted only on release, and a crashed or dirty session releases nothing, so this group shows
+     only badges `cg active` itself marks as within their liveness window (the windows are per workspace in
+     `.cg.json`, so the extension doesn't compute them; decision 5), with each badge's age; stale ones appear
+     only with a separate flag such as `--stale`. A badge whose agent session is `failed` / `stopped` goes in
+     *Ended*, since the IDs join;
   6. *Paused projects* from cg (`resume.md`).
 
   **Which sessions:** `claude agents --json` lists every session on the machine (40 in the capture), and its
@@ -169,7 +170,9 @@ review gate and the todo queue are out of this item's core scope.
   idle-but-open sessions #232 describes. `cg active` also always leaves out the caller's own session
   (`cmd/active.go:34,76`), so an overview run from inside a session would show that session as "no project". The
   overview needs a small, agent-neutral `cg active` option that lists every badge regardless of the liveness
-  windows and without excluding the caller, with its `worktree` (from #259) in the JSON (decision 5). It
+  windows and without excluding the caller, marks each badge as within its window or not (for example a `stale`
+  state beside `live` and `paused`), and gives a full RFC 3339 timestamp (today's `mtime` is
+  `"2006-01-02 15:04"`, `cmd/active.go:95`), with its `worktree` (from #259) in the JSON (decision 5). It
   doesn't change `cg active`'s default output or liveness rules. Reading the badge files directly from the
   extension would tie it to a core-internal file format instead.
 
@@ -278,10 +281,10 @@ review gate and the todo queue are out of this item's core scope.
 | # | Decision | Recommended answer | Status |
 |---|---|---|---|
 | 1 | Data source for "waiting on the user": Claude Code's own status (`claude agents --json`) or hook-recorded state in the cg badge | Claude Code's status, after first confirming on a real pending dialog that it reports `waiting` with `waitingFor` | open |
-| 2 | Scope of #290: sessions only (waiting / turn ended / working / ended / paused), with "ready for review" left to `pr-workflow` and "who acts next for a todo" split into its own issue; and which sessions are listed | Sessions only; split the todo field out; PRs join later from `pr-workflow`. List sessions with a badge in this workspace or a `cwd` in the workspace or its worktrees; others only with a flag such as `--everywhere` | open |
+| 2 | Scope of #290: sessions only (waiting / turn ended / working / ended / paused), with "ready for review" left to `pr-workflow` and "who acts next for a todo" split into its own issue; and which sessions are listed | Sessions only; split the todo field out; PRs join later from `pr-workflow`. List sessions with a badge in this workspace or a `cwd` in the workspace or its worktrees; others only with a flag such as `--everywhere`; stale badges of this workspace only with a separate flag such as `--stale` | open |
 | 3 | Where it ships and what it's called: a new cg-extensions extension, or part of the opt-in Claude Code extension #266 proposes; the command name | A small extension in cg-extensions, built as a manifest-v2 command after #259 merges, folded into #266's extension if that is built; name chosen by the owner under #259's naming rule (`session` is a built-in namespace) | open |
 | 4 | Push side: is the 2026-11-22 incident a missing view or a notification that didn't reach the user (terminal, tmux, notification setting)? | Owner to say which setup it happened in; if the notification didn't arrive, fix that setup separately, not in #290 | open (question) |
-| 5 | Core change: a `cg active` option that lists every badge regardless of the liveness windows (and badges without a project, and the caller's own), with #259's `worktree` in the JSON | Yes, a small agent-neutral core change after #259 merges; the default output stays as it is | open |
+| 5 | Core change: a `cg active` option that lists every badge regardless of the liveness windows (and badges without a project, and the caller's own), marks each as live or stale by the workspace's windows, and gives an RFC 3339 timestamp and #259's `worktree` in the JSON | Yes, a small agent-neutral core change after #259 merges; the default output stays as it is | open |
 | 6 | Order relative to other work, given Priority Low | After #259 merges; independent of #300 and #301 | open |
 | 7 | Windows: accept that the overview doesn't run on Windows until #239 (extension commands on Windows) is fixed, or wait for #239 | Accept; say so in the extension's README | open |
 
@@ -328,6 +331,17 @@ review gate and the todo queue are out of this item's core scope.
 - Verified true: round-2 items resolved apart from decision 2's flag name; `cmd/active.go:34,64-68,76`;
   `claude agents --help` `--all` and `--cwd`; terminal-config notification conditions; no private details
 - Not verified: `waitingFor` only while `waiting` (documented, not observed)
+
+**Review 4** — same path @ content 04760e4 (commit 2749304), delta from 460238c · 2026-11-22
+- Reviewers: doc-reviewer (same lenses, delta scope, regression check of round 3)
+- Tests: not applicable (analysis)
+- Findings: 0 blocker, 1 should-fix, 1 nit → fixed: *Claim only* relied on windows the extension can't compute
+  (decision 5's option now marks live/stale and gives an RFC 3339 timestamp); one flag had two meanings
+  (separate `--stale`). owner's: none; rejected: none; dropped in validation: none
+- Builder questions: 2 answered (who computes staleness: `cg active`; one flag or two: two)
+- Verified true: round-3 items resolved; windows per workspace in `.cg.json` (`cmd/active.go:43-46,69-75`);
+  `mtime` minute precision (`:95`); badges deleted only on release; no private details
+- Not verified: whether #259 changes the `cg active` JSON beyond `worktree` (not re-read this round)
 
 ## Verdict
 
