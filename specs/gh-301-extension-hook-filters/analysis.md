@@ -3,19 +3,39 @@ title: "Analysis — extension hooks: filters and failure behaviour (#301)"
 created: 2026-11-21
 item: "https://github.com/mnemcik/consigliere/issues/301"
 size: full
-verdict: needs clarification
+verdict: proceed (decided 2026-11-22)
 ---
 
 # Analysis — extension hooks: filters and failure behaviour (#301)
 
 - **Item:** https://github.com/mnemcik/consigliere/issues/301
 - **Size:** full (several decisions; touches the manifest schema and its compatibility story, shared with #259)
-- **Status:** analysis; awaiting the owner's decisions. No spec or code yet.
+- **Status:** decided 2026-11-22 (see [Decision](#decision)); spec and plan next. No code yet.
 - **Evidence base:** consigliere `origin/main` at `61abdfd` (2026-11-21); #259's branch `gh-259-extension-commands`
   at `e54d3b5`; mnemcik/cg-extensions at `87c51e5`; mnemcik/cg-extensions-registry at `37db607`; the `pr-workflow`
   plugin 0.2.1 from mnemcik/claude-marketplace; Claude Code hooks reference https://code.claude.com/docs/en/hooks
   and settings reference https://code.claude.com/docs/en/settings (read 2026-11-21; the pages show no date; the
   local Claude Code is 2.1.330).
+
+## Decision
+
+Decided by the owner on 2026-11-22, one decision at a time (the Q→A log lists each):
+
+1. **Release:** cg 2.0.0, with #259 and #300.
+2. **Later fields:** a manifest version bump only for a field an older cg must not ignore; harmless fields keep "an
+   older cg ignores the key"; no strict decoding (the same decision as #300's D6, taken there).
+3. **Manifest v2:** the new hook fields are accepted only in `"manifest": 2`; a v1 manifest using them is refused.
+4. **`onFailure` default:** cg writes nothing. Failure visibility is a separate problem, filed as #305.
+5. **Fields:** `matcher` and `if` only. `onFailure` is left out of this change (no current extension needs it, and
+   it alone carries the older-Claude-Code risk); it is added under decision 2's rule when an extension needs to
+   block on failure. The older-Claude-Code check is therefore no longer a prerequisite.
+6. **One script in several entries:** allowed; an exact duplicate entry, and two scripts installing to the same
+   path, are refused.
+7. **Validation:** `if` is refused on events other than the five tool events; `matcher` is not checked.
+8. **Names:** Claude Code's own, passed through.
+9. **Where:** its own branch and PR from #259's M1 commit, merged after #259's PR and before the 2.0.0 release PR.
+
+The sections below are the analysis as reviewed; where they recommend `onFailure`, decision 5 supersedes them.
 
 ## Question
 
@@ -309,15 +329,15 @@ M1 commit, not from `main`.
 
 | # | Decision | Recommended answer | Status |
 |---|---|---|---|
-| 1 | Which release carries the fields? | cg 2.0.0, inside manifest v2, so the chain's extensions need one cg release. Implemented after #259's M1 (decision 9). | open |
-| 2 | How do fields added after 2.0.0 avoid being dropped by an older 2.x cg? **The same decision as #300's D6**: one answer for both. | As #300 recommends: a manifest version bump per release that adds a field an older cg must not ignore; harmless fields keep "an older cg ignores the key". *Alternatives:* strict v2 decoding (refuse unknown keys; reverses the documented policy for v2); a minimum-cg field. Doesn't affect #301 itself if it ships in 2.0.0 with v2. | open (shared with #300 D6) |
-| 3 | Do the new fields need `"manifest": 2`? Depends on #259's Q1, which isn't agreed. | Yes, whatever #259's Q1 decides: if Q1 keeps v1 for `commands`, #301 (or #300, as its D4 proposes) introduces v2 in 2.0.0, so a 1.x cg, already released, refuses manifests that use the fields instead of dropping them. The only alternative to a version is to accept the silent drop on 1.x and document the minimum cg. | open |
-| 4 | When an entry omits `onFailure`, what does cg write? | Nothing (Claude Code's default). Windows without Git Bash is already unsupported for cg's hooks. *Alternative:* write `continue` by default (more exposure to the older-Claude-Code risk in decision 5, since every extension hook would carry the key). | open |
-| 5 | Which fields? | `matcher`, `if`, `onFailure` only; others when an extension needs them. **Prerequisite:** check what a Claude Code older than 2.1.295 does with `onFailure` (and an older one with `if`) in `settings.json`: key ignored, entry skipped, or whole file lost. The `if` check is best-effort until the version that introduced it is found; the `pr-workflow` plugin already writes `if`, the same exposure today. If the key is ignored or the entry skipped, ship it: a `block` guard then fails open there, as without the field. If the whole file is lost: leave the field out, or ship it with the minimum Claude Code documented. | open: needs the check |
-| 6 | Several entries per wrapper (events, `if` rules)? | Yes, with duplicate and same-install-path refusals. *Alternative:* `if` as a list that cg expands; doesn't solve one wrapper on two events. | open |
-| 7 | Validation | `onFailure` ∈ {`continue`, `block`}; `if` only on the five tool events; matcher not checked. | open |
-| 8 | Filter vocabulary: Claude Code's names, or agent-neutral? | Claude Code's, until #266 or a second agent tool gets hooks. | open |
-| 9 | Where is it implemented? | Its own branch from #259's M1 commit, its own PR, merged before the 2.0.0 release PR. | open |
+| 1 | Which release carries the fields? | cg 2.0.0, inside manifest v2, so the chain's extensions need one cg release. Implemented after #259's M1 (decision 9). | decided |
+| 2 | How do fields added after 2.0.0 avoid being dropped by an older 2.x cg? **The same decision as #300's D6**: one answer for both. | As #300 recommends: a manifest version bump per release that adds a field an older cg must not ignore; harmless fields keep "an older cg ignores the key". *Alternatives:* strict v2 decoding (refuse unknown keys; reverses the documented policy for v2); a minimum-cg field. Doesn't affect #301 itself if it ships in 2.0.0 with v2. | decided |
+| 3 | Do the new fields need `"manifest": 2`? Depends on #259's Q1, which isn't agreed. | Yes, whatever #259's Q1 decides: if Q1 keeps v1 for `commands`, #301 (or #300, as its D4 proposes) introduces v2 in 2.0.0, so a 1.x cg, already released, refuses manifests that use the fields instead of dropping them. The only alternative to a version is to accept the silent drop on 1.x and document the minimum cg. | decided |
+| 4 | When an entry omits `onFailure`, what does cg write? | Nothing (Claude Code's default). Windows without Git Bash is already unsupported for cg's hooks. *Alternative:* write `continue` by default (more exposure to the older-Claude-Code risk in decision 5, since every extension hook would carry the key). | decided |
+| 5 | Which fields? | `matcher`, `if`, `onFailure` only; others when an extension needs them. **Prerequisite:** check what a Claude Code older than 2.1.295 does with `onFailure` (and an older one with `if`) in `settings.json`: key ignored, entry skipped, or whole file lost. The `if` check is best-effort until the version that introduced it is found; the `pr-workflow` plugin already writes `if`, the same exposure today. If the key is ignored or the entry skipped, ship it: a `block` guard then fails open there, as without the field. If the whole file is lost: leave the field out, or ship it with the minimum Claude Code documented. | decided |
+| 6 | Several entries per wrapper (events, `if` rules)? | Yes, with duplicate and same-install-path refusals. *Alternative:* `if` as a list that cg expands; doesn't solve one wrapper on two events. | decided |
+| 7 | Validation | `onFailure` ∈ {`continue`, `block`}; `if` only on the five tool events; matcher not checked. | decided |
+| 8 | Filter vocabulary: Claude Code's names, or agent-neutral? | Claude Code's, until #266 or a second agent tool gets hooks. | decided |
+| 9 | Where is it implemented? | Its own branch from #259's M1 commit, its own PR, merged before the 2.0.0 release PR. | decided |
 
 Out of scope, noted: `command` is required but never read by cg; it stays as it is.
 
@@ -356,11 +376,24 @@ Out of scope, noted: `command` is required but never read by cg; it stays as it 
 
 ## Verdict
 
-**Needs clarification.** The recommendation stands, but three things force "needs clarification":
+**Proceed** (decided 2026-11-22; see [Decision](#decision)). Before the decisions it read: **Needs clarification.** The recommendation stands, but three things force "needs clarification":
 - decision 5 waits on a check of what an older Claude Code does with `onFailure` (and `if`) in `settings.json`;
 - decisions 1–3 depend on #259's Q1 (manifest v2), which isn't agreed;
 - decision 2 is shared with #300's D6 and has to be decided once for both.
 
 ## Q→A log
+
+- 2026-11-22 — Q1 release → A: cg 2.0.0 (as recommended).
+- 2026-11-22 — Q2 later fields → A: already decided with #300's D6 (version bump per field an older cg must not
+  ignore; no strict decoding).
+- 2026-11-22 — Q3 manifest v2 → A: yes, the fields only in v2 (as recommended).
+- 2026-11-22 — Q4 `onFailure` default → Q back: can failures be captured instead of dropped? A: not by #301; cg
+  would need to run hooks through its own runner. Decided: write nothing; the capture gap filed as #305.
+- 2026-11-22 — Q5 fields → A: `matcher` and `if` only; `onFailure` when an extension needs it (changed from the
+  analysis's recommendation after re-checking who needs `onFailure`).
+- 2026-11-22 — Q6 several entries per script → A: allowed, with duplicate and same-path refusals (as recommended).
+- 2026-11-22 — Q7 validation → A: `if` only on tool events; `matcher` not checked (as recommended).
+- 2026-11-22 — Q8 names → A: Claude Code's (as recommended).
+- 2026-11-22 — Q9 where → A: own branch and PR from #259's M1 commit (as recommended).
 
 - 2026-11-21: analysis written and reviewed (4 rounds; rounds 3 and 4 clean; round 4 after aligning decision 2 with #300's D6); the open decisions go to the owner.
