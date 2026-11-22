@@ -35,6 +35,14 @@
 - [x] Mutation checks for S36, S38, S38b, S39
 - [ ] Docs; `make check`; independent review
 
+## Amendments A–C (after the new agreement)
+
+- [ ] S9: owned-command exemption with a warning (ownership from the installed version's manifest only, per command; `cg init` only warns), test-first, with the mutation checks plan.md lists
+- [ ] S2: command words match `[a-z0-9][a-z0-9-]*`, test-first
+- [ ] S25: stop branch for every decode case of the session `.cg.json` (directory, dangling symlink, empty, invalid JSON, `null`, non-object, wrong field type), from S20, S22 and S24, and the S21 exemption, test-first, with the mutation checks plan.md lists
+- [ ] S36/S38: the main checkout refused by `set-context --worktree` and ignored as a recorded worktree, test-first, with mutation checks
+- [ ] S14: list wording (a built-in-namespace command can't run)
+
 ## PR
 
 - [ ] Final independent review over the whole PR
