@@ -362,7 +362,7 @@ implementation after #259's M1 lands.
 ## Q→A log
 
 - 2026-11-21 — The owner went through D1–D13 one at a time and agreed each as recommended:
-  - D1: subagents out of #300 (a separate issue if wanted).
+  - D1: subagents out of #300; filed as #302 on the owner's go-ahead (2026-11-22).
   - D2: a per-tool target table, default `claude` (`.claude/skills/`).
   - D3: skills are extension-owned; an edited file is never overwritten and always reported.
   - D4: a manifest declaring `skills` declares `"manifest": 2` (follows from D5; works for either outcome of
@@ -375,8 +375,8 @@ implementation after #259's M1 lands.
   - D8: keep the execute bit from the extension's tree.
   - D9: the registry schema and `github-digest` change in the same release window.
   - D10: size M.
-  - D11: edit the issue body (the "silently" claim, subagents out, a pointer to this analysis), drafted for the
-    owner's go-ahead.
+  - D11: edit the issue body (the "silently" claim, subagents out, a pointer to this analysis), made on the
+    owner's go-ahead (2026-11-22).
   - D12: a `drifted` ledger list; shown in `cg extension list` and once at session start; `--take` restores,
     `--keep` acknowledges until the file or the extension's version changes; `--merge` n/a.
   - D13: `.cg.json` `skills.targets`, default `["claude"]`; a change takes effect on the next
