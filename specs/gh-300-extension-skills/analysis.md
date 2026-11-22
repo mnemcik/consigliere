@@ -314,17 +314,18 @@ two should not be implemented in parallel on `manifest.go`, `ledger.go` and `app
 |---|---|---|---|
 | D1 | Subagent definitions | Out of #300: no blocker needs them and their formats differ per tool. A new issue for them if wanted; #300's text updated to say so. | agreed |
 | D2 | Where skills are installed | A per-tool target table and a workspace setting, default `claude` only (`.claude/skills/`). Runner-up: fixed `.claude/skills/`. | agreed |
-| D3 | Ownership of installed skills | Extension-owned: unedited files follow updates; an edited file is never overwritten and is **reported** even when the extension didn't change it; `resolve` settles it. | agreed |
+| D3 | Ownership of installed skills | Extension-owned: unedited files follow updates; an edited file is never overwritten and is **reported** even when the extension didn't change it; `resolve` settles it. | superseded by D14 |
 | D4 | Manifest version for `skills` | A manifest declaring `skills` must declare the first manifest version the shipping release introduces: v2 in 2.0.0 (either Q1 outcome) or later with Q1 keeping v1; v3 if later and 2.0.0 already accepts v2 (Q1 = v2 or #301), unless 2.0.0 decodes v2 strictly (D6 (a)). | agreed |
 | D5 | Release | In cg 2.0.0 with #259 and #301. A later release is safe as is if #259's Q1 keeps v1; if Q1 = v2, only with D6's (a) or (b). | agreed |
 | D6 | How later fields avoid being dropped by an older cg | (b) a manifest version bump when a release adds a field an older cg must not ignore (as D4 does); keep the documented "older cg ignores the key" policy for harmless fields. Alternatives: (a) strict v2 decoding (changes #259's spec and the docs' policy), (c) a minimum-cg field. | agreed |
 | D7 | Name conflicts | Refuse a skill name another installed extension or the framework ships, and an unowned directory at the target without `--force`; warn about a same-name user-scope skill. | agreed |
-| D8 | File modes | Keep the execute bit from the extension's tree. | agreed |
+| D8 | File modes | Keep the execute bit from the extension's tree. | amended by D14 |
 | D9 | Cross-repo work in the same release | Registry schema accepts `skills`; `github-digest` moves to `skills` and refers to its script relative to the skill directory. | agreed |
 | D10 | Size | M, with subagents out (D1). | agreed |
 | D11 | The issue's wording | Correct "silently stops following" (it does when only the user changed the file; a later extension change is raised) and the subagent need; the owner decides whether to edit the issue. | agreed |
-| D12 | Record and lifecycle of an edit-only change (D3) | A `drifted` ledger list; shown in `cg extension list` and once at session start; `resolve --take` restores, `--keep` acknowledges until the file or the extension's version changes; `--merge` n/a. | agreed |
+| D12 | Record and lifecycle of an edit-only change (D3) | A `drifted` ledger list; shown in `cg extension list` and once at session start; `resolve --take` restores, `--keep` acknowledges until the file or the extension's version changes; `--merge` n/a. | superseded by D14 |
 | D13 | Where the targets setting lives and when a change takes effect (D2) | A `.cg.json` key (e.g. `skills.targets`, default `["claude"]`); a change takes effect on the next `cg extension update`, which moves installed skills. | agreed |
+| D14 | May users change an installed skill, and how? (raised in the spec's triage) | Skills are managed by cg: a direct edit is replaced on update with one plain message (it stays in git history); an uncommitted change stops the update; customising goes in a `SKILL.local.md` the workspace owns, which the skill reads; executables are listed in the manifest | agreed |
 
 ## Review
 
@@ -382,3 +383,9 @@ implementation after #259's M1 lands.
     `--keep` acknowledges until the file or the extension's version changes; `--merge` n/a.
   - D13: `.cg.json` `skills.targets`, default `["claude"]`; a change takes effect on the next
     `cg extension update`.
+- 2026-11-22 — In the spec's triage the owner asked whether editing an extension's skill is supported at all,
+  since reporting drift would spam users with messages about internal states. Agreed D14: skills are managed by cg
+  (replaced on update with one plain message; an uncommitted change stops the update); customising goes in
+  `SKILL.local.md`, owned by the workspace. It replaces D3 and D12; D8 is amended: executables are listed in the
+  manifest instead of read from git modes. The spec's choices Q1, Q2 and Q6 (drift detection, "shown once", drift
+  through `resolve`) dropped with it.
