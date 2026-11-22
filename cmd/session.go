@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -258,11 +259,12 @@ var (
 	setContextSessionID string
 	setContextArea      string
 	setContextProject   string
+	setContextWorktree  string
 )
 
 var sessionSetContextCmd = &cobra.Command{
 	Use:   "set-context",
-	Short: "Record the session's area and project for the status-line badge",
+	Short: "Record the session's area and project (status-line badge) or its worktree",
 	Long: `Writes the area and project a session is working on to its badge state
 file (.claude/session-context/<session-id>.json under the main worktree root),
 creating it when absent. The status line renders the badge from this file and
@@ -277,10 +279,17 @@ of the workspace), this session is resuming it, so the pausing session's claim
 is released, and the path of each resume.md is printed, with the worktree that
 holds the paused work.
 
+--worktree records the session's worktree, so the workspace's extension
+commands write there when the session runs them from other directories. cg
+worktree create records it already; use this when the workspace's own scripts
+create worktrees. The path must be one of the repository's worktrees. It may
+be given alone, or with --area and --project.
+
 ` + sessionIDHelp,
-	Example: `  cg session set-context --session-id 1b2c... --area platform --project api-gateway`,
-	Args:    cobra.NoArgs,
-	RunE:    runSessionSetContext,
+	Example: `  cg session set-context --session-id 1b2c... --area platform --project api-gateway
+  cg session set-context --worktree "$(pwd)"`,
+	Args: cobra.NoArgs,
+	RunE: runSessionSetContext,
 }
 
 func init() {
@@ -288,9 +297,8 @@ func init() {
 	f.StringVar(&setContextSessionID, "session-id", "", "session ID (shown in the session-start gate; see below for defaults)")
 	f.StringVar(&setContextArea, "area", "", "area slug the session works in")
 	f.StringVar(&setContextProject, "project", "", "project slug the session works on")
-	for _, name := range []string{"area", "project"} {
-		_ = sessionSetContextCmd.MarkFlagRequired(name)
-	}
+	f.StringVar(&setContextWorktree, "worktree", "", "path of the session's worktree (one of the repository's worktrees)")
+	sessionSetContextCmd.MarkFlagsRequiredTogether("area", "project")
 	sessionReleaseCmd.Flags().StringVar(&releaseSessionID, "session-id", "", "session ID (see below for defaults)")
 	sessionPauseCmd.Flags().StringVar(&pauseSessionID, "session-id", "", "session ID (see below for defaults)")
 }
@@ -401,10 +409,15 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 	if !session.ValidSessionID(id) {
 		return fmt.Errorf("invalid or missing session ID %q (pass --session-id or set CG_SESSION_ID)", id)
 	}
-	// Required-flag checks only test presence, so --area "" would slip through.
+	// Flag checks only test presence, so --area "" would slip through.
 	setContextArea = strings.TrimSpace(setContextArea)
 	setContextProject = strings.TrimSpace(setContextProject)
-	if setContextArea == "" || setContextProject == "" {
+	claim := cmd.Flags().Changed("area") || cmd.Flags().Changed("project")
+	worktreeSet := cmd.Flags().Changed("worktree")
+	switch {
+	case !claim && !worktreeSet:
+		return fmt.Errorf("give --area and --project, or --worktree")
+	case claim && (setContextArea == "" || setContextProject == ""):
 		return fmt.Errorf("--area and --project must be non-empty")
 	}
 
@@ -418,11 +431,24 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 	if wsRoot == "" || root == "" {
 		return fmt.Errorf("not inside a Consigliere workspace: %s", cwd)
 	}
+	out := cmd.OutOrStdout()
+	if worktreeSet {
+		path, werr := listedWorktree(cmd.Context(), root, setContextWorktree)
+		if werr != nil {
+			return werr
+		}
+		if err := session.SetWorktree(root, id, path); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(out, "Session worktree set: %s (%s)\n", path, session.ContextFile(root, id))
+	}
+	if !claim {
+		return nil
+	}
 
 	if err := session.WriteContext(root, id, session.Claim{Area: setContextArea, Project: setContextProject}); err != nil {
 		return err
 	}
-	out := cmd.OutOrStdout()
 	_, _ = fmt.Fprintf(out, "Session badge set: [%s/%s] (%s)\n",
 		setContextArea, setContextProject, session.ContextFile(root, id))
 	retired, err := session.HandOver(root, wsRoot, id, setContextProject)
@@ -438,6 +464,26 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 	}
 	printResumeNotice(out, setContextProject, resumes, cfg.WorktreeSettings().BranchPrefix)
 	return nil
+}
+
+// listedWorktree resolves p (relative to the current directory) and returns it,
+// symlinks resolved, when it is one of the worktrees of the repository whose
+// main checkout is root; otherwise an error.
+func listedWorktree(ctx context.Context, root, p string) (string, error) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	paths, err := gitx.WorktreePaths(ctx, root)
+	if err != nil {
+		return "", fmt.Errorf("listing the repository's worktrees: %w", err)
+	}
+	for _, w := range paths {
+		if samePath(w, abs) {
+			return canonicalPath(w), nil // git's spelling of it
+		}
+	}
+	return "", fmt.Errorf("%s is not one of this repository's worktrees (see `git worktree list`)", abs)
 }
 
 // printResumeNotice tells the agent claiming a paused project where its pickup

@@ -608,3 +608,27 @@ func TestUnreadableMainConfigFromLinkedSessionStops(t *testing.T) {
 	t.Chdir(main)
 	dispatchErr(t, []string{"shop"}, filepath.Join(main, workspace.ConfigFile))
 }
+
+// unreadableConfig stops where FindRoot stops: a broken .cg.json above a
+// valid workspace isn't the one that failed.
+func TestUnreadableConfigStopsAtRoot(t *testing.T) {
+	parent := t.TempDir()
+	if err := os.WriteFile(filepath.Join(parent, workspace.ConfigFile), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ws := filepath.Join(parent, "ws")
+	if err := os.Mkdir(ws, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	newWorkspaceAt(t, ws)
+	if got := unreadableConfig(ws); got != "" {
+		t.Errorf("unreadableConfig(valid workspace) = %q, want \"\"", got)
+	}
+	sub := filepath.Join(parent, "other")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := unreadableConfig(sub); got != filepath.Join(parent, workspace.ConfigFile) {
+		t.Errorf("unreadableConfig(below a broken one) = %q", got)
+	}
+}

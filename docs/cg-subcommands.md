@@ -229,12 +229,23 @@ git-ignored.
   "dirty": false,           // true once the session edits files
                             //   (`cg session mark-dirty`)
   "paused": true,           // only on the badge of the session that paused
-  "pausedAt": "2026-09-29T14:00:00Z" //   its project (`cg session pause`);
+  "pausedAt": "2026-09-29T14:00:00Z", //   its project (`cg session pause`);
                             //   cleared by `cg session set-context`
+  "worktree": "/home/me/ws--api-gateway" // the session's worktree (absolute):
+                            //   set by `cg worktree create` and `cg session
+                            //   set-context --worktree`, cleared by
+                            //   `cg worktree remove` of that worktree
 }
 ```
 
-- The session ID must match `[A-Za-z0-9_-]+`.
+- The session ID must match `[A-Za-z0-9_-]+`; cg reads and writes no file for
+  any other ID. `cg worktree create` and `remove` take it from `CG_SESSION_ID`,
+  else `CLAUDE_CODE_SESSION_ID`, and record nothing without a valid one.
+- A file with only `worktree` (no area or project) shows no badge and no
+  session in `cg active`.
+- `cg session set-context --worktree <path>` records a worktree the
+  workspace's own scripts created; the path must be in `git worktree list`.
+  It may be given alone or with `--area` and `--project`.
 - Writers merge into the existing file and keep fields they do not own.
 - Each read-modify-write holds a per-session OS advisory lock (`flock` on
   Linux and macOS, `LockFileEx` on Windows) on `<session-id>.lock` next to the

@@ -37,6 +37,7 @@ const (
 	keyDirty    = "dirty"
 	keyPaused   = "paused"
 	keyPausedAt = "pausedAt"
+	keyWorktree = "worktree"
 )
 
 // Context is the per-session badge state the status line renders.
@@ -48,6 +49,9 @@ type Context struct {
 	// project (cg session pause). Claiming a project clears both.
 	Paused   bool   `json:"paused,omitempty"`
 	PausedAt string `json:"pausedAt,omitempty"`
+	// Worktree is the session's worktree (absolute path), recorded by
+	// cg worktree create or cg session set-context --worktree.
+	Worktree string `json:"worktree,omitempty"`
 }
 
 // Claim is what a session records in its badge when it takes on work: the
@@ -58,8 +62,12 @@ type Claim struct {
 }
 
 // ReadContext loads the badge state for a session. It returns (nil, nil) when
-// the file does not exist (tracking is opt-in — no file means no badge).
+// the file does not exist (tracking is opt-in — no file means no badge). An
+// invalid session ID is an error, and no file is read.
 func ReadContext(root, sessionID string) (*Context, error) {
+	if !ValidSessionID(sessionID) {
+		return nil, fmt.Errorf("invalid session id %q", sessionID)
+	}
 	data, err := os.ReadFile(ContextFile(root, sessionID))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -178,4 +186,54 @@ func writeJSONAtomic(path string, v any) error {
 		return err
 	}
 	return os.Rename(tmpName, path)
+}
+
+// SetWorktree records the session's worktree (an absolute path) in its state
+// file, creating the session-context directory and file when absent and
+// keeping every other field.
+func SetWorktree(root, sessionID, path string) error {
+	if !ValidSessionID(sessionID) {
+		return fmt.Errorf("invalid session id %q", sessionID)
+	}
+	if err := os.MkdirAll(ContextDir(root), 0o755); err != nil {
+		return err
+	}
+	return withBadgeLock(root, sessionID, func() error {
+		file := ContextFile(root, sessionID)
+		m, err := readContextMap(file)
+		if errors.Is(err, fs.ErrNotExist) {
+			m, err = map[string]any{}, nil
+		}
+		if err != nil {
+			return err
+		}
+		m[keyWorktree] = path
+		return writeJSONAtomic(file, m)
+	})
+}
+
+// ClearWorktree removes the session's recorded worktree when it is path, and
+// reports whether it did. A missing state file is left missing.
+func ClearWorktree(root, sessionID, path string) (bool, error) {
+	if !ValidSessionID(sessionID) {
+		return false, fmt.Errorf("invalid session id %q", sessionID)
+	}
+	cleared := false
+	err := withBadgeLock(root, sessionID, func() error {
+		file := ContextFile(root, sessionID)
+		m, err := readContextMap(file)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if v, _ := m[keyWorktree].(string); v == "" || v != path {
+			return nil
+		}
+		delete(m, keyWorktree)
+		cleared = true
+		return writeJSONAtomic(file, m)
+	})
+	return cleared, err
 }

@@ -547,10 +547,32 @@ namespace between them; within one workspace, extensions can (`pr merge` and
 | `CG_COMMAND` | the declared command that matched, e.g. `live run`, or `live` for a bare-namespace entry |
 | `CG_EXTENSION_WORKSPACE` | the workspace root that served the command |
 | `CG_WORKSPACE` | passed through unchanged: the session's workspace, when set |
+| `CG_SESSION_WORKTREE` | the session's worktree, only when the session's workspace serves the command for a directory outside it and its worktrees (see below) |
 
-A program found through the `$PATH` fallback gets neither `CG_COMMAND` nor
-`CG_EXTENSION_WORKSPACE` (nor `CG_SESSION_WORKTREE`), even when the caller had
+A program found through the `$PATH` fallback gets none of `CG_COMMAND`,
+`CG_EXTENSION_WORKSPACE` and `CG_SESSION_WORKTREE`, even when the caller had
 them set. Dispatch never reads these per-run variables.
+
+### Writers: where to write
+
+A binary that writes into the workspace (a list, a note) must never write into
+the main checkout from a session that works in a worktree, and must not write
+into an external repository the session happens to be in. cg tells it where:
+
+1. `CG_SESSION_WORKTREE`, when set: the session's worktree. Dispatch takes it
+   from the session's state file (`worktree`, recorded by `cg worktree create`
+   or `cg session set-context --worktree`; the session ID comes from
+   `CG_SESSION_ID`, else `CLAUDE_CODE_SESSION_ID`), and only while
+   `git worktree list` in the session's workspace still lists it. Without such
+   a record, a session started in a linked worktree gets that worktree (the
+   session's workspace itself); one started in the main checkout gets none.
+   The linked-worktree test needs git 2.31 or later (`rev-parse
+   --path-format`); with an older git it is never set.
+2. Else `CG_EXTENSION_WORKSPACE`, when the current directory is inside it.
+3. Else, when `CG_EXTENSION_WORKSPACE` is set (the session's workspace served a
+   command for an outside directory, with no worktree known), refuse, naming
+   `cg worktree create` and `cg session set-context --worktree`.
+4. Else (run directly, or through the `$PATH` fallback) the current work tree.
 
 ## `.cg.json` v1.2 additions
 

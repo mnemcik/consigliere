@@ -309,7 +309,7 @@ func FindRoot(startDir string) (root string, cfg *Config, err error) {
 		} else if c != nil {
 			return dir, c, nil
 		}
-		if hasStructuralMarkers(dir) {
+		if HasStructuralMarkers(dir) {
 			return dir, nil, nil
 		}
 		parent := filepath.Dir(dir)
@@ -320,7 +320,10 @@ func FindRoot(startDir string) (root string, cfg *Config, err error) {
 	}
 }
 
-func hasStructuralMarkers(dir string) bool {
+// HasStructuralMarkers reports whether dir carries the markers of a workspace
+// that predates .cg.json (CLAUDE.md, areas/INDEX.md, projects/TODO.md), the
+// fallback FindRoot accepts.
+func HasStructuralMarkers(dir string) bool {
 	markers := []string{
 		"CLAUDE.md",
 		filepath.Join("areas", "INDEX.md"),

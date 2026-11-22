@@ -146,7 +146,10 @@ Your binary is also told which workspace served it, `CG_EXTENSION_WORKSPACE`,
 and gets the session's `CG_WORKSPACE` unchanged. Use them rather than the
 current directory: in a session started with `cg`, your command also runs from
 other directories, such as an external repository the session works in. See
-[Which workspace serves](docs/extensions.md#which-workspace-serves).
+[Which workspace serves](docs/extensions.md#which-workspace-serves). A command
+that writes into the workspace follows the order in
+[Writers: where to write](docs/extensions.md#writers-where-to-write), starting
+with `CG_SESSION_WORKTREE`.
 
 Declare every command your binary handles, not just the namespace: agents grant
 permissions by the typed command (`Bash(cg foo sync *)`), and cg only runs a

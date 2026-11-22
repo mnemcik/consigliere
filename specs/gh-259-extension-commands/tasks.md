@@ -26,13 +26,13 @@
 - [x] Failing tests for S20–S31
 - [x] `CG_WORKSPACE` at start; precedence; worktree test; `CG_EXTENSION_WORKSPACE`
 - [x] Mutation checks for S23, S25–S27, S29, S31 (strip), and the cross-root S16/S17 tests
-- [ ] Docs; `make check`; independent review
+- [x] Docs; `make check`; independent review (4 rounds; round 4 clean, its code-review nits fixed in M4's commit)
 
 ## M4 — the session records its worktree
 
-- [ ] Failing tests for S35–S40, S38b
-- [ ] State key, `worktree create/remove`, `set-context --worktree`, `CG_SESSION_WORKTREE`
-- [ ] Mutation checks for S36, S38, S38b, S39
+- [x] Failing tests for S35–S40, S38b
+- [x] State key, `worktree create/remove`, `set-context --worktree`, `CG_SESSION_WORKTREE`
+- [x] Mutation checks for S36, S38, S38b, S39
 - [ ] Docs; `make check`; independent review
 
 ## PR
