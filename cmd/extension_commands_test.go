@@ -557,11 +557,11 @@ func TestOwnedBuiltinCommands(t *testing.T) {
 		wantConflict(t, err, out, `"zzfoo run"`, `"beta"`, "cg zzfoo")
 		assertUnchanged(t, ws, before)
 	})
-	t.Run("cg init doesn't own what a legacy entry restores from HEAD", func(t *testing.T) {
+	t.Run("cg init only warns, also for a legacy entry restored from HEAD", func(t *testing.T) {
 		cfgHome, ws := t.TempDir(), newWorkspace(t)
 		installRepo(t, cfgHome, ws, commandsManifest("alpha", "1.0.0", "zzfoo run"))
-		// A legacy entry (no commit) is restored from the default branch,
-		// not a recorded version, so it owns nothing.
+		// A legacy entry (no commit) is restored from the default branch;
+		// S9: cg init only warns.
 		cfg, _ := workspace.Detect(ws)
 		cfg.Extensions[0].Commit = ""
 		if err := cfg.Save(ws); err != nil {
@@ -572,7 +572,9 @@ func TestOwnedBuiltinCommands(t *testing.T) {
 			t.Fatal(err)
 		}
 		out, err := runInitForce(t, cfgHome, ws)
-		wantConflict(t, err, out, `"zzfoo run"`, "cg zzfoo")
+		if err != nil || !strings.Contains(out, "warning:") || !strings.Contains(out, `"zzfoo run"`) {
+			t.Errorf("init: err %v, want only a warning:\n%s", err, out)
+		}
 	})
 	t.Run("cg init only warns", func(t *testing.T) {
 		cfgHome, ws := t.TempDir(), newWorkspace(t)

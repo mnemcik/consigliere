@@ -376,7 +376,6 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		present []workspace.ExtensionRef
 	)
 	incoming := map[string][]extension.CommandContribution{}
-	restored := map[string][]extension.CommandContribution{} // owned: restored at the recorded commit
 	for i := range out {
 		e := &out[i]
 		if _, err := os.Stat(extension.SourceRoot(e)); err == nil {
@@ -417,11 +416,10 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		}
 		todo = append(todo, restore{e: e, m: m, manifestDir: filepath.Join(tree, path), prev: prev, commit: commit})
 		incoming[m.Name] = m.Contributes.Commands
-		if extension.ValidCommit(e.Commit) { // restored at its recorded version
-			restored[m.Name] = m.Contributes.Commands
-		}
 	}
-	warnings, err := checkCommands(root, present, incoming, restored)
+	// S9: cg init restores the versions .cg.json records, so every command it
+	// restores is owned: a built-in namespace only warns.
+	warnings, err := checkCommands(root, present, incoming, incoming)
 	if err != nil {
 		return out, nil, err
 	}

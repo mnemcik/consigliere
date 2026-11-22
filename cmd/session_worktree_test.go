@@ -13,6 +13,7 @@ import (
 
 	"github.com/mnemcik/consigliere/internal/gitx"
 	"github.com/mnemcik/consigliere/internal/session"
+	"github.com/mnemcik/consigliere/internal/workspace"
 )
 
 // runCg runs `cg <args…>` in dir and returns its output.
@@ -575,5 +576,50 @@ func TestSetContextRecordsGitSpelling(t *testing.T) {
 	}
 	if got := recordedWorktree(t, ws, "s1"); got != recordPath(wt) {
 		t.Errorf("recorded %q, want git's spelling %q", got, recordPath(wt))
+	}
+}
+
+// The gate still warns when the agent works in the main checkout of the repo
+// it is in, though the badge file is the session's.
+func TestStartGateWarnsInAnotherReposMainCheckout(t *testing.T) {
+	requireGit(t)
+	ws := gitWorkspace(t)
+	ext := plainRepo(t)
+	t.Setenv(envWorkspace, ws)
+	stdin := `{"prompt":"hi","session_id":"s1","cwd":"` + filepath.ToSlash(ext) + `"}`
+	out, err := runSession(t, ext, stdin, "start-gate")
+	if err != nil {
+		t.Fatalf("start-gate: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "You are in the MAIN worktree") {
+		t.Errorf("no main-worktree warning for the external repo's main checkout:\n%s", out)
+	}
+}
+
+// A relative gateTemplate is read from the workspace whose .cg.json names it,
+// even when that is the session's linked worktree.
+func TestStartGateTemplateFromSessionWorktree(t *testing.T) {
+	requireGit(t)
+	ws := gitWorkspace(t)
+	wt := addBranchWorktree(t, ws, "tpl")
+	cfg, err := workspace.Detect(wt)
+	if err != nil || cfg == nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	cfg.Session = &workspace.SessionConfig{GateTemplate: "gate.md"}
+	if err := cfg.Save(wt); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, "gate.md"), []byte("WORKTREE GATE {{session_id}}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envWorkspace, wt)
+	stdin := `{"prompt":"hi","session_id":"s1","cwd":"` + filepath.ToSlash(wt) + `"}`
+	out, err := runSession(t, wt, stdin, "start-gate")
+	if err != nil {
+		t.Fatalf("start-gate: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "WORKTREE GATE s1") {
+		t.Errorf("worktree's gate template not used:\n%s", out)
 	}
 }

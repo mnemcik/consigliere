@@ -486,10 +486,10 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-// listedWorktree resolves p (relative to the current directory) and returns it,
-// symlinks resolved, when it is one of the linked worktrees of the session
-// repo, whose root is repoRoot (S36: listed by its `git worktree list`, not the
-// main checkout); otherwise an error.
+// listedWorktree resolves p (relative to the current directory) and, when it is
+// one of the linked worktrees of the session repo whose root is repoRoot (S36:
+// listed by its `git worktree list`, not the main checkout), returns git's
+// listed spelling of it in recordPath form; otherwise an error.
 func listedWorktree(ctx context.Context, repoRoot, p string) (string, error) {
 	abs, err := filepath.Abs(p)
 	if err != nil {
@@ -499,7 +499,7 @@ func listedWorktree(ctx context.Context, repoRoot, p string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("%s is not one of the session repository's linked worktrees (see `git worktree list` in %s; the main checkout doesn't count)", abs, repoRoot)
 	}
-	return recordPath(listed), nil // git's spelling, as create and remove use
+	return recordPath(listed), nil // the form create and remove record
 }
 
 // printResumeNotice tells the agent claiming a paused project where its pickup
@@ -592,13 +592,21 @@ func runSessionStartGate(cmd *cobra.Command, _ []string) error {
 		cfg, _ = workspace.Detect(root)
 	}
 	s := cfg.SessionSettings()
+	// A relative template is the workspace's whose .cg.json names it.
+	tpl := s.GateTemplate
+	if tpl != "" && !filepath.IsAbs(tpl) && wsRoot != "" {
+		tpl = filepath.Join(wsRoot, tpl)
+	}
+	// The main-worktree warning is about the repo the agent works in.
+	checkout, _ := gitx.CommonRoot(cmd.Context(), cwd)
 
-	text, emit := session.Gate(cmd.Context(), root, session.GateInput{
+	text, emit := session.Gate(cmd.Context(), root, &session.GateInput{
 		Prompt:        in.Prompt,
 		SessionID:     in.SessionID,
 		CWD:           cwd,
 		WorkspaceRoot: wsRoot,
-	}, s.GateTemplate, s.PruneDays)
+		CheckoutRoot:  checkout,
+	}, tpl, s.PruneDays)
 	if emit {
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), text)
 	}

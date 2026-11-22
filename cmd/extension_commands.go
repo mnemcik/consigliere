@@ -115,9 +115,8 @@ func builtinFor(command string) string {
 // A built-in-namespace command the extension already owns (its installed
 // version's manifest at the recorded commit declares it) isn't refused but
 // returned as a warning. restored, when not nil, gives the owned commands
-// instead (cg init: an extension restored at its recorded commit owns every
-// command it restores, so init only warns; a legacy entry fetched from the
-// default branch owns none). Each incoming
+// instead (cg init passes everything it restores, so it only warns). Each
+// incoming
 // extension's own ledger must be readable too: applying it reads that ledger,
 // and failing there would leave a multi-extension operation half applied.
 func checkCommands(root string, installed []workspace.ExtensionRef, incoming, restored map[string][]extension.CommandContribution) ([]string, error) {

@@ -59,9 +59,14 @@ type GateInput struct {
 	Prompt    string
 	SessionID string
 	CWD       string
-	// WorkspaceRoot is the workspace cwd belongs to, where paused projects are
-	// looked up (in every worktree, see Checkouts). Empty skips the lookup.
+	// WorkspaceRoot is the session's workspace (CG_WORKSPACE, else cwd's),
+	// where paused projects are looked up (in every worktree, see Checkouts).
+	// Empty skips the lookup.
 	WorkspaceRoot string
+	// CheckoutRoot is the main checkout of cwd's own repository, for the
+	// main-worktree warning (the agent may work in another repo than the
+	// session's). Empty means root.
+	CheckoutRoot string
 }
 
 // Gate renders the session-start gate text for a prompt, or returns emit=false
@@ -70,7 +75,7 @@ type GateInput struct {
 // session-start-gate.sh; the wording is config-driven (DEC-001): a workspace
 // supplies its own via gateTemplatePath, else a framework-neutral default is
 // used. root is the main worktree root (where the badge files live).
-func Gate(ctx context.Context, root string, in GateInput, gateTemplatePath string, pruneDays int) (text string, emit bool) {
+func Gate(ctx context.Context, root string, in *GateInput, gateTemplatePath string, pruneDays int) (text string, emit bool) {
 	pruneStaleContexts(root, pruneDays)
 
 	if skipAllPattern.MatchString(strings.TrimSpace(in.Prompt)) {
@@ -88,8 +93,12 @@ func Gate(ctx context.Context, root string, in GateInput, gateTemplatePath strin
 		}
 	}
 
+	checkout := in.CheckoutRoot
+	if checkout == "" {
+		checkout = root
+	}
 	warning := ""
-	if inMainWorktree(ctx, in.CWD, root) {
+	if inMainWorktree(ctx, in.CWD, checkout) {
 		warning = defaultWorktreeWarning
 	}
 
