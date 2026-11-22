@@ -341,7 +341,8 @@ review gate and the todo queue are out of this item's core scope.
 - Builder questions: 2 answered (who computes staleness: `cg active`; one flag or two: two)
 - Verified true: round-3 items resolved; windows per workspace in `.cg.json` (`cmd/active.go:43-46,69-75`);
   `mtime` minute precision (`:95`); badges deleted only on release; no private details
-- Not verified: whether #259 changes the `cg active` JSON beyond `worktree` (not re-read this round)
+- Not verified by the reviewer: whether #259 changes the `cg active` JSON; checked by the analyst on #259's branch
+  (`cmd/active.go:86-91` there): same six fields, unchanged
 
 ## Verdict
 
