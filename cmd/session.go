@@ -419,6 +419,10 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("give --area and --project, or --worktree")
 	case claim && (setContextArea == "" || setContextProject == ""):
 		return fmt.Errorf("--area and --project must be non-empty")
+	case worktreeSet && strings.TrimSpace(setContextWorktree) == "":
+		// filepath.Abs("") is the current directory: an unset shell variable
+		// must not record wherever the command happens to run.
+		return fmt.Errorf("--worktree must be non-empty")
 	}
 
 	cwd, err := os.Getwd()
@@ -432,18 +436,28 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("not inside a Consigliere workspace: %s", cwd)
 	}
 	out := cmd.OutOrStdout()
+	// Validate the worktree before writing anything, and record it after the
+	// claim, so a refused path or a failed claim changes nothing about it.
+	var wtPath string
 	if worktreeSet {
-		path, werr := listedWorktree(cmd.Context(), root, setContextWorktree)
+		p, werr := listedWorktree(cmd.Context(), root, setContextWorktree)
 		if werr != nil {
 			return werr
 		}
-		if err := session.SetWorktree(root, id, path); err != nil {
+		wtPath = p
+	}
+	recordWorktree := func() error {
+		if !worktreeSet {
+			return nil
+		}
+		if err := session.SetWorktree(root, id, wtPath); err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintf(out, "Session worktree set: %s (%s)\n", path, session.ContextFile(root, id))
+		_, _ = fmt.Fprintf(out, "Session worktree set: %s (%s)\n", wtPath, session.ContextFile(root, id))
+		return nil
 	}
 	if !claim {
-		return nil
+		return recordWorktree()
 	}
 
 	if err := session.WriteContext(root, id, session.Claim{Area: setContextArea, Project: setContextProject}); err != nil {
@@ -463,7 +477,7 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	printResumeNotice(out, setContextProject, resumes, cfg.WorktreeSettings().BranchPrefix)
-	return nil
+	return recordWorktree()
 }
 
 // listedWorktree resolves p (relative to the current directory) and returns it,

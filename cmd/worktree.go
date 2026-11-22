@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
@@ -141,7 +142,7 @@ func recordSessionWorktree(errw io.Writer, root, path string) {
 	if !session.ValidSessionID(id) {
 		return
 	}
-	if err := session.SetWorktree(root, id, canonicalPath(path)); err != nil {
+	if err := session.SetWorktree(root, id, recordPath(path)); err != nil {
 		_, _ = fmt.Fprintf(errw, "warning: could not record the worktree for session %s: %v\n", id, err)
 	}
 }
@@ -303,18 +304,23 @@ func runWorktreeRemove(cmd *cobra.Command, args []string) error {
 		Local:         w.LandingStrategy == workspace.StrategyLocal,
 		Force:         worktreeRemoveForce,
 	}
-	// Resolved while the directory still exists, the way create recorded it.
-	path := canonicalPath(opts.Path(args[0]))
+	path := recordPath(opts.Path(args[0]))
 	if err := worktree.Remove(ctx, args[0], opts, cmd.ErrOrStderr()); err != nil {
 		return err
 	}
-	// The session's record of this worktree goes with it.
-	if id := resolveSessionID(""); session.ValidSessionID(id) {
-		if _, err := session.ClearWorktree(root, id, path); err != nil {
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not clear the worktree record of session %s: %v\n", id, err)
-		}
+	// Every session's record of this worktree goes with it, so a worktree
+	// created at the same path later isn't taken for theirs.
+	if err := session.ClearWorktreeAll(root, path); err != nil {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not clear worktree records of %s: %v\n", path, err)
 	}
 	return nil
+}
+
+// recordPath is the spelling of a worktree path cg records: its parent
+// directory with symlinks resolved, then its own name. The parent exists
+// even after the worktree itself is gone, so create and remove agree.
+func recordPath(p string) string {
+	return filepath.Join(canonicalPath(filepath.Dir(p)), filepath.Base(p))
 }
 
 var worktreeListCmd = &cobra.Command{

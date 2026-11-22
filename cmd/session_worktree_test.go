@@ -97,11 +97,18 @@ func TestWorktreeCreateRecordsAndRemoveClears(t *testing.T) {
 			if got := recordedWorktree(t, ws, "s1"); !strings.HasSuffix(filepath.ToSlash(got), "--two") {
 				t.Errorf("removing another worktree changed the record to %q", got)
 			}
+			// Another session recorded the same worktree.
+			if err := session.SetWorktree(ws, "other", recordedWorktree(t, ws, "s1")); err != nil {
+				t.Fatal(err)
+			}
 			if out, err := runCg(t, ws, "worktree", "remove", "two"); err != nil {
 				t.Fatalf("remove two: %v\n%s", err, out)
 			}
 			if got := recordedWorktree(t, ws, "s1"); got != "" {
 				t.Errorf("record %q left after removing it", got)
+			}
+			if got := recordedWorktree(t, ws, "other"); got != "" {
+				t.Errorf("another session's record %q left after removing it", got)
 			}
 		})
 	}
@@ -164,6 +171,14 @@ func TestSetContextWorktree(t *testing.T) {
 		if got := recordedWorktree(t, ws, "s3"); got != "" {
 			t.Errorf("unlisted path recorded: %q", got)
 		}
+	}
+	// An empty value (an unset shell variable) is refused, not taken as the
+	// current directory.
+	if out, err := runCg(t, ws, "session", "set-context", "--session-id", "s5", "--worktree", ""); err == nil {
+		t.Errorf("--worktree \"\" accepted:\n%s", out)
+	}
+	if got := recordedWorktree(t, ws, "s5"); got != "" {
+		t.Errorf("empty --worktree recorded %q", got)
 	}
 	// Neither a claim nor a worktree is an error.
 	if _, err := runCg(t, ws, "session", "set-context", "--session-id", "s4"); err == nil {

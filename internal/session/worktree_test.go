@@ -107,3 +107,64 @@ func TestWorktreeOnlyStateShowsNothing(t *testing.T) {
 		t.Errorf("active = %+v, want none", active)
 	}
 }
+
+// The worktree is stored with '/' separators (files cg stores use them on
+// every OS) and read back in the OS's form.
+func TestWorktreeStoredWithSlashes(t *testing.T) {
+	root := t.TempDir()
+	p := filepath.Join(root, "ws--x")
+	if err := SetWorktree(root, "s1", p); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(ContextFile(root, "s1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["worktree"] != filepath.ToSlash(p) {
+		t.Errorf("stored %v, want %s", m["worktree"], filepath.ToSlash(p))
+	}
+	if c, _ := ReadContext(root, "s1"); c == nil || c.Worktree != p {
+		t.Errorf("read back %+v, want %s", c, p)
+	}
+	if cleared, err := ClearWorktree(root, "s1", p); err != nil || !cleared {
+		t.Errorf("clear: %v %v", cleared, err)
+	}
+}
+
+// ClearWorktreeAll clears every session's record of a worktree.
+func TestClearWorktreeAll(t *testing.T) {
+	root := t.TempDir()
+	for _, id := range []string{"a", "b"} {
+		if err := SetWorktree(root, id, "/w/x"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := SetWorktree(root, "c", "/w/y"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ClearWorktreeAll(root, "/w/x"); err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]string{"a": "", "b": "", "c": filepath.FromSlash("/w/y")} {
+		if c, _ := ReadContext(root, id); c == nil || c.Worktree != want {
+			t.Errorf("%s: %+v, want worktree %q", id, c, want)
+		}
+	}
+}
+
+// A session that never claimed a project leaves no state file behind at its
+// end, even when the dirty hook marked it.
+func TestEndSessionDropsWorktreeOnlyFile(t *testing.T) {
+	root := t.TempDir()
+	writeCtx(t, root, "s1", `{"worktree":"/w/x","dirty":true}`)
+	if released, err := EndSession(root, root, "s1"); err != nil || !released {
+		t.Errorf("EndSession: %v %v", released, err)
+	}
+	if _, err := os.Stat(ContextFile(root, "s1")); !os.IsNotExist(err) {
+		t.Error("worktree-only state file left behind")
+	}
+}

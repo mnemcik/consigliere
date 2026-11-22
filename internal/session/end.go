@@ -8,7 +8,8 @@ import "fmt"
 //
 //   - a dirty badge is kept, because the session ended without a wrap and its
 //     worktree may hold unlanded work; cg active keeps listing it within the
-//     dirty window;
+//     dirty window (a file with no claim, only a recorded worktree, isn't
+//     listed anywhere, so it goes);
 //   - the badge carrying the pause marker is kept while its project's
 //     resume.md exists, because a pause keeps its claim until another session
 //     resumes the project.
@@ -25,8 +26,13 @@ func EndSession(root, wsRoot, sessionID string) (bool, error) {
 	released := false
 	err := withBadgeLock(root, sessionID, func() error {
 		c, err := ReadContext(root, sessionID)
-		if err != nil || c == nil || c.Dirty {
+		if err != nil || c == nil {
 			return err
+		}
+		// A dirty badge is kept for its claim; a session that never claimed a
+		// project (only a recorded worktree) has nothing to keep.
+		if c.Dirty && (c.Area != "" || c.Project != "") {
+			return nil
 		}
 		if c.Paused {
 			paused, err := pausedIn(checkouts, c.Project)

@@ -79,6 +79,7 @@ func ReadContext(root, sessionID string) (*Context, error) {
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, err
 	}
+	c.Worktree = filepath.FromSlash(c.Worktree)
 	return &c, nil
 }
 
@@ -207,7 +208,7 @@ func SetWorktree(root, sessionID, path string) error {
 		if err != nil {
 			return err
 		}
-		m[keyWorktree] = path
+		m[keyWorktree] = filepath.ToSlash(path) // files cg stores use '/' on every OS
 		return writeJSONAtomic(file, m)
 	})
 }
@@ -228,7 +229,7 @@ func ClearWorktree(root, sessionID, path string) (bool, error) {
 		if err != nil {
 			return err
 		}
-		if v, _ := m[keyWorktree].(string); v == "" || v != path {
+		if v, _ := m[keyWorktree].(string); v == "" || v != filepath.ToSlash(path) {
 			return nil
 		}
 		delete(m, keyWorktree)
@@ -236,4 +237,24 @@ func ClearWorktree(root, sessionID, path string) (bool, error) {
 		return writeJSONAtomic(file, m)
 	})
 	return cleared, err
+}
+
+// ClearWorktreeAll clears every session's record of the worktree path, so a
+// worktree created again at that path later isn't taken for theirs.
+func ClearWorktreeAll(root, path string) error {
+	matches, err := filepath.Glob(filepath.Join(ContextDir(root), "*.json"))
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, f := range matches {
+		id := strings.TrimSuffix(filepath.Base(f), ".json")
+		if !ValidSessionID(id) {
+			continue
+		}
+		if _, err := ClearWorktree(root, id, path); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }

@@ -555,9 +555,10 @@ them set. Dispatch never reads these per-run variables.
 
 ### Writers: where to write
 
-A binary that writes into the workspace (a list, a note) must never write into
-the main checkout from a session that works in a worktree, and must not write
-into an external repository the session happens to be in. cg tells it where:
+A binary that writes into the workspace (a list, a note) must not write into
+an external repository the session happens to be in, nor, when the session's
+workspace serves it for such a directory, into the main checkout. cg tells it
+where:
 
 1. `CG_SESSION_WORKTREE`, when set: the session's worktree. Dispatch takes it
    from the session's state file (`worktree`, recorded by `cg worktree create`
@@ -573,6 +574,10 @@ into an external repository the session happens to be in. cg tells it where:
    command for an outside directory, with no worktree known), refuse, naming
    `cg worktree create` and `cg session set-context --worktree`.
 4. Else (run directly, or through the `$PATH` fallback) the current work tree.
+
+Inside the workspace or one of its worktrees, the current one serves the
+command (rule 2): a session that works in a worktree should run its commands
+from there.
 
 ## `.cg.json` v1.2 additions
 
