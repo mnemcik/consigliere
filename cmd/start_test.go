@@ -22,6 +22,7 @@ type stubStart struct {
 	called bool
 	path   string
 	argv   []string
+	env    []string
 }
 
 func newStubStart(t *testing.T, interactive bool) *stubStart {
@@ -29,8 +30,8 @@ func newStubStart(t *testing.T, interactive bool) *stubStart {
 	s := &stubStart{}
 	oldTTY, oldRun := isInteractive, runAgent
 	isInteractive = func() bool { return interactive }
-	runAgent = func(path string, argv []string) error {
-		s.called, s.path, s.argv = true, path, argv
+	runAgent = func(path string, argv, env []string) error {
+		s.called, s.path, s.argv, s.env = true, path, argv, env
 		return nil
 	}
 	t.Cleanup(func() { isInteractive, runAgent = oldTTY, oldRun })
@@ -306,7 +307,7 @@ func TestAgentExitCodePrintsNothing(t *testing.T) {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			workspaceWithAgent(t, []string{testAgent(t)})
 			newStubStart(t, true)
-			runAgent = func(string, []string) error { return cgerr.New(3, "") }
+			runAgent = func(string, []string, []string) error { return cgerr.New(3, "") }
 
 			stdout, stderr, err := executeRoot(t, args)
 			var ce *cgerr.CodedError
@@ -323,7 +324,7 @@ func TestAgentExitCodePrintsNothing(t *testing.T) {
 func TestBareCgFallsBackWhenTheAgentFailsToStart(t *testing.T) {
 	workspaceWithAgent(t, []string{testAgent(t)})
 	newStubStart(t, true)
-	runAgent = func(string, []string) error { return errors.New("fork/exec: no such file or directory") }
+	runAgent = func(string, []string, []string) error { return errors.New("fork/exec: no such file or directory") }
 
 	stdout, stderr, err := executeRoot(t, []string{"--no-auto-update"})
 	if err != nil || !strings.Contains(stdout, "Usage:") || !strings.Contains(stderr, noAgentHint) {
@@ -515,14 +516,14 @@ func TestLauncherFailureNamesTheExtension(t *testing.T) {
 	ws, _ := launcherWorkspace(t)
 	installLauncher(t, ws, "tmux", "cg-tmux", "cg-tmux", nil, true)
 	newStubStart(t, true)
-	runAgent = func(string, []string) error { return errors.New("exec format error") }
+	runAgent = func(string, []string, []string) error { return errors.New("exec format error") }
 
 	err := startCmd.RunE(startCmd, nil)
 	if err == nil || !strings.Contains(err.Error(), "launcher of extension tmux") || !strings.Contains(err.Error(), "exec format error") {
 		t.Errorf("want the error to name the extension, got %v", err)
 	}
 	// An exit code passed through from the launcher stays silent.
-	runAgent = func(string, []string) error { return cgerr.New(5, "") }
+	runAgent = func(string, []string, []string) error { return cgerr.New(5, "") }
 	_, stderr, err := executeRoot(t, []string{"start"})
 	var ce *cgerr.CodedError
 	if !errors.As(err, &ce) || ce.Code != 5 || stderr != "" {

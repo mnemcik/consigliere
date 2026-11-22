@@ -23,9 +23,9 @@
 
 ## M3 — the session carries its workspace
 
-- [ ] Failing tests for S20–S31
-- [ ] `CG_WORKSPACE` at start; precedence; worktree test; `CG_EXTENSION_WORKSPACE`
-- [ ] Mutation checks for S23, S25–S27, S29, S31 (strip), and the cross-root S16/S17 tests
+- [x] Failing tests for S20–S31
+- [x] `CG_WORKSPACE` at start; precedence; worktree test; `CG_EXTENSION_WORKSPACE`
+- [x] Mutation checks for S23, S25–S27, S29, S31 (strip), and the cross-root S16/S17 tests
 - [ ] Docs; `make check`; independent review
 
 ## M4 — the session records its worktree

@@ -468,10 +468,12 @@ earlier. `cg extension list` flags such a command; it no longer runs.
 
 When `cg <words> …` is not a built-in, cg matches the typed words (the leading
 arguments after cg's own flags, up to the first one starting with `-`) against
-the workspace's declared commands:
+the declared commands of the workspaces it consults, in order (see
+[Which workspace serves](#which-workspace-serves)):
 
-1. When any installed extension's ledger has a command in the typed namespace
-   (whether or not it checks out, see 3), that workspace decides it. The longest declared command the typed words start
+1. The first workspace whose ledgers have any command in the typed namespace
+   (whether or not it checks out, see 3) decides it; later workspaces and
+   `$PATH` aren't consulted for it. The longest declared command the typed words start
    with wins, and its binary runs with every argument after the namespace word,
    as git and gh do: `cg live run --until-pane x` runs `bin/cg-live run
    --until-pane x`. The binary finds the command cg matched in `CG_COMMAND`
@@ -489,7 +491,7 @@ the workspace's declared commands:
    `.cg.json`) stop dispatch too. So does a `.cg.json` or ledger that can't be
    read (it might declare the command; the error names the file to restore),
    and a current directory cg can't determine.
-4. When no installed extension declares any command in the namespace, cg runs a
+4. When no consulted workspace declares any command in the namespace, cg runs a
    `cg-<namespace>` executable on `$PATH`, if there is one, with the arguments
    after the namespace (a plain name: one with a path separator or a colon is
    never looked up). A namespace an extension declares never reaches `$PATH`, whether or not
@@ -499,6 +501,48 @@ Otherwise cobra's "unknown command" error is shown, with a hint that an
 extension's command runs inside the workspace that installed it, and whether
 `CG_WORKSPACE` is set. Built-in commands always win over extension commands
 and `$PATH` programs. No extension `bin/` directory is added to `$PATH`.
+
+### Which workspace serves
+
+`cg start` (and bare `cg`) starts the session with `CG_WORKSPACE` set to the
+absolute workspace root it resolved, a worktree's root when started in one. A
+launcher passes it on; `cg-tmux` passes it into the tmux session. Dispatch reads
+it (and never rewrites it) to pick the workspaces it consults:
+
+| Where the command runs | Consulted, in order |
+|---|---|
+| `CG_WORKSPACE` unset | the current directory's workspace, then `$PATH` |
+| inside the session's workspace | that workspace |
+| inside one of its worktrees (listed by `git worktree list` in the session's workspace) | that worktree, so its own extension changes count |
+| inside another workspace, e.g. a cloned repo's | the session's workspace, then the other one, then `$PATH` |
+| outside any workspace, e.g. an external repo | the session's workspace, then `$PATH` |
+
+The worktree list is read from the session's workspace only, with git's
+repository variables (`GIT_DIR`, `GIT_WORK_TREE`, …) removed, and paths are
+compared after resolving symlinks. When it can't be read or trusted (no git, the
+session's workspace isn't the top level of its repository), the current
+directory's workspace counts as another workspace. A `CG_WORKSPACE` that is
+relative, or names a directory without a valid `.cg.json` (a worktree removed
+since the session started), is ignored, and the unknown-command hint says so.
+
+Because the first workspace that declares a namespace decides it, a cloned
+repository's workspace can't answer a command in a namespace the session's
+workspace declares, even inside the clone: a grant written for the session's
+commands never reaches the clone's code. Two workspaces can't split one
+namespace between them; within one workspace, extensions can (`pr merge` and
+`pr watch`).
+
+### What the binary is told
+
+| Variable | Set to |
+|---|---|
+| `CG_COMMAND` | the declared command that matched, e.g. `live run`, or `live` for a bare-namespace entry |
+| `CG_EXTENSION_WORKSPACE` | the workspace root that served the command |
+| `CG_WORKSPACE` | passed through unchanged: the session's workspace, when set |
+
+A program found through the `$PATH` fallback gets neither `CG_COMMAND` nor
+`CG_EXTENSION_WORKSPACE` (nor `CG_SESSION_WORKTREE`), even when the caller had
+them set. Dispatch never reads these per-run variables.
 
 ## `.cg.json` v1.2 additions
 

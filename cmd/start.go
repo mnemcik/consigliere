@@ -30,6 +30,9 @@ var startCmd = &cobra.Command{
 		"(an argv array, default [\"claude\"]) in the current directory, with any\n" +
 		"arguments passed on to it, e.g. `cg start --resume <id>`. An installed\n" +
 		"extension can contribute a launcher that wraps the agent (e.g. in tmux).\n\n" +
+		"The session gets CG_WORKSPACE set to the workspace root (a worktree's root when\n" +
+		"started in one), so extension commands keep working after the session moves to\n" +
+		"another directory, such as an external repository.\n\n" +
 		"Bare `cg` does the same inside a workspace when run from a terminal; outside a\n" +
 		"workspace, without a terminal, or when the agent can't be started, it prints\n" +
 		"this help instead.\n\n" +
@@ -129,13 +132,15 @@ type agentRun struct {
 	path     string
 	argv     []string
 	launcher string
+	// root is the absolute workspace root the session serves: CG_WORKSPACE.
+	root string
 }
 
 // exec runs it. A launcher that fails to start is named in the error; an exit
 // code passed through from the agent or launcher (a CodedError without a
 // message) is returned as is, so cg prints nothing of its own.
 func (r agentRun) exec() error {
-	err := runAgent(r.path, r.argv)
+	err := runAgent(r.path, r.argv, sessionEnv(r.root))
 	if err == nil || r.launcher == "" {
 		return err
 	}
@@ -145,11 +150,25 @@ func (r agentRun) exec() error {
 	return fmt.Errorf("cg start: launcher of extension %s (%s): %w", r.launcher, r.path, err)
 }
 
+// sessionEnv is the environment of the session `cg start` starts for the
+// workspace at root: CG_WORKSPACE set to root, so extension commands find the
+// workspace from any directory the session works in, and without the per-run
+// variables, which describe one dispatched run and mustn't leak into a
+// session started from inside an extension's binary.
+func sessionEnv(root string) []string {
+	env := withoutEnv(os.Environ(), append([]string{envWorkspace}, perRunVars...)...)
+	return append(env, envWorkspace+"="+root)
+}
+
 // resolveAgent works out what `cg start` runs for the workspace at root with
 // extra appended: the agent from session.agent, wrapped by an installed
 // extension's launcher when there is one. An error means nothing can be
 // started (bare `cg` then falls back to help).
 func resolveAgent(root string, extra []string) (agentRun, error) {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return agentRun{}, err
+	}
 	cfg, err := workspace.Detect(root)
 	if err != nil {
 		return agentRun{}, err
@@ -172,12 +191,12 @@ func resolveAgent(root string, extra []string) (agentRun, error) {
 		return agentRun{}, err
 	}
 	if l == nil {
-		return agentRun{path: path, argv: argv}, nil
+		return agentRun{path: path, argv: argv, root: root}, nil
 	}
 	// The launcher gets its own args, "--", then the agent argv as configured
 	// (agent[0] as written, not the resolved path, so it can name sessions).
 	largv := append(append(append([]string{l.bin}, l.args...), "--"), argv...)
-	return agentRun{path: l.bin, argv: largv, launcher: l.ext}, nil
+	return agentRun{path: l.bin, argv: largv, launcher: l.ext, root: root}, nil
 }
 
 // launcher is an installed extension's launcher contribution, resolved.

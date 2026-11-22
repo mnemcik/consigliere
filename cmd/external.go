@@ -10,9 +10,11 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/mnemcik/consigliere/internal/cgerr"
 	"github.com/mnemcik/consigliere/internal/extension"
+	"github.com/mnemcik/consigliere/internal/gitx"
 	"github.com/mnemcik/consigliere/internal/workspace"
 )
 
@@ -23,8 +25,43 @@ const (
 	envCommand = "CG_COMMAND"
 )
 
-// envWorkspace names the workspace a session started with `cg` serves.
+// envWorkspace names the workspace a session started with `cg` serves: `cg
+// start` sets it to the absolute root it resolved, and dispatch reads it
+// (never rewrites it) to prefer that workspace from other directories.
 const envWorkspace = "CG_WORKSPACE"
+
+// More per-run variables cg sets for a binary it runs.
+const (
+	// envExtensionWorkspace is the workspace root whose declared command
+	// it is.
+	envExtensionWorkspace = "CG_EXTENSION_WORKSPACE"
+	// envSessionWorktree is the session's worktree, for a writer run from
+	// outside the session's workspace.
+	envSessionWorktree = "CG_SESSION_WORKTREE"
+)
+
+// perRunVars are the variables that describe one dispatched run. A PATH
+// program never gets them, and a session cg starts doesn't inherit them.
+var perRunVars = []string{envCommand, envExtensionWorkspace, envSessionWorktree}
+
+// samePath reports whether a and b are the same existing directory, after
+// resolving symlinks on both sides (and ignoring case on Windows). A path that
+// can't be resolved matches nothing.
+func samePath(a, b string) bool {
+	ra, err := filepath.EvalSymlinks(a)
+	if err != nil {
+		return false
+	}
+	rb, err := filepath.EvalSymlinks(b)
+	if err != nil {
+		return false
+	}
+	ra, rb = filepath.Clean(ra), filepath.Clean(rb)
+	if isWindowsOS {
+		return strings.EqualFold(ra, rb)
+	}
+	return ra == rb
+}
 
 // isWindowsOS selects Windows rules (case-insensitive variable names).
 const isWindowsOS = runtime.GOOS == "windows"
@@ -119,9 +156,14 @@ func typedWords(args []string) []string {
 	return args[:n]
 }
 
-// consultedRoots are the workspace roots dispatch looks at, in order: the
-// workspace of the current directory, if any. A .cg.json on the way up that
-// can't be read is an error: it might be a workspace declaring the command.
+// consultedRoots are the workspace roots dispatch looks at, in order. Without
+// a usable CG_WORKSPACE (the session root), only the workspace of the current
+// directory (the cwd root). With one: the session root alone when the cwd root
+// is the session root; the cwd root alone when it is one of the session repo's
+// worktrees; the session root, then the cwd root, when the cwd root is
+// another workspace (or the worktree check can't vouch for it); the session
+// root alone outside any workspace. A .cg.json on the way up that can't be
+// read is an error: it might be a workspace declaring the command.
 func consultedRoots() ([]string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -132,10 +174,64 @@ func consultedRoots() ([]string, error) {
 		return nil, cgerr.New(cgerr.ExitUsage, "can't read %s (%v), so cg can't tell which extension commands it declares",
 			unreadableConfig(cwd), err)
 	}
-	if root == "" {
+	_, session, _ := sessionRoot()
+	switch {
+	case session == "" && root == "":
 		return nil, nil
+	case session == "":
+		return []string{root}, nil
+	case root == "":
+		return []string{session}, nil
+	case samePath(root, session):
+		return []string{session}, nil
+	case sessionWorktree(session, root):
+		return []string{root}, nil
+	default:
+		return []string{session, root}, nil
 	}
-	return []string{root}, nil
+}
+
+// sessionRoot reads CG_WORKSPACE. It returns the variable's value, the session
+// root when the value is usable, and otherwise why it is ignored: a relative
+// path, or a directory without a valid .cg.json (e.g. a worktree removed
+// since the session started). Unset or empty, all three are "".
+func sessionRoot() (value, root, ignored string) {
+	value = os.Getenv(envWorkspace)
+	switch {
+	case value == "":
+		return "", "", ""
+	case !filepath.IsAbs(value):
+		return value, "", "it is not an absolute path"
+	}
+	if cfg, err := workspace.Detect(value); err != nil || cfg == nil {
+		return value, "", "it names no valid .cg.json"
+	}
+	return value, filepath.Clean(value), ""
+}
+
+// sessionWorktree reports whether dir is the top level of one of the session
+// repo's worktrees, as the session root's own `git worktree list` says. The
+// list is read from the session root, never from dir, so a planted .git file
+// in dir proves nothing. git runs with its repository variables removed, so
+// the caller's environment can't redirect it. Any failure (no git, the session
+// root not the top level of its repo, an unreadable list) means no.
+func sessionWorktree(session, dir string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	top, err := gitx.RunClean(ctx, session, "rev-parse", "--show-toplevel")
+	if err != nil || !samePath(gitx.OSPath(top), session) {
+		return false
+	}
+	out, err := gitx.RunClean(ctx, session, "worktree", "list", "--porcelain")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if p, ok := strings.CutPrefix(line, "worktree "); ok && samePath(gitx.OSPath(strings.TrimSpace(p)), dir) {
+			return true
+		}
+	}
+	return false
 }
 
 // unreadableConfig names the first .cg.json from dir upwards that
@@ -309,17 +405,19 @@ func wordsPrefix(words, typed []string) bool {
 }
 
 // cmd builds the command that runs r: the binary with its arguments, stdio
-// passed through, and the environment the binary is told: CG_COMMAND for a
-// workspace's declared command, removed for a PATH program, so a value left
-// over from an outer run never reaches it.
+// passed through, and the environment the binary is told. For a workspace's
+// declared command: CG_COMMAND (the command that matched) and
+// CG_EXTENSION_WORKSPACE (the root that served it). A PATH program gets
+// neither, nor CG_SESSION_WORKTREE, so a value left over from an outer run
+// never reaches it. CG_WORKSPACE passes through unchanged.
 func (r *externalRun) cmd() *exec.Cmd {
 	c := exec.CommandContext(context.Background(), r.path, r.args...) //nolint:gosec // path resolved from installed extensions / PATH
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
-	env := withoutEnv(os.Environ(), envCommand)
+	env := withoutEnv(os.Environ(), perRunVars...)
 	if r.root != "" {
-		env = append(env, envCommand+"="+r.command)
+		env = append(env, envCommand+"="+r.command, envExtensionWorkspace+"="+r.root)
 	}
 	c.Env = env
 	return c
@@ -375,8 +473,11 @@ func unknownCommandHint(err error) string {
 		return ""
 	}
 	session := "CG_WORKSPACE is not set"
-	if v, ok := os.LookupEnv(envWorkspace); ok {
-		session = fmt.Sprintf("CG_WORKSPACE is %q", v)
+	switch value, _, ignored := sessionRoot(); {
+	case ignored != "":
+		session = fmt.Sprintf("CG_WORKSPACE=%q is ignored: %s", value, ignored)
+	case value != "":
+		session = fmt.Sprintf("CG_WORKSPACE is %q", value)
 	}
 	return "If it is an extension's command: it runs inside the workspace that installed it, " +
 		"and from any directory in a session started with `cg` in that workspace, which carries the workspace along (" + session + ")."

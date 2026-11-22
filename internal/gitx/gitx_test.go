@@ -104,3 +104,38 @@ func TestWorktreeAddNew(t *testing.T) {
 		t.Errorf("expected at least 2 worktrees after add, got %v", paths)
 	}
 }
+
+// RunClean ignores the caller's GIT_DIR and friends: it answers for the
+// repository at dir.
+func TestRunCleanIgnoresRepoVariables(t *testing.T) {
+	ctx, repo := initRepo(t)
+	_, other := initRepo(t)
+	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
+	t.Setenv("GIT_WORK_TREE", other)
+	got, err := RunClean(ctx, repo, "rev-parse", "--show-toplevel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g, _ := filepath.EvalSymlinks(OSPath(got)); g != repo {
+		t.Errorf("RunClean toplevel = %q, want %q", got, repo)
+	}
+	// Run, by contrast, follows them.
+	if got, err := Run(ctx, repo, "rev-parse", "--show-toplevel"); err == nil {
+		if g, _ := filepath.EvalSymlinks(OSPath(got)); g == repo {
+			t.Error("Run ignored GIT_WORK_TREE; the test proves nothing")
+		}
+	}
+}
+
+// RunClean removes every variable git lists, not only a fixed few:
+// GIT_OBJECT_DIRECTORY is one only git's own list names.
+func TestRunCleanUsesGitsList(t *testing.T) {
+	ctx, repo := initRepo(t)
+	t.Setenv("GIT_OBJECT_DIRECTORY", filepath.Join(t.TempDir(), "no-objects"))
+	if _, err := RunClean(ctx, repo, "rev-parse", "--verify", "HEAD^{commit}"); err != nil {
+		t.Errorf("RunClean followed GIT_OBJECT_DIRECTORY: %v", err)
+	}
+	if _, err := Run(ctx, repo, "rev-parse", "--verify", "HEAD^{commit}"); err == nil {
+		t.Error("Run ignored GIT_OBJECT_DIRECTORY; the test proves nothing")
+	}
+}

@@ -142,6 +142,12 @@ runs `bin/cg-foo sync --dry-run`, and `CG_COMMAND` in its environment says which
 declared command cg matched (`foo sync`). One binary may serve several
 commands.
 
+Your binary is also told which workspace served it, `CG_EXTENSION_WORKSPACE`,
+and gets the session's `CG_WORKSPACE` unchanged. Use them rather than the
+current directory: in a session started with `cg`, your command also runs from
+other directories, such as an external repository the session works in. See
+[Which workspace serves](docs/extensions.md#which-workspace-serves).
+
 Declare every command your binary handles, not just the namespace: agents grant
 permissions by the typed command (`Bash(cg foo sync *)`), and cg only runs a
 command some extension declares. Declare the bare namespace (`foo`) too if

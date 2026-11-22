@@ -32,7 +32,7 @@ func TestExecAgentSurvivesInterrupt(t *testing.T) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(98)
 		}
-		err = execAgent(exe, []string{exe, "-test.run=^TestExecAgentInterruptHelper$"})
+		err = execAgent(exe, []string{exe, "-test.run=^TestExecAgentInterruptHelper$"}, os.Environ())
 		var ce *cgerr.CodedError
 		if errors.As(err, &ce) {
 			os.Exit(ce.Code)

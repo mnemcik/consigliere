@@ -26,7 +26,7 @@ func TestExecAgentRunsAgent(t *testing.T) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(98)
 		}
-		err = execAgent(exe, []string{exe, "-test.run=^TestExecAgentHelper$", "--", "a b", ""})
+		err = execAgent(exe, []string{exe, "-test.run=^TestExecAgentHelper$", "--", "a b", ""}, os.Environ())
 		var ce *cgerr.CodedError
 		if errors.As(err, &ce) {
 			os.Exit(ce.Code) // Windows: the child's exit code
