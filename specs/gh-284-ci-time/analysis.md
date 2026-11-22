@@ -3,7 +3,7 @@ title: "Analysis — CI time per PR run and per update from main"
 created: 2026-11-22
 item: "https://github.com/mnemcik/consigliere/issues/284"
 size: full
-verdict: pending review
+verdict: needs clarification
 ---
 
 # Analysis — CI time per PR run and per update from main
@@ -38,7 +38,7 @@ creation to the end of the last required job.
 - `.github/workflows/ci.yml`: one workflow on `pull_request` and on `push` to `main`, with no `paths` filter and no
   `concurrency` group. Jobs: `Lint` (two golangci-lint passes, the second with `GOOS=windows`), `Test` on
   `ubuntu-latest`, `macos-latest`, `windows-latest` (each `go test -v -race -coverprofile=coverage.out ./...`,
-  `ci.yml:66`), and `Build` ×5, which `needs: [lint, test]` (`ci.yml:74`).
+  `ci.yml:71`), and `Build` ×5, which `needs: [lint, test]` (`ci.yml:82`).
 - Branch protection on `main` (`gh api repos/mnemcik/consigliere/branches/main/protection`): required checks `Lint`,
   `Validate PR title`, `Test (ubuntu-latest)`, `Test (macos-latest)`, `Test (windows-latest)`, `impact-review`;
   `strict: true` (branches must be up to date); one approving review; linear history. `Build` is not required.
@@ -59,7 +59,8 @@ Job durations, November 2026 (1–22), successful jobs:
 | **Test (windows-latest)** | **218 s** | **291 s** | 158 |
 | Build (each of 5, not required) | 28 s | 33 s | 725 |
 
-- **Wall time to green required checks**, PR runs since 2026-10-01: p50 223 s, p90 336 s (n=185). October p50 220 s,
+- **Wall time to green required checks**, PR runs with all four required CI jobs (so in practice since the Windows
+  job was added on 2026-10-13): p50 223 s, p90 336 s (n=185). October p50 220 s,
   November p50 226 s. `push` runs on `main`: p50 233 s.
 - **The Windows test job is the critical path** in 211 of 233 such runs; macOS in the other 22. Queueing is not a
   factor for Linux and Windows (p90 3 s); macOS queues p50 7 s with outliers (below).
@@ -103,7 +104,7 @@ The issue reports macOS test jobs hitting a 15-minute timeout. The data says som
 |---|---|---|---|---|
 | Code (any Go or other file) | 31 | 122 | 4 | 29 |
 | Markdown, including `templates/` | 4 | 19 | 5 | 9 |
-| Docs only (`docs/`, root `*.md`; nothing under `templates/`) | 4 | 11 | 2 | 4 |
+| Docs only (only `*.md` files, none under `templates/`) | 4 | 11 | 2 | 4 |
 | Dependency bumps | 7 | 15 | 2 | 3 |
 | CI only (`.github/`) | 2 | 3 | 1.5 | 1 |
 | **Total** | **48** | **170** | | **46** |
@@ -113,7 +114,8 @@ The issue reports macOS test jobs hitting a 15-minute timeout. The data says som
   `impact-review` re-check of the new head (`CONTRIBUTING.md`, "Impact review").
 - **CI is on the critical path after the last push**, not people: on the maintainer-reviewed PRs, `impact-review` was set
   a median 0.7 min after the head's CI ended (n=17), and the PR merged a median 2.6 min after CI ended (n=48).
-- **Docs-only is a small share**: 4 PRs, 11 runs, 6 % of runs. **Template Markdown is not docs-only:** everything
+- **Docs-only is a small share**: 4 PRs (#241, #242, #243, #252: `CONTRIBUTING.md`, `CLAUDE.md` and the `.github/`
+  issue and PR templates), 11 runs, 6 % of runs. **Template Markdown is not docs-only:** everything
   under `templates/` is embedded in the binary (`templates/embed.go:14`) and tested (`templates/embed_test.go`;
   `TestClaudeFileHistoryCoversEmbed`, `CONTRIBUTING.md` "Updating templates"). PR #230, a `docs:` PR that changed two
   template files, failed its tests on all three OSes until `go generate` was run (run `43874261974`). No test reads
@@ -178,25 +180,41 @@ number of runs.
 ### Recommended — Shard the Windows tests, keep the required check name, measure in one experiment PR
 
 - **What:**
-  1. Split the Windows test job into parallel shards: one for all packages except `cmd`, and `cmd` split by test name
-     into two or three shards (`go test -list` on `./cmd`, then `-run` with each shard's names; a deterministic split,
-     not random). Linux and macOS keep one job each.
-  2. Keep the required check `Test (windows-latest)` as a small job that `needs` the shards and fails unless all of
-     them succeeded (`if: always()` with an explicit result check, as the required-checks troubleshooting page
-     advises for dependent jobs). Branch protection then needs no change.
-  3. In the same experiment PR, and only as measured A/B variants, try the cheap Windows-only knobs: no `-race`,
-     no `-coverprofile`, and the Go and temp directories on a faster disk if the runner has one. Adopt a knob only if it
-     shows a clear win over several runs.
-  4. Measure: the same API method as above, over at least 10 runs before and after, per step and per shard; record it
+  1. Split the Windows test job into N parallel shards (N between 4 and 6, picked by the experiment). The heavy
+     packages (`cmd`, `internal/worktree`, `internal/share`) are each split by test name across shards; the light
+     packages go into one shard. Each shard builds the test binary of each heavy package once **on its Windows
+     runner** (`go test -c` with the run's flags), lists its tests with that binary (`-test.list`, filtered to `^Test`),
+     takes its own slice, and runs the same binary with `-test.run` (and `-test.coverprofile` if coverage is kept), one
+     package at a time so a test name can't match in another package. Run directly, the binary loses what `go test`
+     adds, so the shard passes `-test.timeout=10m` and `-test.v` explicitly and runs each binary from its package
+     directory. Building once avoids a second link per package;
+     no separate list-computing job runs before the shards. Listing on Windows means
+     `*_windows_test.go` tests are included and new tests (#303 adds several) land in a shard automatically; the split is
+     deterministic, not random. Linux and macOS keep one job each.
+  2. Keep the required check `Test (windows-latest)` as a small job that `needs` the shards and fails unless every one
+     of them succeeded (`if: always()` with an explicit result check, as the required-checks troubleshooting page
+     advises for dependent jobs). Branch protection then needs no change. `Build` then `needs` that job. This job is
+     named like a required check, which `CONTRIBUTING.md` rejects as written (decision 7).
+  3. In the same experiment PR, and only as measured A/B variants, try the cheap Windows-only knobs: no `-race`, no
+     `-coverprofile`, `setup-go` caching variants (its 31 s is paid once per shard), and the Go and temp directories on
+     a faster disk if the runner has one. Adopt a knob only if it shows a clear win over several runs. Coverage, if
+     kept on Windows, is uploaded per shard (`coverage-windows-<n>`); nothing in the repo reads these artifacts
+     (grep over `.github/`, `Makefile`, `*.md`).
+  4. Add a `concurrency` group per PR with `cancel-in-progress` for `pull_request` runs, so a superseded push frees its
+     jobs. It doesn't shorten a run, but it offsets the extra shard jobs against the 20-job cap.
+  5. Measure: the same API method as above, over at least 10 runs before and after, per step and per shard; record it
      in the PR.
-- **Expected effect** (*assumption, med*, until the experiment measures it): each shard pays its own setup (~40 s) and
-  compile, so the Windows job goes from p50 ~218 s to roughly 120–160 s, macOS (p50 100 s, p90 131 s) becomes the
-  critical path more often, and required-check wall time drops from ~223 s to roughly 130–170 s. That saving applies to
-  every run, round trips included.
-- **Trade-off:** more Windows jobs per run (3–4 instead of 1) against the Free plan's 20 concurrent jobs; a run today
-  has up to 5 jobs at once (lint, 3 tests, title lint; then 5 builds), and with shards 7–8, so three PRs pushing at
-  once would start to queue. More YAML and a
-  test-list split that must not drop tests (the aggregate job and a count check guard that).
+- **Expected effect** (*assumption, med*, until the experiment measures it). A shard costs setup (~40 s: checkout,
+  `setup-go`) plus compile (~20–70 s: the `Run tests` step minus `cmd` was 20–71 s in the three logged runs) plus its
+  slowest slice of tests. A naive split that leaves `internal/worktree` (74–116 s) or `internal/share` (52–85 s) whole
+  would land at ~130–200 s, hardly better than today; that is why the heavy packages are split too. With them split,
+  a shard is roughly 40 + 20–70 + 40–60 s = 100–170 s, so the Windows job goes from p50 ~218 s to roughly that, macOS (p50
+  100 s, p90 131 s) becomes the critical path more often, and required-check wall time (plus a few seconds for the
+  aggregate job) drops from ~223 s to roughly 110–175 s. That saving applies to every run, round trips included.
+- **Trade-off:** N Windows jobs per run instead of 1 against the Free plan's 20 concurrent jobs; a run today has up to
+  5 jobs at once (lint, 3 tests, title lint; then 5 builds), with shards 8–10, so two or three PRs pushing at once
+  would start to queue (item 4 eases this). More YAML, and a test-list split that must not drop tests (the aggregate
+  job and a count check guard that). The fixed ~40 s setup per shard limits how far more shards help.
 - **Wrong choice when:** parallel sessions regularly push 3+ PRs at the same minute; then the concurrency cap eats the
   gain and the round-trip options matter more.
 - **Rabbit holes:** making `cmd`'s tests `t.Parallel()` (177 test functions, 37 `Setenv` calls, 17 chdirs, 31 uses of
@@ -204,19 +222,31 @@ number of runs.
   single slow tests: the cost is spread over 100+ tests. Speeding up `git` on Windows (Defender, `core.fscache`):
   unmeasured, image-dependent.
 
-### Alternative — Skip the test matrix and build for docs-only PRs (runner-up as a companion, not a replacement)
+### Alternative — Skip the tests and build for docs-only PRs (runner-up as a companion, not a replacement)
 
-- **What:** a first job detects whether the PR changes anything outside `docs/` and the root `*.md` files; the test and
-  build jobs run only if it does, using a job-level `if:` so the skipped required checks report success. Everything
-  under `templates/` counts as code. `Lint` keeps running (cheap and required) or is skipped the same way.
-- **Trade-off:** saves a full run on the 6 % of runs that are docs-only and a few minutes per docs PR; one more job on
-  every other PR (~10 s). A wrong detector (a new embedded path outside `templates/`, a test that starts reading a root
-  `*.md`) would let a breaking PR through untested; `push` runs on `main` still test everything afterwards.
+- **What:** on `pull_request` runs only, a step right after `actions/checkout` in each `Lint`, test and shard job
+  checks whether every changed file is a `*.md` file outside `templates/` (the class measured above, `.github/` issue
+  and PR templates included), with `git diff --name-only HEAD^1 HEAD` on the PR's merge commit (checkout with
+  `fetch-depth: 2`). That needs no permission beyond today's `contents: read` (`ci.yml:9-10`), unlike the PR-files API.
+  If the check itself fails, the job runs everything. A docs-only PR then passes without testing the merged tree,
+  which is safe only while `main` requires up-to-date branches (decision 4 keeps `strict`; relaxing it should revisit
+  this skip); `push` runs on `main` always test everything. A separate detector job is avoided: every
+  test job would have to `needs:` it, adding its start-up to the critical path of every code PR. The skip is done
+  **at step level** (the job starts, skips `setup-go`, lint or the tests, and succeeds), not with a job-level `if:` on
+  the matrix job: *assumption (med), not verified:* a matrix job
+  skipped by a job-level `if:` reports one check under its unexpanded name (`Test`), which would leave the three
+  required `Test (…)` checks expected and block the PR. Everything under `templates/` counts as code. `Lint` skips
+  the same way: with only Markdown changed it has no Go code to check.
+- **Trade-off:** a docs-only PR's required checks finish in roughly 20–30 s instead of ~4 minutes (about 55–65 s if
+  `Lint` were kept), on the 6 % of runs that are docs-only; one extra step of a few seconds in each job of every other
+  PR. A wrong detector (a new
+  embedded path outside `templates/`, a test that starts reading a root `*.md`) would let a breaking PR through
+  untested; the `push` run on `main` catches it afterwards.
 - **Wrong choice when:** used alone: it doesn't touch the 94 % of runs that carry code or templates.
 - **Rabbit holes:** extending the skip to "Markdown under `templates/`" (PR #230 shows those break tests); a
   third-party paths-filter action (prefer `git diff --name-only` against the base in a shell step).
-- **Wins instead if:** the owner's main pain is docs PRs specifically, or the shard experiment shows less than ~40 s
-  saved.
+- **Wins instead if:** the owner's main pain is docs PRs specifically, or the shard experiment saves less than ~40 s
+  per run (then drop the shards and keep only this and the `concurrency` group).
 
 ### Alternative — Fewer round trips: relax "up to date before merging"
 
@@ -225,13 +255,18 @@ number of runs.
   user-owned repository.
 - **Trade-off:** removes most of the 27 % of runs that follow an update from `main`, and their CodeRabbit and
   `impact-review` re-checks. The cost: two PRs that each pass alone can break `main` together (a semantic conflict);
-  the `push` run on `main` catches it only after the merge, and `main` stays red until a fix lands.
+  the `push` run on `main` catches it only after the merge, and `main` stays red until a fix lands. It also changes the
+  merge process: `CONTRIBUTING.md` ("Impact review", "New commits need a new review") ties the maintainer's re-check
+  of an updated head to "branch protection requires up-to-date branches", and that check that "nothing which landed on
+  `main` since … contradicts it" would no longer happen at merge time unless the maintainer does it without an update.
+  That section and step 3 of "How a PR gets to merge" (the author updates the branch from `main`) would need
+  rewriting.
 - **Wrong choice when:** PRs often touch the same packages or templates (they do: `cmd` and `templates/` are shared by
   most PRs), or when a red `main` would block parallel sessions more than the round trips do.
 - **Rabbit holes:** moving the repository to an organization for merge queue (changes URLs, install script and release
   links); bots that update branches automatically.
 - **Wins instead if:** shards and the docs-only skip still leave the round trips as the main delay, and the owner
-  accepts an occasional red `main`.
+  accepts an occasional red `main` and the process change.
 
 ### Do nothing
 
@@ -252,10 +287,12 @@ For run time it leaves ~4 minutes per run and per round trip, which the issue's 
 - **Failure mid-operation:** an aggregate job that reads shard results wrongly could report success with a shard
   missing; it must fail on any non-`success` result, including `skipped` and `cancelled`, and the split must cover every
   test (compare the union of shard lists with `go test -list`).
-- **Security:** `CONTRIBUTING.md` gives workflow changes extra scrutiny, and a job named like a required check is
-  rejected when it could stand in for a review (`impact-review`). The aggregate `Test (windows-latest)` is named like a
-  required check by design; the impact review should confirm it can only pass when the real shards pass. No new
-  third-party action is needed.
+- **Security and governing rules:** `CONTRIBUTING.md` gives workflow changes extra scrutiny and says "A workflow job
+  named like a required check (`impact-review` above all) is rejected, since its result would satisfy that check
+  without a review." The aggregate `Test (windows-latest)` is such a job by design, so as written the rule rejects it.
+  Either the rule is clarified in the same PR (an aggregate of the real test jobs that fails unless all of them pass is
+  allowed; `impact-review` stays forbidden), or branch protection requires the shard checks by name instead, and must
+  be edited whenever N changes (decision 7). No new third-party action is needed.
 - **Performance:** more concurrent jobs per run against the 20-job Free cap; check queue times in the experiment.
 - **Dependencies:** #303 adds `cmd` tests; shard lists must be computed at run time, not hard-coded, so new tests land in
   a shard automatically.
@@ -269,19 +306,64 @@ For run time it leaves ~4 minutes per run and per round trip, which the issue's 
 | # | Decision | Recommended answer | Status |
 |---|---|---|---|
 | 1 | Which lever(s) to pursue | Shard the Windows tests behind an unchanged `Test (windows-latest)` check, measured in one experiment PR | open |
-| 2 | Add the docs-only skip as well | Yes, as a separate small PR after #1, with everything under `templates/` treated as code | open |
-| 3 | Try the Windows-only knobs (no `-race`, no coverage, faster disk) in the experiment, adopting only measured wins | Yes; keep `-race` and coverage on Linux and macOS regardless | open |
+| 2 | Add the docs-only skip as well | Yes, as a separate small PR after #1, with everything under `templates/` treated as code, done as a step after checkout in each job (Lint included), with `git diff` on the merge commit, `pull_request` only | open |
+| 3 | Try the Windows-only knobs (no `-race`, no coverage, `setup-go` cache variants, faster disk) in the experiment, adopting only measured wins | Yes; keep `-race` and coverage on Linux and macOS regardless | open |
 | 4 | Relax "up to date before merging" (`strict: false`) to cut round trips | No for now; revisit with the post-shard numbers | open |
 | 5 | Treat the 2026-11-16/18 macOS cancellations as out of scope (GitHub-side, no runner assigned; re-run is the workaround) | Yes; say so on the issue when the fix PR lands | open |
-| 6 | Success criterion for the experiment | Required-check wall time p50 ≤ 170 s over ≥ 10 PR runs, no test dropped, queue p90 for Windows shards ≤ 10 s | open |
+| 6 | Success criterion for the experiment | Required-check wall time p50 ≤ 170 s over ≥ 10 PR runs, no test dropped, queue p90 for Windows shards ≤ 10 s; ≤ 170 s is the target, not the gate: shards that save ~40 s or more per run are kept even above it; if they save less, drop them and keep only the docs-only skip and the `concurrency` group | open |
+| 7 | How the required `Test (windows-latest)` check survives sharding, given `CONTRIBUTING.md`'s rule against jobs named like a required check | Keep it as an aggregate job and clarify the rule in the same PR (aggregates of the real test jobs allowed, `impact-review` never) | open |
+| 8 | Add a per-PR `concurrency` group with `cancel-in-progress` for `pull_request` runs | Yes, in the experiment PR | open |
 
 ## Review
 
-pending
+**Review 1** — `specs/gh-284-ci-time/analysis.md` @ content hash d6341bb (commit cec5ea7) · 2026-11-22
+- Reviewers: doc-reviewer (builder check, claim check, missed option, hidden constraints, governing rules)
+- Tests: n/a (analysis)
+- Findings: 0 blocker, 6 should-fix, 3 nit → fixed: shard estimate ignored the non-`cmd` packages (heavy packages now
+  split, per-shard estimate); docs-only skip on a matrix job (now step level, tagged assumption); aggregate job vs the
+  `CONTRIBUTING.md` rule (quoted literally, decision 7); `strict: false` process knock-on stated; `concurrency` group
+  added (decision 8); `setup-go` cache variants added; nits (line numbers, measurement window, docs-only class) fixed;
+  owner's: none; rejected: none; dropped in validation: none
+- Builder questions: 5 answered in the text (lists computed on the Windows runner, coverage per shard, skip on
+  `pull_request` only, `Build` needs the aggregate, fallback in decision 6), 0 owner's
+- Verified true: branch protection and settings; no `t.Parallel`/`testing.Short`; 614 tests per log and the
+  per-package ranges; the 9 macOS cancellations without runner or steps; PR-kind table and ratios; #303 diffstat and
+  no overlap with #300/#301; GitHub limits, runner sizes, 45-min discard, skip semantics
+- Not verified: naming of a skipped matrix check; #303's `t.Setenv` count (diff not given); job p50/p90 and
+  critical-path counts (scripts not run); the local `-race` A/B; GitHub status history; merge-queue availability
+
+**Review 2** — @ fddf302 (uncommitted, delta from d6341bb) · 2026-11-22
+- Reviewers: doc-reviewer (same lenses, delta)
+- Findings: 0 blocker, 3 should-fix, 1 nit → fixed: detector as a separate job would sit on the critical path (now a
+  step in each job); list computation could add a serial job (each shard lists itself); docs-only figure vs `Lint`
+  (Lint skips too); arithmetic 100–170 s; owner's: none; rejected: none
+- Builder questions: 3, all answered in the text (decision 6 target vs gate, detector as step, Lint skips)
+- Regression check: all round-1 findings resolved
+- Not verified: "`Run tests` minus `cmd` = 20–71 s" not recomputed; skipped-matrix naming
+
+**Review 3** — @ 56462c0 (uncommitted, delta from fddf302) · 2026-11-22
+- Reviewers: doc-reviewer (same lenses, delta)
+- Findings: 0 blocker, 2 should-fix, 1 nit → fixed: double link with `-list` then `-run` (build once with
+  `go test -c`); `gh pr diff` needs a permission the workflow lacks (now `git diff` on the merge commit,
+  `fetch-depth: 2`); filter lists to `^Test` and run per package; owner's: none; rejected: none
+- Regression check: all round-2 findings resolved
+- Not verified: whether `go test` caches linked test binaries; PR-files API with `contents: read`
+
+**Review 4** — @ c4d42e9 (uncommitted, delta from 56462c0) · 2026-11-22 — **clean**
+- Reviewers: doc-reviewer (same lenses, delta)
+- Findings: 0 blocker, 0 should-fix, 2 nit → both fixed after the round (text only): explicit `-test.timeout` and
+  `-test.v` and package working directory for a directly-run binary; the docs-only skip relies on `strict` (linked to
+  decision 4)
+- Regression check: all round-3 findings resolved
+- Not verified: `go test -c -race -cover` timing on Windows (for the experiment); merge-ref parent order from the
+  reviewer's knowledge, not docs
 
 ## Verdict
 
-pending review
+**Needs clarification:** the analysis is ready, but the owner decides decisions 1–8. Decision 7 (the
+`CONTRIBUTING.md` rule against a job named like a required check) blocks the recommended design as written, and the
+expected saving (110–175 s wall time) is an assumption that the experiment in decision 1 is there to measure; decision 6
+says what happens if it falls short.
 
 ## Q→A log
 
