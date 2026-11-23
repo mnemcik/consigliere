@@ -940,13 +940,21 @@ func workspaceRootForDispatch() string {
 // match: lower-cased where the filesystem is case-insensitive (macOS,
 // Windows), and on Windows without an extension.
 func fallbackNamespace(ns string) string {
-	if foldsCase {
+	return lookupName(ns, foldsCase, isWindowsOS)
+}
+
+// lookupName folds ns as the PATH lookup would: case where it folds, and on
+// Windows trailing dots and spaces (the file system drops them, so
+// `cg shop.exe.` runs cg-shop.exe) and any extension (LookPath tries a name
+// that already has one as is, so cg-shop.bat is reachable as `cg shop.bat`
+// whatever PATHEXT says).
+func lookupName(ns string, fold, windows bool) string {
+	if fold {
 		ns = strings.ToLower(ns)
 	}
-	if isWindowsOS {
-		// LookPath tries a name that already has any extension as is, so
-		// cg-shop.bat is reachable as `cg shop.bat` whatever PATHEXT says.
-		ns = strings.TrimSuffix(ns, filepath.Ext(ns))
+	if windows {
+		ns = strings.TrimRight(ns, ". ")
+		ns = strings.TrimRight(strings.TrimSuffix(ns, filepath.Ext(ns)), ". ")
 	}
 	return ns
 }

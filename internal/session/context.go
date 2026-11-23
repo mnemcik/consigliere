@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"unicode"
 )
 
 // isWindows selects Windows rules (case-insensitive paths, the upstream
@@ -289,8 +290,43 @@ func sameRecord(m map[string]any, path string) bool {
 		return false
 	}
 	a, b := filepath.ToSlash(v), filepath.ToSlash(path)
-	if isWindows || runtime.GOOS == "darwin" { // case-insensitive filesystems by default
-		return strings.EqualFold(a, b)
+	if a == b {
+		return true
 	}
-	return a == b
+	// Case-insensitive file systems are the default there, but a volume can
+	// be case-sensitive (APFS, NTFS directories), where /w/Task and /w/task
+	// are two worktrees.
+	return (isWindows || runtime.GOOS == "darwin") && strings.EqualFold(a, b) && caseInsensitiveAt(path)
+}
+
+// caseInsensitiveAt reports whether the volume holding path matches names
+// case-insensitively, probed on path's nearest existing ancestor whose name
+// has a cased letter; with none, it assumes the platform default. A variable
+// so tests can simulate a case-sensitive volume.
+var caseInsensitiveAt = func(path string) bool {
+	d := filepath.Clean(path)
+	for {
+		if fi, err := os.Stat(d); err == nil {
+			base := filepath.Base(d)
+			if swapped := swapCase(base); swapped != base {
+				other, err := os.Stat(filepath.Join(filepath.Dir(d), swapped))
+				return err == nil && os.SameFile(fi, other)
+			}
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			return true
+		}
+		d = parent
+	}
+}
+
+// swapCase swaps the case of every cased letter in s.
+func swapCase(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsUpper(r) {
+			return unicode.ToLower(r)
+		}
+		return unicode.ToUpper(r)
+	}, s)
 }

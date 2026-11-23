@@ -773,6 +773,27 @@ func TestDispatchPathFallbackRefusesDeclaredNamespaceSpellings(t *testing.T) {
 	}
 }
 
+// lookupName applies each platform's rules whatever OS runs the test.
+func TestLookupName(t *testing.T) {
+	for _, tc := range []struct {
+		in            string
+		fold, windows bool
+		want          string
+	}{
+		{"shop.exe.", true, true, "shop"}, // Windows drops the trailing dot
+		{"shop. ", true, true, "shop"},
+		{"Shop.Exe . ", true, true, "shop"},
+		{"shop.", true, true, "shop"},
+		{"shop.exe", true, true, "shop"},
+		{"Shop.", true, false, "shop."}, // macOS: case only
+		{"Shop.", false, false, "Shop."},
+	} {
+		if got := lookupName(tc.in, tc.fold, tc.windows); got != tc.want {
+			t.Errorf("lookupName(%q, fold %v, windows %v) = %q, want %q", tc.in, tc.fold, tc.windows, got, tc.want)
+		}
+	}
+}
+
 // fallbackNamespace folds a typed word to the namespace LookPath would match.
 func TestFallbackNamespace(t *testing.T) {
 	cases := map[string]string{"shop": "shop", "gh-dash": "gh-dash"}

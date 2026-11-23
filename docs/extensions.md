@@ -510,8 +510,8 @@ the declared commands of the workspaces it consults, in order (see
    after the namespace (a plain name: one with a path separator or a colon is
    never looked up). A spelling the lookup would still match to a declared
    namespace is refused too: another case on macOS and Windows, and on
-   Windows any extension (so `cg shop.v2` is refused when `shop` is
-   declared). A namespace an extension declares never reaches `$PATH`, whether or not
+   Windows trailing dots and spaces and any extension (so `cg shop.v2` and
+   `cg shop.` are refused when `shop` is declared). A namespace an extension declares never reaches `$PATH`, whether or not
    the full command matched.
 
 Otherwise cobra's "unknown command" error is shown, with a hint that an

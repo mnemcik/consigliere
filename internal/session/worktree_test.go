@@ -211,3 +211,33 @@ func TestClearWorktreeAllReportsUnreadable(t *testing.T) {
 		t.Errorf("b not cleared: %+v", c)
 	}
 }
+
+// On a case-sensitive volume (possible on macOS and Windows too), a record
+// that differs only in case is another worktree's and stays.
+func TestClearWorktreeCaseSensitiveVolume(t *testing.T) {
+	orig := caseInsensitiveAt
+	t.Cleanup(func() { caseInsensitiveAt = orig })
+	caseInsensitiveAt = func(string) bool { return false }
+	root := t.TempDir()
+	writeCtx(t, root, "s1", `{"worktree":"/w/Task"}`)
+	if cleared, err := ClearWorktree(root, "s1", "/w/task"); err != nil || cleared {
+		t.Errorf("cleared %v (%v), want the record of /w/Task kept", cleared, err)
+	}
+	if cleared, err := ClearWorktree(root, "s1", "/w/Task"); err != nil || !cleared {
+		t.Errorf("cleared %v (%v), want the same path cleared", cleared, err)
+	}
+}
+
+// caseInsensitiveAt agrees with what the file system under the test's
+// temporary directory does, also for a path that doesn't exist yet.
+func TestCaseInsensitiveAt(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "Probe")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := os.Stat(filepath.Join(filepath.Dir(dir), "pROBE"))
+	want := err == nil
+	if got := caseInsensitiveAt(filepath.Join(dir, "gone", "x")); got != want {
+		t.Errorf("caseInsensitiveAt = %v, want %v (the volume's behaviour)", got, want)
+	}
+}
