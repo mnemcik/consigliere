@@ -94,7 +94,8 @@ Scenarios: S35–S40, S38b.
 - Session commands root (Terms) and S38c: guard tests with mutation checks — session commands run in another
   workspace with an inherited `CG_WORKSPACE` use that workspace's state; inside one of W's linked worktrees they
   still use W's; dispatch from X still consults W first; a worktree created while in X doesn't enter W's record,
-  and a writer served from W while in X gets no `CG_SESSION_WORKTREE` pointing into X. S6's unreadable-tree
+  and a writer served from W while in X gets no `CG_SESSION_WORKTREE` pointing into X; `set-context --worktree`
+  with one of W's linked worktrees run from X lands in W's record, and with one of X's worktrees is refused. S6's unreadable-tree
   refusal (M1's code): guard tests with mutation checks, for install and update, an unreadable extension with no
   ledger commands, and an update-all whose own target's tree is missing (not refused).
 - `cmd/session.go`: `set-context --worktree <path>`, refused unless the path is one of the repo's linked worktrees

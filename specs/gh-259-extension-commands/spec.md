@@ -1,7 +1,7 @@
 # Spec — extension commands declared in manifests; the session carries its workspace (#259)
 
 Implements the decisions in [analysis.md](analysis.md#decision). Each scenario below is one behaviour and maps to
-at least one test; `plan.md` names the milestone that delivers it. Q1–Q10 at the end are the choices this spec makes
+at least one test; `plan.md` names the milestone that delivers it. Q1–Q11 at the end are the choices this spec makes
 beyond the decision, for the owner's agreement.
 
 ## Terms
@@ -185,7 +185,9 @@ commands root for the session commands (S38c).
   (as in S21). A worktree created in any other repo (an external repo the session works in) leaves the record
   unchanged.
 - **S36** WHEN `cg session set-context --worktree <path>` runs THEN the path is recorded the same way, for
-  workspaces that create worktrees with their own scripts (Q5). A path that isn't one of the session repo's (S35)
+  workspaces that create worktrees with their own scripts (Q5): in the session repo root's state file, whatever
+  workspace the command runs in, while `--area` and `--project` go to the session commands root's (S38c). A path
+  that isn't one of the session repo's (S35)
   linked worktrees is refused: one not in its `git worktree list`, and the main checkout (the list's first entry), so writers
   are never sent into the main checkout. Paths are compared after `filepath.EvalSymlinks` on both sides, as in S21;
   the same comparison applies in S38.
