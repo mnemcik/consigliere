@@ -17,7 +17,9 @@ beyond the decision, for the owner's agreement.
 - **Session root:** the absolute directory named by `CG_WORKSPACE`. **Cwd root:** the root `workspace.FindRoot`
   finds from the current directory.
 - **Session repo root:** the session root when S25 doesn't ignore `CG_WORKSPACE`, else the cwd root; with neither,
-  there is none. Its repo is the **session repo**. Used only for the worktree record (S35–S38b) and the badge root;
+  there is none. One exception: when the cwd root is another Consigliere workspace (not the session root and not
+  one of its linked worktrees, decided as in S21–S23), the cwd root is the session repo root. Its repo is the
+  **session repo**. Used for the worktree record (S35–S38b), the badge root and the session commands (S38c);
   dispatch uses the session root alone (S19–S26).
 - **Consulted roots:** the roots dispatch looks at, in the order S20–S24 give.
 - **Pinned tree:** the extension's source at the commit recorded in `.cg.json` (`extension.SourceRoot`).
@@ -62,7 +64,9 @@ extension installed in the workspace (from their pinned manifests, not their led
 
 - **S6** WHEN an extension being installed declares a command another installed extension already declares THEN
   install fails, naming the command and both extensions, and the workspace (files, `.cg.json`, ledgers) is
-  unchanged.
+  unchanged. WHEN another installed extension's tree at its recorded commit can't be read, so its commands can't
+  be verified THEN install and update fail before anything is applied, naming that extension and `cg init` as the
+  fix (`cg init` restores missing trees before its own check, S11). Ownership stays manifest-only (S9).
 - **S7** WHEN it declares `pr` while another installed extension declares `pr merge` (or the reverse) THEN install
   fails the same way: a command inside another extension's command is a conflict in either direction.
 - **S8** WHEN two extensions declare different commands in one namespace (`pr merge` and `pr watch`) THEN both
@@ -195,6 +199,11 @@ The session state file is `<badge root>/.claude/session-context/<id>.json`, wher
 - **S39** WHEN the session ID fails `ValidSessionID` (for example `../../x`) THEN no state file is read or written.
 - **S40** WHEN a state file has only `worktree` (no area or project) THEN the badge and `cg active` show the same as
   for a file without it.
+
+- **S38c** WHEN `CG_WORKSPACE` names workspace W (inherited, for example from a tmux server a `cg start` session set
+  up) and the session commands (`cg session` start gate, `set-context`, `pause`, `release`, `cg active`) run in
+  another Consigliere workspace X that isn't one of W's linked worktrees THEN they use X's state files, gate,
+  paused projects and badge root, not W's. Dispatch is unchanged: from X, W is still consulted first (S22).
 
 ### Unchanged
 
