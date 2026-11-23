@@ -91,10 +91,12 @@ Scenarios: S35–S40, S38b.
   (S35); `remove` clears it when it matches (S37). Guard tests with mutation checks: a worktree created or removed
   in another repo leaves the record unchanged; no session repo (no valid `CG_WORKSPACE`, cwd outside any workspace)
   records nothing; a symlinked session root still matches.
-- Session repo root exception (Terms) and S38c: guard tests with mutation checks — session commands run in another
+- Session commands root (Terms) and S38c: guard tests with mutation checks — session commands run in another
   workspace with an inherited `CG_WORKSPACE` use that workspace's state; inside one of W's linked worktrees they
-  still use W's; dispatch from X still consults W first. S6's unreadable-tree refusal (M1's code): guard test with
-  a mutation check, for install and update.
+  still use W's; dispatch from X still consults W first; a worktree created while in X doesn't enter W's record,
+  and a writer served from W while in X gets no `CG_SESSION_WORKTREE` pointing into X. S6's unreadable-tree
+  refusal (M1's code): guard tests with mutation checks, for install and update, an unreadable extension with no
+  ledger commands, and an update-all whose own target's tree is missing (not refused).
 - `cmd/session.go`: `set-context --worktree <path>`, refused unless the path is one of the repo's linked worktrees
   (S36: not the main checkout; symlinks resolved). Guard tests with mutation checks: the main checkout refused by
   S36 and ignored by S38 (and then S38b applies); a symlinked path to a linked worktree accepted.

@@ -17,10 +17,11 @@ beyond the decision, for the owner's agreement.
 - **Session root:** the absolute directory named by `CG_WORKSPACE`. **Cwd root:** the root `workspace.FindRoot`
   finds from the current directory.
 - **Session repo root:** the session root when S25 doesn't ignore `CG_WORKSPACE`, else the cwd root; with neither,
-  there is none. One exception: when the cwd root is another Consigliere workspace (not the session root and not
-  one of its linked worktrees, decided as in S21–S23), the cwd root is the session repo root. Its repo is the
-  **session repo**. Used for the worktree record (S35–S38b), the badge root and the session commands (S38c);
-  dispatch uses the session root alone (S19–S26).
+  there is none. Its repo is the **session repo**. Used for the worktree record and what writers are told
+  (S35–S38b); dispatch uses the session root alone (S19–S26).
+- **Session commands root:** the session repo root, except when the cwd root is another Consigliere workspace (not
+  the session root and not one of its linked worktrees, decided as in S21–S23): then the cwd root. Used only by the
+  session commands (S38c), never for the worktree record or dispatch.
 - **Consulted roots:** the roots dispatch looks at, in the order S20–S24 give.
 - **Pinned tree:** the extension's source at the commit recorded in `.cg.json` (`extension.SourceRoot`).
 - **Verified entry:** a ledger command entry whose extension's manifest in the pinned tree validates and declares
@@ -66,7 +67,9 @@ extension installed in the workspace (from their pinned manifests, not their led
   install fails, naming the command and both extensions, and the workspace (files, `.cg.json`, ledgers) is
   unchanged. WHEN another installed extension's tree at its recorded commit can't be read, so its commands can't
   be verified THEN install and update fail before anything is applied, naming that extension and `cg init` as the
-  fix (`cg init` restores missing trees before its own check, S11). Ownership stays manifest-only (S9).
+  fix (`cg init` restores missing trees before its own check, S11). This holds whether or not that extension's
+  ledger lists commands (its manifest can't be read to know). "Another" means not a target of the same run: an
+  update's own targets are fetched first (S10). Ownership stays manifest-only (S9).
 - **S7** WHEN it declares `pr` while another installed extension declares `pr merge` (or the reverse) THEN install
   fails the same way: a command inside another extension's command is a conflict in either direction.
 - **S8** WHEN two extensions declare different commands in one namespace (`pr merge` and `pr watch`) THEN both
@@ -170,7 +173,8 @@ Roots are checked in the consulted order. The first root whose ledgers have **an
 ### Session worktree
 
 The session state file is `<badge root>/.claude/session-context/<id>.json`, where the badge root is
-`gitx.CommonRoot` of the session repo root (as `sessionRoots` computes it today).
+`gitx.CommonRoot` of the session repo root for the worktree record and dispatch (S35–S38b), and of the session
+commands root for the session commands (S38c).
 
 - **S35** WHEN `cg worktree create <slug>` runs with a session ID from `CG_SESSION_ID` or `CLAUDE_CODE_SESSION_ID`
   that passes `ValidSessionID`, and the new worktree belongs to the **session repo** THEN the session's state file
@@ -203,7 +207,9 @@ The session state file is `<badge root>/.claude/session-context/<id>.json`, wher
 - **S38c** WHEN `CG_WORKSPACE` names workspace W (inherited, for example from a tmux server a `cg start` session set
   up) and the session commands (`cg session` start gate, `set-context`, `pause`, `release`, `cg active`) run in
   another Consigliere workspace X that isn't one of W's linked worktrees THEN they use X's state files, gate,
-  paused projects and badge root, not W's. Dispatch is unchanged: from X, W is still consulted first (S22).
+  paused projects and badge root, not W's (the session commands root). Dispatch is unchanged: from X, W is still
+  consulted first (S22). The worktree record is unchanged too: a worktree created while in X belongs to W's record
+  only if it is one of W's linked worktrees (S35), and writers served from W get W's record (S38), never X's.
 
 ### Unchanged
 
@@ -286,3 +292,9 @@ The session state file is `<badge root>/.claude/session-context/<id>.json`, wher
   decision 5's aim (never write into the main checkout) holds. *Alternative:* refuse unless a worktree is recorded,
   as decision 5 literally reads; sessions started in a worktree by agents without a session ID then can't write
   from external directories.
+- **Q11 — session commands follow the workspace the agent is in** (S38c, from the maintainer's review of #303).
+  With an inherited `CG_WORKSPACE`, an agent in another Consigliere workspace uses that workspace's session state.
+  *Accepted trade-off:* a session started in W that changes into a cloned checkout with a planted `.cg.json` gets
+  that checkout's gate text, paused-project prompts (a `resume.md` read as pickup context) and `cg active`, not
+  W's: no worse than an agent started in that checkout, but worse than before for `cg start`-then-`cd`. Hardening
+  is tracked separately. *Alternative:* switch only for workspaces known to be the owner's (needs a list).
