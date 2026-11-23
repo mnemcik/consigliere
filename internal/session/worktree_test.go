@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -213,11 +214,17 @@ func TestClearWorktreeAllReportsUnreadable(t *testing.T) {
 }
 
 // On a case-sensitive volume (possible on macOS and Windows too), a record
-// that differs only in case is another worktree's and stays.
+// that differs only in case is another worktree's and stays: there, the
+// record's directory exists and the removed one doesn't.
 func TestClearWorktreeCaseSensitiveVolume(t *testing.T) {
-	orig := caseInsensitiveAt
-	t.Cleanup(func() { caseInsensitiveAt = orig })
-	caseInsensitiveAt = func(string) bool { return false }
+	orig := statPath
+	t.Cleanup(func() { statPath = orig })
+	statPath = func(p string) (fs.FileInfo, error) {
+		if filepath.Base(p) == "Task" {
+			return os.Stat(t.TempDir())
+		}
+		return nil, fs.ErrNotExist
+	}
 	root := t.TempDir()
 	writeCtx(t, root, "s1", `{"worktree":"/w/Task"}`)
 	if cleared, err := ClearWorktree(root, "s1", "/w/task"); err != nil || cleared {
@@ -228,16 +235,20 @@ func TestClearWorktreeCaseSensitiveVolume(t *testing.T) {
 	}
 }
 
-// caseInsensitiveAt agrees with what the file system under the test's
-// temporary directory does, also for a path that doesn't exist yet.
-func TestCaseInsensitiveAt(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "Probe")
+// Two spellings of one existing directory are one worktree where the volume
+// folds case, and two where it doesn't; with neither left, they fold.
+func TestSameEntry(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "Task")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	_, err := os.Stat(filepath.Join(filepath.Dir(dir), "pROBE"))
-	want := err == nil
-	if got := caseInsensitiveAt(filepath.Join(dir, "gone", "x")); got != want {
-		t.Errorf("caseInsensitiveAt = %v, want %v (the volume's behaviour)", got, want)
+	other := filepath.Join(filepath.Dir(dir), "tASK")
+	_, err := os.Stat(other)
+	if got, want := sameEntry(dir, other), err == nil; got != want {
+		t.Errorf("sameEntry(existing, other case) = %v, want %v (the volume's behaviour)", got, want)
+	}
+	gone := filepath.Join(filepath.Dir(dir), "gone")
+	if !sameEntry(gone, filepath.Join(filepath.Dir(dir), "GONE")) {
+		t.Error("sameEntry of two missing spellings = false, want true")
 	}
 }
