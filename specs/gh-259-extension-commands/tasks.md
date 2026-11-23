@@ -49,12 +49,12 @@
 - [x] S36: `set-context --worktree` refuses a path that isn't one of the session repo's linked worktrees, test-first
 - [x] S37: `remove` clears only the same path (compared as in S35); removing a worktree of another repo leaves the record, test-first, with a mutation check
 
-## Amendment H (after the new agreement)
+## Amendments H–I (after the new agreement)
 
-- [ ] S6: install and update fail before anything is applied when another installed extension's tree at its recorded commit can't be read, naming that extension and `cg init` as the fix; guard test with a mutation check, for install and update
-- [ ] Session repo root exception (Terms): the cwd root is the session repo root when it is another Consigliere workspace (not the session root and not one of its linked worktrees, decided as in S21–S23)
-- [ ] S38c: session commands (`cg session` start gate, `set-context`, `pause`, `release`, `cg active`) in another workspace X with an inherited `CG_WORKSPACE` naming W use X's state files, gate, paused projects and badge root; guard tests with mutation checks: inside one of W's linked worktrees they still use W's; dispatch from X still consults W first (S22)
-- [ ] Docs; `make check`; independent review until clean
+- [ ] S6: install and update fail before anything is applied when another installed extension's tree at its recorded commit can't be read, naming that extension and `cg init` as the fix; guard tests with mutation checks: install, update, an unreadable extension whose ledger lists no commands (still refused), and an update-all whose own target's tree is missing (not refused: an update's own targets are fetched first)
+- [ ] Session commands root (Terms): the session repo root, except the cwd root when it is another Consigliere workspace (not the session root and not one of its linked worktrees, decided as in S21–S23); the session repo root itself is unchanged
+- [ ] S38c: session commands (`cg session` start gate, `set-context`, `pause`, `release`, `cg active`) in another workspace X with an inherited `CG_WORKSPACE` naming W use X's state files, gate, paused projects and badge root; guard tests with mutation checks: inside one of W's linked worktrees they still use W's; dispatch from X still consults W first (S22); a worktree created while in X doesn't enter W's record; a writer served from W while in X gets no `CG_SESSION_WORKTREE` pointing into X
+- [ ] Docs (Q11 trade-off where session commands are documented); `make check`; independent review until clean
 
 ## PR
 
