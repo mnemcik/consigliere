@@ -233,6 +233,17 @@ func TestClearWorktreeCaseSensitiveVolume(t *testing.T) {
 	if cleared, err := ClearWorktree(root, "s1", "/w/Task"); err != nil || !cleared {
 		t.Errorf("cleared %v (%v), want the same path cleared", cleared, err)
 	}
+	// A record that can't be checked (permission denied) may be live: kept.
+	statPath = func(p string) (fs.FileInfo, error) {
+		if filepath.Base(p) == "Task" {
+			return nil, fs.ErrPermission
+		}
+		return nil, fs.ErrNotExist
+	}
+	writeCtx(t, root, "s1", `{"worktree":"/w/Task"}`)
+	if cleared, err := ClearWorktree(root, "s1", "/w/task"); err != nil || cleared {
+		t.Errorf("cleared %v (%v), want the unreadable record of /w/Task kept", cleared, err)
+	}
 }
 
 // Two spellings of one existing directory are one worktree where the volume

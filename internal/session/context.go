@@ -301,7 +301,9 @@ func sameRecord(m map[string]any, path string) bool {
 // sameEntry reports whether two spellings of a path that differ only in case
 // name one entry: both exist and are the same file. If only one exists, the
 // volume tells them apart; if neither does (a removed worktree), there is
-// nothing left to tell apart and they count as one.
+// nothing left to tell apart and they count as one. A spelling that can't be
+// checked (permission denied, an I/O error) might be a live worktree, so they
+// don't count as one.
 func sameEntry(a, b string) bool {
 	fa, errA := statPath(a)
 	fb, errB := statPath(b)
@@ -311,7 +313,7 @@ func sameEntry(a, b string) bool {
 	case errA == nil || errB == nil:
 		return false
 	}
-	return true
+	return errors.Is(errA, fs.ErrNotExist) && errors.Is(errB, fs.ErrNotExist)
 }
 
 // statPath is os.Stat, a variable so tests can simulate a case-sensitive
