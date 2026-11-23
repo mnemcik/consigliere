@@ -49,6 +49,13 @@
 - [x] S36: `set-context --worktree` refuses a path that isn't one of the session repo's linked worktrees, test-first
 - [x] S37: `remove` clears only the same path (compared as in S35); removing a worktree of another repo leaves the record, test-first, with a mutation check
 
+## Amendment H (after the new agreement)
+
+- [ ] S6: install and update fail before anything is applied when another installed extension's tree at its recorded commit can't be read, naming that extension and `cg init` as the fix; guard test with a mutation check, for install and update
+- [ ] Session repo root exception (Terms): the cwd root is the session repo root when it is another Consigliere workspace (not the session root and not one of its linked worktrees, decided as in S21–S23)
+- [ ] S38c: session commands (`cg session` start gate, `set-context`, `pause`, `release`, `cg active`) in another workspace X with an inherited `CG_WORKSPACE` naming W use X's state files, gate, paused projects and badge root; guard tests with mutation checks: inside one of W's linked worktrees they still use W's; dispatch from X still consults W first (S22)
+- [ ] Docs; `make check`; independent review until clean
+
 ## PR
 
 - [x] Final independent review over the whole PR (4 rounds; round 4 clean; follow-ups in #307)
