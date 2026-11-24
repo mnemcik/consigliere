@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -70,12 +71,12 @@ func runSessionEnd(cmd *cobra.Command, _ []string) error {
 	if cwd == "" {
 		cwd, _ = os.Getwd()
 	}
-	root, wsRoot, _ := sessionCommandRoots(cmd.Context(), cwd)
-	if root == "" {
-		return nil
-	}
-	if _, err := session.EndSession(root, wsRoot, in.SessionID); err != nil {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "cg session end: %v\n", err)
+	// The claim may be in either file (made in another workspace, or in the
+	// session's own before moving there): end it in both.
+	for _, r := range sessionStateRoots(cmd.Context(), cwd) {
+		if _, err := session.EndSession(r.badge, r.ws, in.SessionID); err != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "cg session end: %v\n", err)
+		}
 	}
 	return nil
 }
@@ -110,22 +111,25 @@ func runSessionMarkDirty(cmd *cobra.Command, _ []string) error {
 	if cwd == "" {
 		cwd, _ = os.Getwd()
 	}
-	root, _, _ := sessionCommandRoots(cmd.Context(), cwd)
-	if root == "" {
-		return nil
-	}
+	roots := sessionStateRoots(cmd.Context(), cwd)
 
 	// Ignore writes to the badge file itself — framework bookkeeping isn't work.
 	filePath := in.ToolInput.FilePath
 	if filePath == "" {
 		filePath = in.ToolInput.NotebookPath
 	}
-	if session.IsContextPath(root, filePath) {
-		return nil
+	for _, r := range roots {
+		if session.IsContextPath(r.badge, filePath) {
+			return nil
+		}
 	}
 
-	if err := session.MarkDirty(root, in.SessionID); err != nil {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "cg session mark-dirty: %v\n", err)
+	// The claim may be in either file: mark whichever exists (MarkDirty
+	// writes nothing where the session has no badge).
+	for _, r := range roots {
+		if err := session.MarkDirty(r.badge, in.SessionID); err != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "cg session mark-dirty: %v\n", err)
+		}
 	}
 	return nil
 }
@@ -654,7 +658,16 @@ func runSessionStatusline(cmd *cobra.Command, _ []string) error {
 		cwd, _ = os.Getwd()
 	}
 
+	// The badge comes from the session commands root's file, else from the
+	// session repo root's (a claim made before moving to another workspace).
 	root, _, cfg := sessionCommandRoots(cmd.Context(), cwd)
+	if c, _ := session.ReadContext(root, in.SessionID); c == nil || c.Project == "" {
+		if r, _, rcfg := sessionRoots(cmd.Context(), cwd); r != "" && r != root {
+			if rc, _ := session.ReadContext(r, in.SessionID); rc != nil && rc.Project != "" {
+				root, cfg = r, rcfg
+			}
+		}
+	}
 	s := cfg.SessionSettings()
 
 	out := session.Statusline(cmd.Context(), root, session.StatuslineInput{
@@ -685,6 +698,25 @@ func sessionRoots(ctx context.Context, cwd string) (badgeRoot, wsRoot string, cf
 // workspace the agent works in keeps its own session state.
 func sessionCommandRoots(ctx context.Context, cwd string) (badgeRoot, wsRoot string, cfg *workspace.Config) {
 	return rootsOf(ctx, sessionCommandsRoot(cwd))
+}
+
+// stateRoot is a badge root and the workspace root it belongs to.
+type stateRoot struct{ badge, ws string }
+
+// sessionStateRoots returns the badge roots of the session commands root and
+// the session repo root, each once and in that order, for the commands S38c
+// doesn't switch that must reach the session's claim wherever it was made
+// (end, mark-dirty).
+func sessionStateRoots(ctx context.Context, cwd string) []stateRoot {
+	var out []stateRoot
+	for _, f := range []func(context.Context, string) (string, string, *workspace.Config){sessionCommandRoots, sessionRoots} {
+		badge, ws, _ := f(ctx, cwd)
+		if badge == "" || slices.ContainsFunc(out, func(r stateRoot) bool { return r.badge == badge }) {
+			continue
+		}
+		out = append(out, stateRoot{badge, ws})
+	}
+	return out
 }
 
 // rootsOf is sessionRoots' result for the root wsRoot ("" for none).

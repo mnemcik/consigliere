@@ -225,10 +225,13 @@ a session working in an external repo still reaches its own file.
 `cg session set-context` creates it; the directory is git-ignored.
 
 The session commands (the start gate, `set-context`'s claim, `pause`,
-`release`, `end`, `mark-dirty`, the status line, `cg active`) make one
-exception: run in another Consigliere workspace (not `CG_WORKSPACE`'s and not
-one of its linked worktrees), they use that workspace's file, gate and paused
-projects, not those of the workspace `CG_WORKSPACE` names. That covers a
+`release`, `cg active`) make one exception: run in another Consigliere
+workspace (not `CG_WORKSPACE`'s and not one of its linked worktrees), they use
+that workspace's file, gate and paused projects, not those of the workspace
+`CG_WORKSPACE` names. The hooks that follow a claim wherever it was made reach
+both files: `cg session end` and `mark-dirty` act on the session's file in
+either place, and the status line shows the claim from that workspace's file,
+else from the session's workspace's. That covers a
 `CG_WORKSPACE` inherited by accident, for example from a tmux server a `cg
 start` session set up. The trade-off: a session started in a workspace that
 changes into a cloned checkout with a planted `.cg.json` gets that checkout's

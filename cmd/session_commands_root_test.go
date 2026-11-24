@@ -74,19 +74,19 @@ func TestSessionCommandsInAnotherWorkspace(t *testing.T) {
 		t.Errorf("gate from X doesn't name X's state file %s only:\n%s", session.ContextFile(x, "s1"), out)
 	}
 
-	if out, err := runSession(t, x, "", "set-context", "--session-id", "s2", "--area", "a", "--project", "p"); err != nil {
+	if out, err := runSession(t, x, "", "set-context", "--session-id", "s2", "--area", "a", "--project", "xproj"); err != nil {
 		t.Fatalf("set-context: %v\n%s", err, out)
 	}
-	if c, _ := session.ReadContext(x, "s2"); c == nil || c.Project != "p" {
+	if c, _ := session.ReadContext(x, "s2"); c == nil || c.Project != "xproj" {
 		t.Errorf("claim from X not in X's state file: %+v", c)
 	}
 	if c, _ := session.ReadContext(w, "s2"); c != nil {
 		t.Errorf("claim from X written to W's state file: %+v", c)
 	}
-	if out, err := runSession(t, x, "", "active", "--slugs"); err != nil || !strings.Contains(out, "p") {
-		t.Errorf("cg active from X: %v\n%s", err, out)
+	if out, err := runSession(t, x, "", "active", "--slugs"); err != nil || strings.TrimSpace(out) != "xproj" {
+		t.Errorf("cg active from X = %q (%v), want xproj", out, err)
 	}
-	if out, err := runSession(t, w, "", "active", "--slugs"); err != nil || strings.Contains(out, "p") {
+	if out, err := runSession(t, w, "", "active", "--slugs"); err != nil || strings.Contains(out, "xproj") {
 		t.Errorf("cg active from W lists X's session: %v\n%s", err, out)
 	}
 	if out, err := runSession(t, x, "", "pause", "--session-id", "s2"); err != nil || !strings.Contains(out, "Session paused: s2") {
@@ -205,5 +205,71 @@ func TestSetContextWorktreeFromAnotherWorkspace(t *testing.T) {
 		if got := recordedWorktree(t, root, "s7"); got != "" {
 			t.Errorf("X's worktree recorded under %s: %q", root, got)
 		}
+	}
+}
+
+// end and mark-dirty, which S38c doesn't switch, reach the session's claim in
+// either file: a claim made in W before moving to X is marked dirty from X and
+// ended from X; the status line in X shows it.
+func TestSessionHooksReachClaimInEitherFile(t *testing.T) {
+	requireGit(t)
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	w := committedWorkspace(t, cfgHome)
+	x := committedWorkspace(t, cfgHome)
+	t.Setenv(envWorkspace, w)
+	hook := func(id string) string {
+		return `{"session_id":"` + id + `","cwd":"` + filepath.ToSlash(x) + `","tool_input":{"file_path":"` + filepath.ToSlash(filepath.Join(w, "notes.md")) + `"}}`
+	}
+
+	// Claimed in W, then working from X.
+	if out, err := runSession(t, w, "", "set-context", "--session-id", "s8", "--area", "a", "--project", "wproj"); err != nil {
+		t.Fatalf("set-context in W: %v\n%s", err, out)
+	}
+	if out, err := runSession(t, x, hook("s8"), "statusline"); err != nil || !strings.Contains(out, "wproj") {
+		t.Errorf("status line from X = %q (%v), want W's claim", out, err)
+	}
+	if out, err := runSession(t, x, hook("s8"), "mark-dirty"); err != nil {
+		t.Fatalf("mark-dirty from X: %v\n%s", err, out)
+	}
+	if c, _ := session.ReadContext(w, "s8"); c == nil || !c.Dirty {
+		t.Errorf("W's claim after mark-dirty from X: %+v, want dirty", c)
+	}
+
+	// Claimed in W, clean, ended from X: released.
+	if out, err := runSession(t, w, "", "set-context", "--session-id", "s9", "--area", "a", "--project", "wproj"); err != nil {
+		t.Fatalf("set-context in W: %v\n%s", err, out)
+	}
+	if out, err := runSession(t, x, hook("s9"), "end"); err != nil {
+		t.Fatalf("end from X: %v\n%s", err, out)
+	}
+	if c, _ := session.ReadContext(w, "s9"); c != nil {
+		t.Errorf("W's clean claim survived end from X: %+v", c)
+	}
+
+	// Claimed in X: marked dirty in X's file.
+	if out, err := runSession(t, x, "", "set-context", "--session-id", "s10", "--area", "a", "--project", "xproj"); err != nil {
+		t.Fatalf("set-context in X: %v\n%s", err, out)
+	}
+	if out, err := runSession(t, x, hook("s10"), "mark-dirty"); err != nil {
+		t.Fatalf("mark-dirty in X: %v\n%s", err, out)
+	}
+	if c, _ := session.ReadContext(x, "s10"); c == nil || !c.Dirty {
+		t.Errorf("X's claim after mark-dirty: %+v, want dirty", c)
+	}
+}
+
+// A checkout of the session's repository is recognised from its .git without
+// running git (the hooks using the session commands root run often).
+func TestSessionCommandsRootWithoutGit(t *testing.T) {
+	requireGit(t)
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	w := committedWorkspace(t, cfgHome)
+	wl := addBranchWorktree(t, w, "wl")
+	t.Setenv(envWorkspace, w)
+	t.Setenv("PATH", t.TempDir()) // no git from here on
+	if got := sessionCommandsRoot(wl); !samePath(got, w) {
+		t.Errorf("from W's linked worktree without git: %q, want %s", got, w)
 	}
 }

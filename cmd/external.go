@@ -518,10 +518,55 @@ func sessionCommandsRoot(cwd string) string {
 	}
 	sroot := filepath.Clean(value)
 	root, _, err := workspace.FindRoot(cwd)
-	if err != nil || root == "" || samePath(root, sroot) || sessionWorktree(sroot, root) {
+	if err != nil || root == "" || samePath(root, sroot) {
+		return srr
+	}
+	// The hooks that use this run on every prompt, edit and status-line
+	// render: a checkout of the session's repository is recognised from its
+	// .git first, without starting git. Trusting a planted .git here only
+	// keeps the session's own state, as before the session commands root.
+	if c := commonDirOf(sroot); c != "" && gitDirIn(root, c) {
+		return srr
+	}
+	if sessionWorktree(sroot, root) {
 		return srr
 	}
 	return root
+}
+
+// commonDirOf returns the common git directory of the checkout at dir, read
+// from its .git (a directory, or a linked worktree's file and its commondir)
+// without running git, or "" when that can't be read.
+func commonDirOf(dir string) string {
+	dotGit := filepath.Join(dir, ".git")
+	info, err := os.Stat(dotGit) //nolint:gosec // a fixed name in the session's workspace
+	if err != nil {
+		return ""
+	}
+	if info.IsDir() {
+		return dotGit
+	}
+	data, err := os.ReadFile(dotGit) //nolint:gosec // a fixed name in the session's workspace
+	if err != nil {
+		return ""
+	}
+	gd, ok := strings.CutPrefix(strings.TrimSpace(string(data)), "gitdir:")
+	if !ok {
+		return ""
+	}
+	gd = filepath.FromSlash(strings.TrimSpace(gd))
+	if !filepath.IsAbs(gd) {
+		gd = filepath.Join(dir, gd)
+	}
+	cd, err := os.ReadFile(filepath.Join(gd, "commondir")) //nolint:gosec // inside the session's git directory
+	if err != nil {
+		return ""
+	}
+	common := filepath.FromSlash(strings.TrimSpace(string(cd)))
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(gd, common)
+	}
+	return filepath.Clean(common)
 }
 
 // sessionRepoWorktree reports whether dir is one of the linked worktrees of

@@ -177,7 +177,9 @@ func unverifiableExtension(root string, installed []workspace.ExtensionRef, inco
 		case errors.Is(err, errBadPath):
 			fix = "correct its entry in " + filepath.Join(root, workspace.ConfigFile)
 		case pathExists(tree):
-			fix = "remove " + tree + " and run `cg init --force` in " + root + " to restore it"
+			// A damaged tree is re-exported; a manifest this cg can't use
+			// (a newer schema) comes back the same, so update or remove it.
+			fix = fmt.Sprintf("remove %s and run `cg init --force` in %s to restore it, or, if its manifest is one this cg can't use, run `cg extension update %s` or `cg extension remove %s` there", tree, root, e.Name, e.Name)
 		}
 		return cgerr.New(cgerr.ExitUsage, "extension %q: %v, so its commands can't be verified and no extension was applied: %s", e.Name, err, fix)
 	}
