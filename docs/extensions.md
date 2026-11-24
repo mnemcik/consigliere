@@ -460,7 +460,12 @@ read might declare anything, so install, update and `cg init` refuse incoming
 commands until it is restored; and an extension being installed, updated or
 restored needs its own ledger readable, so nothing is applied when one isn't.
 The ledger is committed in the workspace, so it isn't trusted on its own, just
-as for the [launcher](#contribution-points).
+as for the [launcher](#contribution-points). Another installed extension whose
+tree can't be read (missing or damaged in the store) can't have its commands
+verified, so install and update refuse before applying anything, naming it and
+`cg init --force` as the fix (`cg init` restores missing trees before its own
+check), whether or not its ledger lists commands. An update's own targets
+don't count: they are fetched first.
 
 A built-in added by a later cg can shadow a command an extension declared
 earlier. The extension still **owns** that command: its installed version's

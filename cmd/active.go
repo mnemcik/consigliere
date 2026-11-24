@@ -65,7 +65,7 @@ func runActive(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	root, wsRoot, cfg := sessionRoots(ctx, cwd)
+	root, wsRoot, cfg := sessionCommandRoots(ctx, cwd)
 	s := cfg.SessionSettings()
 
 	sessions, err := session.ActiveProjects(root, session.ActiveOptions{

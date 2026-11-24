@@ -70,7 +70,7 @@ func runSessionEnd(cmd *cobra.Command, _ []string) error {
 	if cwd == "" {
 		cwd, _ = os.Getwd()
 	}
-	root, wsRoot, _ := sessionRoots(cmd.Context(), cwd)
+	root, wsRoot, _ := sessionCommandRoots(cmd.Context(), cwd)
 	if root == "" {
 		return nil
 	}
@@ -110,7 +110,7 @@ func runSessionMarkDirty(cmd *cobra.Command, _ []string) error {
 	if cwd == "" {
 		cwd, _ = os.Getwd()
 	}
-	root, _, _ := sessionRoots(cmd.Context(), cwd)
+	root, _, _ := sessionCommandRoots(cmd.Context(), cwd)
 	if root == "" {
 		return nil
 	}
@@ -333,7 +333,7 @@ func runSessionPause(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	root, wsRoot, _ := sessionRoots(cmd.Context(), cwd)
+	root, wsRoot, _ := sessionCommandRoots(cmd.Context(), cwd)
 	if wsRoot == "" || root == "" {
 		return fmt.Errorf("not inside a Consigliere workspace: %s", cwd)
 	}
@@ -393,7 +393,7 @@ func runSessionRelease(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	root, wsRoot, _ := sessionRoots(cmd.Context(), cwd)
+	root, wsRoot, _ := sessionCommandRoots(cmd.Context(), cwd)
 	if wsRoot == "" || root == "" {
 		return fmt.Errorf("not inside a Consigliere workspace: %s", cwd)
 	}
@@ -433,29 +433,36 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 	}
 	// Refuse outside a workspace: inside any other git repo the badge root
 	// would still resolve, leaving a stray .claude/ the status line never reads.
-	root, wsRoot, cfg := sessionRoots(cmd.Context(), cwd)
+	// The claim goes to the session commands root's state file (S38c); the
+	// worktree record stays with the session repo root's, wherever this runs
+	// (S36).
+	root, wsRoot, cfg := sessionCommandRoots(cmd.Context(), cwd)
 	if wsRoot == "" || root == "" {
 		return fmt.Errorf("not inside a Consigliere workspace: %s", cwd)
 	}
 	out := cmd.OutOrStdout()
 	// Validate the worktree before writing anything, and record it after the
 	// claim, so a refused path or a failed claim changes nothing about it.
-	var wtPath string
+	var wtPath, wtBadge string
 	if worktreeSet {
-		p, werr := listedWorktree(cmd.Context(), wsRoot, setContextWorktree)
+		badge, repoRoot, _ := sessionRoots(cmd.Context(), cwd)
+		if repoRoot == "" || badge == "" {
+			return fmt.Errorf("not inside a Consigliere workspace: %s", cwd)
+		}
+		p, werr := listedWorktree(cmd.Context(), repoRoot, setContextWorktree)
 		if werr != nil {
 			return werr
 		}
-		wtPath = p
+		wtPath, wtBadge = p, badge
 	}
 	recordWorktree := func() error {
 		if !worktreeSet {
 			return nil
 		}
-		if err := session.SetWorktree(root, id, wtPath); err != nil {
+		if err := session.SetWorktree(wtBadge, id, wtPath); err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintf(out, "Session worktree set: %s (%s)\n", wtPath, session.ContextFile(root, id))
+		_, _ = fmt.Fprintf(out, "Session worktree set: %s (%s)\n", wtPath, session.ContextFile(wtBadge, id))
 		return nil
 	}
 	if !claim {
@@ -588,7 +595,7 @@ func runSessionStartGate(cmd *cobra.Command, _ []string) error {
 	// (CG_WORKSPACE, else cwd's workspace), as for every other badge command,
 	// so a session working in an external repo is told its own file. Without
 	// a session repo root, fall back to cwd's repository.
-	root, wsRoot, cfg := sessionRoots(cmd.Context(), cwd)
+	root, wsRoot, cfg := sessionCommandRoots(cmd.Context(), cwd)
 	if root == "" {
 		var err error
 		if root, err = gitx.CommonRoot(cmd.Context(), cwd); err != nil {
@@ -647,7 +654,7 @@ func runSessionStatusline(cmd *cobra.Command, _ []string) error {
 		cwd, _ = os.Getwd()
 	}
 
-	root, _, cfg := sessionRoots(cmd.Context(), cwd)
+	root, _, cfg := sessionCommandRoots(cmd.Context(), cwd)
 	s := cfg.SessionSettings()
 
 	out := session.Statusline(cmd.Context(), root, session.StatuslineInput{
@@ -669,7 +676,19 @@ func runSessionStatusline(cmd *cobra.Command, _ []string) error {
 // repo. cfg is the workspace config, read from wsRoot and else from
 // badgeRoot, so a workspace nested below the git top level keeps its settings.
 func sessionRoots(ctx context.Context, cwd string) (badgeRoot, wsRoot string, cfg *workspace.Config) {
-	wsRoot = sessionRepoRoot(cwd)
+	return rootsOf(ctx, sessionRepoRoot(cwd))
+}
+
+// sessionCommandRoots is sessionRoots for the session commands (start gate,
+// set-context's claim, pause, release, end, mark-dirty, the status line, cg
+// active): from the session commands root (S38c), so another Consigliere
+// workspace the agent works in keeps its own session state.
+func sessionCommandRoots(ctx context.Context, cwd string) (badgeRoot, wsRoot string, cfg *workspace.Config) {
+	return rootsOf(ctx, sessionCommandsRoot(cwd))
+}
+
+// rootsOf is sessionRoots' result for the root wsRoot ("" for none).
+func rootsOf(ctx context.Context, wsRoot string) (badgeRoot, _ string, cfg *workspace.Config) {
 	if wsRoot == "" {
 		return "", "", nil
 	}

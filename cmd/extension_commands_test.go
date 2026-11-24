@@ -825,3 +825,67 @@ func TestInitPartialFailureAfterLegacyExport(t *testing.T) {
 		t.Errorf("tree kept though two wasn't applied (%v)", err)
 	}
 }
+
+// removeTree deletes the store tree of the installed extension name.
+func removeTree(t *testing.T, ws, name string) {
+	t.Helper()
+	cfg, _ := workspace.Detect(ws)
+	ref := findRef(cfg.Extensions, name)
+	if ref == nil {
+		t.Fatalf("%s not installed", name)
+	}
+	if err := os.RemoveAll(extension.SourceRoot(ref)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// S6: another installed extension whose tree can't be read can't have its
+// commands verified, so install and update fail before applying anything,
+// naming it and cg init; also when its ledger lists no commands.
+func TestUnreadableTreeRefusesInstallAndUpdate(t *testing.T) {
+	requireGit(t)
+	for name, alphaCmds := range map[string][]string{
+		"with commands":    {"shop add"},
+		"without commands": nil,
+	} {
+		t.Run(name+"/install", func(t *testing.T) {
+			cfgHome, ws := t.TempDir(), newWorkspace(t)
+			installRepo(t, cfgHome, ws, commandsManifest("alpha", "1.0.0", alphaCmds...))
+			removeTree(t, ws, "alpha")
+			before := snapshotDir(t, ws)
+			out, err := runExtCfg(t, cfgHome, ws, "install", makeExtRepo(t, commandsManifest("beta", "1.0.0", "pr")))
+			wantConflict(t, err, out, `"alpha"`, "cg init")
+			assertUnchanged(t, ws, before)
+		})
+		t.Run(name+"/update", func(t *testing.T) {
+			cfgHome, ws := t.TempDir(), newWorkspace(t)
+			installRepo(t, cfgHome, ws, commandsManifest("alpha", "1.0.0", alphaCmds...))
+			beta := installRepo(t, cfgHome, ws, commandsManifest("beta", "1.0.0", "pr"))
+			updateExtRepo(t, beta, commandsManifest("beta", "1.1.0", "pr"), "")
+			removeTree(t, ws, "alpha")
+			before := snapshotDir(t, ws)
+			out, err := runExtCfg(t, cfgHome, ws, "update", "beta")
+			wantConflict(t, err, out, `"alpha"`, "cg init")
+			assertUnchanged(t, ws, before)
+		})
+	}
+}
+
+// S6/S10: an update's own targets are fetched first, so a target whose tree
+// is missing isn't "another" extension: updating every extension isn't
+// refused for it.
+func TestUpdateAllWithMissingOwnTree(t *testing.T) {
+	requireGit(t)
+	cfgHome, ws := t.TempDir(), newWorkspace(t)
+	alpha := installRepo(t, cfgHome, ws, commandsManifest("alpha", "1.0.0", "shop"))
+	installRepo(t, cfgHome, ws, commandsManifest("beta", "1.0.0", "pr"))
+	updateExtRepo(t, alpha, commandsManifest("alpha", "1.1.0", "shop"), "")
+	removeTree(t, ws, "alpha")
+	if out, err := runExtCfg(t, cfgHome, ws, "update"); err != nil {
+		t.Fatalf("update all with alpha's own tree missing: %v\n%s", err, out)
+	}
+	cfg, _ := workspace.Detect(ws)
+	if ref := findRef(cfg.Extensions, "alpha"); ref == nil || ref.Version != "1.1.0" {
+		t.Errorf("alpha = %+v, want 1.1.0", ref)
+	}
+}

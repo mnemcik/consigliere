@@ -504,6 +504,26 @@ func sessionRepoRoot(cwd string) string {
 	return root
 }
 
+// sessionCommandsRoot is the session commands root (spec Terms, S38c): the
+// session repo root, except when the current directory's workspace is another
+// Consigliere workspace than the session's (not the session root and not one
+// of its linked worktrees, decided as dispatch does, S21–S23): then that
+// workspace. Only the session commands use it; the worktree record and
+// dispatch keep the session repo root.
+func sessionCommandsRoot(cwd string) string {
+	srr := sessionRepoRoot(cwd)
+	value, _, ignored, _ := readSession()
+	if value == "" || ignored != "" {
+		return srr // the current directory's workspace already
+	}
+	sroot := filepath.Clean(value)
+	root, _, err := workspace.FindRoot(cwd)
+	if err != nil || root == "" || samePath(root, sroot) || sessionWorktree(sroot, root) {
+		return srr
+	}
+	return root
+}
+
 // sessionRepoWorktree reports whether dir is one of the linked worktrees of
 // the repo at repoRoot: listed by `git worktree list --porcelain` run in
 // repoRoot with git's repository variables removed, not the main checkout (the

@@ -128,6 +128,11 @@ func checkCommands(root string, installed []workspace.ExtensionRef, incoming map
 		}
 		anyIncoming = anyIncoming || len(incoming[name]) > 0
 	}
+	if !ownAll {
+		if err := unverifiableExtension(root, installed, incoming); err != nil {
+			return nil, err
+		}
+	}
 	have, err := installedCommands(root, installed, anyIncoming)
 	if err != nil {
 		return nil, err
@@ -149,6 +154,40 @@ func checkCommands(root string, installed []workspace.ExtensionRef, incoming map
 		lines[i] = "  " + c.String()
 	}
 	return nil, cgerr.New(cgerr.ExitUsage, "extension commands conflict, so no extension was applied:\n%s", strings.Join(lines, "\n"))
+}
+
+// unverifiableExtension returns an error naming the first installed extension
+// outside incoming whose manifest at its recorded commit can't be read (S6):
+// its commands can't be verified, whatever its ledger lists, so install and
+// update refuse before applying anything. cg init, which restores missing
+// trees before its own check, doesn't call it. An incoming extension is the
+// run's own target and is fetched first (S10).
+func unverifiableExtension(root string, installed []workspace.ExtensionRef, incoming map[string][]extension.CommandContribution) error {
+	for i := range installed {
+		e := &installed[i]
+		if _, in := incoming[e.Name]; in {
+			continue
+		}
+		_, _, err := verifiedManifest(e)
+		if err == nil {
+			continue
+		}
+		fix := "run `cg init --force` in " + root + " to restore it"
+		switch tree := extension.SourceRoot(e); {
+		case errors.Is(err, errBadPath):
+			fix = "correct its entry in " + filepath.Join(root, workspace.ConfigFile)
+		case pathExists(tree):
+			fix = "remove " + tree + " and run `cg init --force` in " + root + " to restore it"
+		}
+		return cgerr.New(cgerr.ExitUsage, "extension %q: %v, so its commands can't be verified and no extension was applied: %s", e.Name, err, fix)
+	}
+	return nil
+}
+
+// pathExists reports whether p exists (following symlinks).
+func pathExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
 
 // ownedCommands returns, for each incoming extension that is installed, the
