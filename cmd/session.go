@@ -672,10 +672,12 @@ func runSessionStatusline(cmd *cobra.Command, _ []string) error {
 	// The badge is the session commands root's claim, else the session repo
 	// root's (one made before moving to another workspace), which is
 	// resolved only when needed: this renders often.
-	root, _, cfg := sessionCommandRoots(cmd.Context(), cwd)
+	root, wsRoot, cfg := sessionCommandRoots(cmd.Context(), cwd)
 	if !holdsClaim(root, in.SessionID) {
-		if r, _, rcfg := sessionRoots(cmd.Context(), cwd); r != "" && r != root && holdsClaim(r, in.SessionID) {
-			root, cfg = r, rcfg
+		if rr := sessionRepoRoot(cwd); rr != "" && rr != wsRoot {
+			if r, _, rcfg := rootsOf(cmd.Context(), rr); r != "" && r != root && holdsClaim(r, in.SessionID) {
+				root, cfg = r, rcfg
+			}
 		}
 	}
 	s := cfg.SessionSettings()

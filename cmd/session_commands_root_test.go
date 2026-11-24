@@ -313,7 +313,8 @@ func TestSessionHooksWithTwoClaims(t *testing.T) {
 		}
 	}
 
-	// A state file in X without a claim doesn't take the mark from W's claim.
+	// W's claim is marked also when X's file for the session holds no claim
+	// (both files are marked).
 	if err := session.WriteContext(w, "s13", session.Claim{Area: "a", Project: "wproj"}); err != nil {
 		t.Fatal(err)
 	}
@@ -332,7 +333,9 @@ func TestSessionHooksWithTwoClaims(t *testing.T) {
 	}
 	writeStateFile(t, x, "s15", `{"area":1}`)
 	bad := `{"session_id":"s15","cwd":"` + filepath.ToSlash(x) + `","tool_input":{"file_path":"` + filepath.ToSlash(filepath.Join(x, "notes.md")) + `"}}`
-	_, _ = runSession(t, x, bad, "mark-dirty")
+	if out, err := runSession(t, x, bad, "mark-dirty"); err != nil {
+		t.Fatalf("mark-dirty with an unreadable X file: %v\n%s", err, out)
+	}
 	if c, _ := session.ReadContext(w, "s15"); c == nil || !c.Dirty {
 		t.Errorf("W's claim with an unreadable X file: %+v, want dirty", c)
 	}
