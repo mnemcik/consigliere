@@ -275,9 +275,9 @@ func TestSessionCommandsRootWithoutGit(t *testing.T) {
 	}
 }
 
-// With a claim in each file (made in W, then in X), mark-dirty marks only the
-// current one (X's), so end releases W's older clean claim and keeps X's
-// dirty one; the status line shows X's, also when it has only an area.
+// With a claim in each file (made in W, then in X), mark-dirty marks both (the
+// work may belong to either), so end keeps both; the status line shows X's,
+// also when it has only an area, and W's when X's file can't be read.
 func TestSessionHooksWithTwoClaims(t *testing.T) {
 	requireGit(t)
 	cfgHome := t.TempDir()
@@ -298,8 +298,8 @@ func TestSessionHooksWithTwoClaims(t *testing.T) {
 	if c, _ := session.ReadContext(x, "s11"); c == nil || !c.Dirty {
 		t.Errorf("X's current claim: %+v, want dirty", c)
 	}
-	if c, _ := session.ReadContext(w, "s11"); c == nil || c.Dirty {
-		t.Errorf("W's older claim: %+v, want clean", c)
+	if c, _ := session.ReadContext(w, "s11"); c == nil || !c.Dirty {
+		t.Errorf("W's older claim: %+v, want dirty too", c)
 	}
 	if out, err := runSession(t, x, stdin, "statusline"); err != nil || !strings.Contains(out, "xproj") || strings.Contains(out, "wproj") {
 		t.Errorf("status line = %q (%v), want X's claim", out, err)
@@ -307,11 +307,10 @@ func TestSessionHooksWithTwoClaims(t *testing.T) {
 	if out, err := runSession(t, x, stdin, "end"); err != nil {
 		t.Fatalf("end: %v\n%s", err, out)
 	}
-	if c, _ := session.ReadContext(w, "s11"); c != nil {
-		t.Errorf("W's clean claim survived end: %+v", c)
-	}
-	if c, _ := session.ReadContext(x, "s11"); c == nil {
-		t.Error("X's dirty claim released by end")
+	for _, root := range []string{w, x} {
+		if c, _ := session.ReadContext(root, "s11"); c == nil {
+			t.Errorf("a dirty claim under %s released by end", root)
+		}
 	}
 
 	// A state file in X without a claim doesn't take the mark from W's claim.
@@ -325,6 +324,20 @@ func TestSessionHooksWithTwoClaims(t *testing.T) {
 	}
 	if c, _ := session.ReadContext(w, "s13"); c == nil || !c.Dirty {
 		t.Errorf("W's claim with an empty X file: %+v, want dirty", c)
+	}
+
+	// X's file can't be read: W's claim is still marked and shown.
+	if err := session.WriteContext(w, "s15", session.Claim{Area: "a", Project: "wproj"}); err != nil {
+		t.Fatal(err)
+	}
+	writeStateFile(t, x, "s15", `{"area":1}`)
+	bad := `{"session_id":"s15","cwd":"` + filepath.ToSlash(x) + `","tool_input":{"file_path":"` + filepath.ToSlash(filepath.Join(x, "notes.md")) + `"}}`
+	_, _ = runSession(t, x, bad, "mark-dirty")
+	if c, _ := session.ReadContext(w, "s15"); c == nil || !c.Dirty {
+		t.Errorf("W's claim with an unreadable X file: %+v, want dirty", c)
+	}
+	if out, err := runSession(t, x, bad, "statusline"); err != nil || !strings.Contains(out, "wproj") {
+		t.Errorf("status line with an unreadable X file = %q (%v), want W's claim", out, err)
 	}
 
 	// An area-only state in X is a badge too: shown instead of W's.
@@ -349,8 +362,9 @@ func writeStateFile(t *testing.T, root, id, content string) {
 	}
 }
 
-// end skips a root where the session has no state file: no git calls or lock
-// wait there (SessionEnd's budget is short), and no lock file left behind.
+// end and mark-dirty skip a root where the session has no state file: no git
+// calls or lock wait there (SessionEnd's budget is short), and no lock file
+// left behind.
 func TestSessionEndSkipsRootWithoutFile(t *testing.T) {
 	requireGit(t)
 	cfgHome := t.TempDir()
@@ -363,6 +377,13 @@ func TestSessionEndSkipsRootWithoutFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	in := `{"session_id":"s14","cwd":"` + filepath.ToSlash(x) + `"}`
+	if out, err := runSession(t, x, in, "mark-dirty"); err != nil {
+		t.Fatalf("mark-dirty: %v\n%s", err, out)
+	}
+	if c, _ := session.ReadContext(w, "s14"); c == nil || !c.Dirty {
+		t.Fatalf("W's claim after mark-dirty: %+v, want dirty", c)
+	}
+	writeStateFile(t, w, "s14", `{"area":"a","project":"wproj"}`) // clean again
 	if out, err := runSession(t, x, in, "end"); err != nil {
 		t.Fatalf("end: %v\n%s", err, out)
 	}

@@ -129,18 +129,18 @@ func runSessionMarkDirty(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// Mark the claim the session holds now (the session commands root's,
-	// else the session repo root's), not an older one in the other file,
-	// which would then never be released.
-	r, ok := currentClaimRoot(roots, in.SessionID)
-	if !ok {
-		r, ok = firstStateFile(roots, in.SessionID)
-	}
-	if !ok {
-		return nil
-	}
-	if err := session.MarkDirty(r.badge, in.SessionID); err != nil {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "cg session mark-dirty: %v\n", err)
+	// Mark the session's file wherever it has one: the work may belong to
+	// either claim, or to the worktree record in the session repo root's
+	// file, and a file left clean is released at end. An older claim marked
+	// too only lingers in cg active until pruned. A root without the file is
+	// skipped, so no lock file is left there.
+	for _, r := range roots {
+		if _, err := os.Lstat(session.ContextFile(r.badge, in.SessionID)); err != nil {
+			continue
+		}
+		if err := session.MarkDirty(r.badge, in.SessionID); err != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "cg session mark-dirty: %v\n", err)
+		}
 	}
 	return nil
 }
@@ -669,16 +669,14 @@ func runSessionStatusline(cmd *cobra.Command, _ []string) error {
 		cwd, _ = os.Getwd()
 	}
 
-	// The badge is the claim the session holds now: the session commands
-	// root's, else the session repo root's (one made before moving to
-	// another workspace).
-	var root string
-	var cfg *workspace.Config
-	roots := sessionStateRoots(cmd.Context(), cwd)
-	if r, ok := currentClaimRoot(roots, in.SessionID); ok {
-		root, cfg = r.badge, r.cfg
-	} else if len(roots) > 0 {
-		root, cfg = roots[0].badge, roots[0].cfg
+	// The badge is the session commands root's claim, else the session repo
+	// root's (one made before moving to another workspace), which is
+	// resolved only when needed: this renders often.
+	root, _, cfg := sessionCommandRoots(cmd.Context(), cwd)
+	if !holdsClaim(root, in.SessionID) {
+		if r, _, rcfg := sessionRoots(cmd.Context(), cwd); r != "" && r != root && holdsClaim(r, in.SessionID) {
+			root, cfg = r, rcfg
+		}
 	}
 	s := cfg.SessionSettings()
 
@@ -713,17 +711,13 @@ func sessionCommandRoots(ctx context.Context, cwd string) (badgeRoot, wsRoot str
 	return rootsOf(ctx, sessionCommandsRoot(cwd))
 }
 
-// stateRoot is a badge root, the workspace root it belongs to and that
-// workspace's config.
-type stateRoot struct {
-	badge, ws string
-	cfg       *workspace.Config
-}
+// stateRoot is a badge root and the workspace root it belongs to.
+type stateRoot struct{ badge, ws string }
 
 // sessionStateRoots returns the roots of the session commands root and the
 // session repo root, each once and in that order, for the commands S38c
-// doesn't switch that must reach the session's claim wherever it was made
-// (end, mark-dirty, the status line). Each root is resolved once.
+// doesn't switch that must reach the session's file under either root (end,
+// mark-dirty). Each root is resolved once.
 func sessionStateRoots(ctx context.Context, cwd string) []stateRoot {
 	var out []stateRoot
 	cr, rr := sessionCommandsRoot(cwd), sessionRepoRoot(cwd)
@@ -731,36 +725,24 @@ func sessionStateRoots(ctx context.Context, cwd string) []stateRoot {
 		if ws == "" || slices.ContainsFunc(out, func(r stateRoot) bool { return r.ws == ws }) {
 			continue
 		}
-		badge, ws, cfg := rootsOf(ctx, ws)
+		badge, wsRoot, _ := rootsOf(ctx, ws)
 		if badge == "" || slices.ContainsFunc(out, func(r stateRoot) bool { return r.badge == badge }) {
 			continue
 		}
-		out = append(out, stateRoot{badge, ws, cfg})
+		out = append(out, stateRoot{badge, wsRoot})
 	}
 	return out
 }
 
-// currentClaimRoot returns the first root whose state file for id holds a
-// claim (an area or a project, as the status line shows), or can't be read
-// (so its error surfaces instead of another file's claim showing).
-func currentClaimRoot(roots []stateRoot, id string) (stateRoot, bool) {
-	for _, r := range roots {
-		c, err := session.ReadContext(r.badge, id)
-		if err != nil || (c != nil && (c.Area != "" || c.Project != "")) {
-			return r, true
-		}
+// holdsClaim reports whether the state file for id under the badge root
+// root can be read and holds a claim (an area or a project, as the status
+// line shows).
+func holdsClaim(root, id string) bool {
+	if root == "" {
+		return false
 	}
-	return stateRoot{}, false
-}
-
-// firstStateFile returns the first root that has a state file for id.
-func firstStateFile(roots []stateRoot, id string) (stateRoot, bool) {
-	for _, r := range roots {
-		if _, err := os.Lstat(session.ContextFile(r.badge, id)); err == nil {
-			return r, true
-		}
-	}
-	return stateRoot{}, false
+	c, err := session.ReadContext(root, id)
+	return err == nil && c != nil && (c.Area != "" || c.Project != "")
 }
 
 // rootsOf is sessionRoots' result for the root wsRoot ("" for none).

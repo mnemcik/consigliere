@@ -228,10 +228,12 @@ The session commands (the start gate, `set-context`'s claim, `pause`,
 `release`, `cg active`) make one exception: run in another Consigliere
 workspace (not `CG_WORKSPACE`'s and not one of its linked worktrees), they use
 that workspace's file, gate and paused projects, not those of the workspace
-`CG_WORKSPACE` names. The hooks that follow a claim wherever it was made reach
-both files: the status line shows, and `mark-dirty` marks, the claim the
-session holds now (that workspace's, else the session's workspace's), and
-`cg session end` releases each clean claim the session holds in either file. That covers a
+`CG_WORKSPACE` names. The hooks that follow the session reach both files the
+current directory leads to (that workspace's and the session's workspace's):
+`mark-dirty` marks the session's file in each, so no work goes unflagged (an
+older claim marked too stays listed until pruned), `cg session end` releases
+each clean claim in them, and the status line shows that workspace's claim,
+else the session's workspace's. That covers a
 `CG_WORKSPACE` inherited by accident, for example from a tmux server a `cg
 start` session set up. The trade-off: a session started in a workspace that
 changes into a cloned checkout with a planted `.cg.json` gets that checkout's
