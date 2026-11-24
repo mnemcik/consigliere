@@ -55,7 +55,7 @@
 - [x] Session commands root (Terms): the session repo root, except the cwd root when it is another Consigliere workspace (not the session root and not one of its linked worktrees, decided as in S21–S23); the session repo root itself is unchanged
 - [x] S38c: session commands (`cg session` start gate, `set-context`, `pause`, `release`, `cg active`) in another workspace X with an inherited `CG_WORKSPACE` naming W use X's state files, gate, paused projects and badge root; guard tests with mutation checks: inside one of W's linked worktrees they still use W's; dispatch from X still consults W first (S22); a worktree created while in X doesn't enter W's record; a writer served from W while in X gets no `CG_SESSION_WORKTREE` pointing into X
 - [x] S36: `set-context --worktree` records in the session repo root's state file wherever it runs, while `--area` and `--project` go to the session commands root's (S38c); guard tests with mutation checks: run from X with one of W's linked worktrees it lands in W's record; with one of X's worktrees it is refused
-- [ ] Docs (Q11 trade-off where session commands are documented); `make check`; independent review until clean
+- [x] Docs (Q11 trade-off where session commands are documented); `make check`; independent review until clean (5 rounds; round 5 clean)
 
 ## PR
 
