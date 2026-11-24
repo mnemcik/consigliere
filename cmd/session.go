@@ -72,8 +72,13 @@ func runSessionEnd(cmd *cobra.Command, _ []string) error {
 		cwd, _ = os.Getwd()
 	}
 	// The claim may be in either file (made in another workspace, or in the
-	// session's own before moving there): end it in both.
+	// session's own before moving there): end it in both. A root without the
+	// session's file is skipped before EndSession's git calls and lock wait,
+	// which share the hook's short time budget.
 	for _, r := range sessionStateRoots(cmd.Context(), cwd) {
+		if _, err := os.Lstat(session.ContextFile(r.badge, in.SessionID)); err != nil {
+			continue
+		}
 		if _, err := session.EndSession(r.badge, r.ws, in.SessionID); err != nil {
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "cg session end: %v\n", err)
 		}
@@ -124,12 +129,18 @@ func runSessionMarkDirty(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// The claim may be in either file: mark whichever exists (MarkDirty
-	// writes nothing where the session has no badge).
-	for _, r := range roots {
-		if err := session.MarkDirty(r.badge, in.SessionID); err != nil {
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "cg session mark-dirty: %v\n", err)
-		}
+	// Mark the claim the session holds now (the session commands root's,
+	// else the session repo root's), not an older one in the other file,
+	// which would then never be released.
+	r, ok := currentClaimRoot(roots, in.SessionID)
+	if !ok {
+		r, ok = firstStateFile(roots, in.SessionID)
+	}
+	if !ok {
+		return nil
+	}
+	if err := session.MarkDirty(r.badge, in.SessionID); err != nil {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "cg session mark-dirty: %v\n", err)
 	}
 	return nil
 }
@@ -658,15 +669,16 @@ func runSessionStatusline(cmd *cobra.Command, _ []string) error {
 		cwd, _ = os.Getwd()
 	}
 
-	// The badge comes from the session commands root's file, else from the
-	// session repo root's (a claim made before moving to another workspace).
-	root, _, cfg := sessionCommandRoots(cmd.Context(), cwd)
-	if c, _ := session.ReadContext(root, in.SessionID); c == nil || c.Project == "" {
-		if r, _, rcfg := sessionRoots(cmd.Context(), cwd); r != "" && r != root {
-			if rc, _ := session.ReadContext(r, in.SessionID); rc != nil && rc.Project != "" {
-				root, cfg = r, rcfg
-			}
-		}
+	// The badge is the claim the session holds now: the session commands
+	// root's, else the session repo root's (one made before moving to
+	// another workspace).
+	var root string
+	var cfg *workspace.Config
+	roots := sessionStateRoots(cmd.Context(), cwd)
+	if r, ok := currentClaimRoot(roots, in.SessionID); ok {
+		root, cfg = r.badge, r.cfg
+	} else if len(roots) > 0 {
+		root, cfg = roots[0].badge, roots[0].cfg
 	}
 	s := cfg.SessionSettings()
 
@@ -692,31 +704,63 @@ func sessionRoots(ctx context.Context, cwd string) (badgeRoot, wsRoot string, cf
 	return rootsOf(ctx, sessionRepoRoot(cwd))
 }
 
-// sessionCommandRoots is sessionRoots for the session commands (start gate,
-// set-context's claim, pause, release, end, mark-dirty, the status line, cg
-// active): from the session commands root (S38c), so another Consigliere
-// workspace the agent works in keeps its own session state.
+// sessionCommandRoots is sessionRoots for the session commands S38c lists
+// (start gate, set-context's claim, pause, release, cg active): from the
+// session commands root, so another Consigliere workspace the agent works in
+// keeps its own session state. end, mark-dirty and the status line reach both
+// roots' files (sessionStateRoots, runSessionStatusline).
 func sessionCommandRoots(ctx context.Context, cwd string) (badgeRoot, wsRoot string, cfg *workspace.Config) {
 	return rootsOf(ctx, sessionCommandsRoot(cwd))
 }
 
-// stateRoot is a badge root and the workspace root it belongs to.
-type stateRoot struct{ badge, ws string }
+// stateRoot is a badge root, the workspace root it belongs to and that
+// workspace's config.
+type stateRoot struct {
+	badge, ws string
+	cfg       *workspace.Config
+}
 
-// sessionStateRoots returns the badge roots of the session commands root and
-// the session repo root, each once and in that order, for the commands S38c
+// sessionStateRoots returns the roots of the session commands root and the
+// session repo root, each once and in that order, for the commands S38c
 // doesn't switch that must reach the session's claim wherever it was made
-// (end, mark-dirty).
+// (end, mark-dirty, the status line). Each root is resolved once.
 func sessionStateRoots(ctx context.Context, cwd string) []stateRoot {
 	var out []stateRoot
-	for _, f := range []func(context.Context, string) (string, string, *workspace.Config){sessionCommandRoots, sessionRoots} {
-		badge, ws, _ := f(ctx, cwd)
+	cr, rr := sessionCommandsRoot(cwd), sessionRepoRoot(cwd)
+	for _, ws := range []string{cr, rr} {
+		if ws == "" || slices.ContainsFunc(out, func(r stateRoot) bool { return r.ws == ws }) {
+			continue
+		}
+		badge, ws, cfg := rootsOf(ctx, ws)
 		if badge == "" || slices.ContainsFunc(out, func(r stateRoot) bool { return r.badge == badge }) {
 			continue
 		}
-		out = append(out, stateRoot{badge, ws})
+		out = append(out, stateRoot{badge, ws, cfg})
 	}
 	return out
+}
+
+// currentClaimRoot returns the first root whose state file for id holds a
+// claim (an area or a project, as the status line shows), or can't be read
+// (so its error surfaces instead of another file's claim showing).
+func currentClaimRoot(roots []stateRoot, id string) (stateRoot, bool) {
+	for _, r := range roots {
+		c, err := session.ReadContext(r.badge, id)
+		if err != nil || (c != nil && (c.Area != "" || c.Project != "")) {
+			return r, true
+		}
+	}
+	return stateRoot{}, false
+}
+
+// firstStateFile returns the first root that has a state file for id.
+func firstStateFile(roots []stateRoot, id string) (stateRoot, bool) {
+	for _, r := range roots {
+		if _, err := os.Lstat(session.ContextFile(r.badge, id)); err == nil {
+			return r, true
+		}
+	}
+	return stateRoot{}, false
 }
 
 // rootsOf is sessionRoots' result for the root wsRoot ("" for none).

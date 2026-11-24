@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -271,5 +272,107 @@ func TestSessionCommandsRootWithoutGit(t *testing.T) {
 	t.Setenv("PATH", t.TempDir()) // no git from here on
 	if got := sessionCommandsRoot(wl); !samePath(got, w) {
 		t.Errorf("from W's linked worktree without git: %q, want %s", got, w)
+	}
+}
+
+// With a claim in each file (made in W, then in X), mark-dirty marks only the
+// current one (X's), so end releases W's older clean claim and keeps X's
+// dirty one; the status line shows X's, also when it has only an area.
+func TestSessionHooksWithTwoClaims(t *testing.T) {
+	requireGit(t)
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	w := committedWorkspace(t, cfgHome)
+	x := committedWorkspace(t, cfgHome)
+	t.Setenv(envWorkspace, w)
+	stdin := `{"session_id":"s11","cwd":"` + filepath.ToSlash(x) + `","tool_input":{"file_path":"` + filepath.ToSlash(filepath.Join(x, "notes.md")) + `"}}`
+	if out, err := runSession(t, w, "", "set-context", "--session-id", "s11", "--area", "a", "--project", "wproj"); err != nil {
+		t.Fatalf("set-context in W: %v\n%s", err, out)
+	}
+	if out, err := runSession(t, x, "", "set-context", "--session-id", "s11", "--area", "a", "--project", "xproj"); err != nil {
+		t.Fatalf("set-context in X: %v\n%s", err, out)
+	}
+	if out, err := runSession(t, x, stdin, "mark-dirty"); err != nil {
+		t.Fatalf("mark-dirty: %v\n%s", err, out)
+	}
+	if c, _ := session.ReadContext(x, "s11"); c == nil || !c.Dirty {
+		t.Errorf("X's current claim: %+v, want dirty", c)
+	}
+	if c, _ := session.ReadContext(w, "s11"); c == nil || c.Dirty {
+		t.Errorf("W's older claim: %+v, want clean", c)
+	}
+	if out, err := runSession(t, x, stdin, "statusline"); err != nil || !strings.Contains(out, "xproj") || strings.Contains(out, "wproj") {
+		t.Errorf("status line = %q (%v), want X's claim", out, err)
+	}
+	if out, err := runSession(t, x, stdin, "end"); err != nil {
+		t.Fatalf("end: %v\n%s", err, out)
+	}
+	if c, _ := session.ReadContext(w, "s11"); c != nil {
+		t.Errorf("W's clean claim survived end: %+v", c)
+	}
+	if c, _ := session.ReadContext(x, "s11"); c == nil {
+		t.Error("X's dirty claim released by end")
+	}
+
+	// A state file in X without a claim doesn't take the mark from W's claim.
+	if err := session.WriteContext(w, "s13", session.Claim{Area: "a", Project: "wproj"}); err != nil {
+		t.Fatal(err)
+	}
+	writeStateFile(t, x, "s13", `{}`)
+	mark := `{"session_id":"s13","cwd":"` + filepath.ToSlash(x) + `","tool_input":{"file_path":"` + filepath.ToSlash(filepath.Join(x, "notes.md")) + `"}}`
+	if out, err := runSession(t, x, mark, "mark-dirty"); err != nil {
+		t.Fatalf("mark-dirty: %v\n%s", err, out)
+	}
+	if c, _ := session.ReadContext(w, "s13"); c == nil || !c.Dirty {
+		t.Errorf("W's claim with an empty X file: %+v, want dirty", c)
+	}
+
+	// An area-only state in X is a badge too: shown instead of W's.
+	if err := session.WriteContext(w, "s12", session.Claim{Area: "a", Project: "wproj"}); err != nil {
+		t.Fatal(err)
+	}
+	writeStateFile(t, x, "s12", `{"area":"xarea"}`)
+	in := `{"session_id":"s12","cwd":"` + filepath.ToSlash(x) + `"}`
+	if out, err := runSession(t, x, in, "statusline"); err != nil || !strings.Contains(out, "xarea") || strings.Contains(out, "wproj") {
+		t.Errorf("status line with X's area-only state = %q (%v), want X's", out, err)
+	}
+}
+
+// writeStateFile writes a session state file under root as is.
+func writeStateFile(t *testing.T, root, id, content string) {
+	t.Helper()
+	if err := os.MkdirAll(session.ContextDir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(session.ContextFile(root, id), []byte(content), 0o644); err != nil { //nolint:gosec // a test fixture
+		t.Fatal(err)
+	}
+}
+
+// end skips a root where the session has no state file: no git calls or lock
+// wait there (SessionEnd's budget is short), and no lock file left behind.
+func TestSessionEndSkipsRootWithoutFile(t *testing.T) {
+	requireGit(t)
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	w := committedWorkspace(t, cfgHome)
+	x := committedWorkspace(t, cfgHome)
+	t.Setenv(envWorkspace, w)
+	writeStateFile(t, x, "other", `{"area":"a","project":"o"}`) // X's state directory exists
+	if err := session.WriteContext(w, "s14", session.Claim{Area: "a", Project: "wproj"}); err != nil {
+		t.Fatal(err)
+	}
+	in := `{"session_id":"s14","cwd":"` + filepath.ToSlash(x) + `"}`
+	if out, err := runSession(t, x, in, "end"); err != nil {
+		t.Fatalf("end: %v\n%s", err, out)
+	}
+	if c, _ := session.ReadContext(w, "s14"); c != nil {
+		t.Errorf("W's clean claim survived end: %+v", c)
+	}
+	entries, _ := os.ReadDir(session.ContextDir(x))
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "s14") {
+			t.Errorf("end left %s in X", e.Name())
+		}
 	}
 }
