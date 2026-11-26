@@ -57,8 +57,9 @@ reviews:
         Framework rules for Consigliere workspaces. Content changes here
         affect every `cg init`'d workspace.
 
+  # Reviews only on request (`@coderabbitai review`); the maintainer side asks per PR.
   auto_review:
-    enabled: true
+    enabled: false
     drafts: false
     base_branches:
       - main
