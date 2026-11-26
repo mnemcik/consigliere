@@ -498,7 +498,18 @@ func RevParse(ctx context.Context, dir, rev string) (string, error) {
 // the directory the shell helpers referred to as WORKSPACE_ROOT, resolved from
 // any worktree rather than hardcoded.
 func CommonRoot(ctx context.Context, dir string) (string, error) {
-	out, err := Run(ctx, dir, "rev-parse", "--git-common-dir")
+	return commonRoot(ctx, dir, Run)
+}
+
+// CommonRootClean is CommonRoot with git's repository variables (GIT_DIR,
+// GIT_WORK_TREE, …) removed from git's environment, for a dir that may be
+// another repository than the one those variables name.
+func CommonRootClean(ctx context.Context, dir string) (string, error) {
+	return commonRoot(ctx, dir, RunClean)
+}
+
+func commonRoot(ctx context.Context, dir string, run func(context.Context, string, ...string) (string, error)) (string, error) {
+	out, err := run(ctx, dir, "rev-parse", "--git-common-dir")
 	if err != nil {
 		return "", err
 	}

@@ -3,8 +3,10 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -76,7 +78,7 @@ func runSessionEnd(cmd *cobra.Command, _ []string) error {
 	// session's file is skipped before EndSession's git calls and lock wait,
 	// which share the hook's short time budget.
 	for _, r := range sessionStateRoots(cmd.Context(), cwd) {
-		if _, err := os.Lstat(session.ContextFile(r.badge, in.SessionID)); err != nil {
+		if !stateFileExists(cmd.ErrOrStderr(), "end", r.badge, in.SessionID) {
 			continue
 		}
 		if _, err := session.EndSession(r.badge, r.ws, in.SessionID); err != nil {
@@ -135,7 +137,7 @@ func runSessionMarkDirty(cmd *cobra.Command, _ []string) error {
 	// too only lingers in cg active until pruned. A root without the file is
 	// skipped, so no lock file is left there.
 	for _, r := range roots {
-		if _, err := os.Lstat(session.ContextFile(r.badge, in.SessionID)); err != nil {
+		if !stateFileExists(cmd.ErrOrStderr(), "mark-dirty", r.badge, in.SessionID) {
 			continue
 		}
 		if err := session.MarkDirty(r.badge, in.SessionID); err != nil {
@@ -736,6 +738,18 @@ func sessionStateRoots(ctx context.Context, cwd string) []stateRoot {
 	return out
 }
 
+// stateFileExists reports whether the session's state file under the badge
+// root exists. Absence is silent; any other error (permission denied, I/O) is
+// reported on errw as `cg session <hook>: …`, and the root counts as without
+// the file, so the hook goes on with the other root.
+func stateFileExists(errw io.Writer, hook, root, id string) bool {
+	_, err := os.Lstat(session.ContextFile(root, id))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		_, _ = fmt.Fprintf(errw, "cg session %s: %v\n", hook, err)
+	}
+	return err == nil
+}
+
 // holdsClaim reports whether the state file for id under the badge root
 // root can be read and holds a claim (an area or a project, as the status
 // line shows).
@@ -753,7 +767,7 @@ func rootsOf(ctx context.Context, wsRoot string) (badgeRoot, _ string, cfg *work
 		return "", "", nil
 	}
 	cfg, _ = workspace.Detect(wsRoot)
-	badgeRoot, err := gitx.CommonRoot(ctx, wsRoot)
+	badgeRoot, err := gitx.CommonRootClean(ctx, wsRoot)
 	if err != nil {
 		badgeRoot = wsRoot
 	}

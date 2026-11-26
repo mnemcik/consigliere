@@ -400,3 +400,58 @@ func TestSessionEndSkipsRootWithoutFile(t *testing.T) {
 		}
 	}
 }
+
+// An inherited GIT_DIR naming another repository doesn't redirect the session
+// repo root's badge root: W's claim is still reached from X.
+func TestSessionStateRootsIgnoreGitDir(t *testing.T) {
+	requireGit(t)
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	w := committedWorkspace(t, cfgHome)
+	x := committedWorkspace(t, cfgHome)
+	t.Setenv(envWorkspace, w)
+	if err := session.WriteContext(w, "s16", session.Claim{Area: "a", Project: "wproj"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_DIR", filepath.Join(x, ".git"))
+	in := `{"session_id":"s16","cwd":"` + filepath.ToSlash(x) + `","tool_input":{"file_path":"` + filepath.ToSlash(filepath.Join(x, "notes.md")) + `"}}`
+	if out, err := runSession(t, x, in, "mark-dirty"); err != nil {
+		t.Fatalf("mark-dirty: %v\n%s", err, out)
+	}
+	if c, _ := session.ReadContext(w, "s16"); c == nil || !c.Dirty {
+		t.Errorf("W's claim with GIT_DIR naming X: %+v, want dirty", c)
+	}
+}
+
+// A state file that can't be inspected (not merely absent) is reported, and
+// the other root is still handled.
+func TestSessionHooksReportUninspectableStateFile(t *testing.T) {
+	requireGit(t)
+	if isWindowsOS || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions and a non-root user")
+	}
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	w := committedWorkspace(t, cfgHome)
+	x := committedWorkspace(t, cfgHome)
+	t.Setenv(envWorkspace, w)
+	if err := session.WriteContext(w, "s17", session.Claim{Area: "a", Project: "wproj"}); err != nil {
+		t.Fatal(err)
+	}
+	writeStateFile(t, x, "other", `{}`)
+	dir := session.ContextDir(x)
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) }) //nolint:gosec // restoring a test directory so cleanup can remove it
+	in := `{"session_id":"s17","cwd":"` + filepath.ToSlash(x) + `","tool_input":{"file_path":"` + filepath.ToSlash(filepath.Join(x, "notes.md")) + `"}}`
+	for _, hook := range []string{"mark-dirty", "end"} {
+		out, err := runSession(t, x, in, hook)
+		if err != nil || !strings.Contains(out, "cg session "+hook) {
+			t.Errorf("%s with X's state directory unreadable: %v, output %q; want the error reported", hook, err, out)
+		}
+	}
+	if c, _ := session.ReadContext(w, "s17"); c == nil || !c.Dirty {
+		t.Errorf("W's claim: %+v, want marked dirty (and kept by end)", c)
+	}
+}
