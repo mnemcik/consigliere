@@ -138,19 +138,38 @@ Then search with `medium`, then `low`. The results come oldest first; pinned iss
 
 The maintainer triages each new issue in one of two ways:
 
-- **Keep it:** set the type and the priority, and remove `needs-triage`.
+- **Keep it:** set the type and the priority, record the estimated size on the issue (see [From issue to pull request](#from-issue-to-pull-request)), and remove `needs-triage`.
 - **Close it:** as a duplicate (with a link to the issue that stays), or as not planned, with a short reason.
 
 If an issue is missing details, such as steps to reproduce, the cg version or the platform, the maintainer asks for them in a comment.
 
 ## Submitting changes
 
-- Open a pull request against `main`.
+A change goes through three roles. Whoever fills a role, a person or an agent, has its responsibilities:
+
+- **Author:** picks up the issue, writes the analysis and the change, opens the pull request and carries it until it is ready to merge.
+- **Maintainer:** triages issues, agrees the approach, reviews the impact, sets `impact-review`, approves and merges. Someone acting with the maintainer's authorisation, such as an intake agent, can set `impact-review`, approve and merge for the maintainer.
+- **Reviewer:** reviews the code; a person or an automated reviewer.
+
+The author never sets `impact-review`, approves or merges its own PR, even under the maintainer's account. Acting with the maintainer's authorisation means an explicit grant from the maintainer, for one PR or a standing one the maintainer set up.
+
+The same rules apply to outside contributors. How an agent acts in a role is defined in the [`pr-workflow` plugin](https://github.com/mnemcik/claude-marketplace) (skills `pr-author` and `pr-intake`), and later in the cg `pr-workflow` extension ([cg-extensions#45](https://github.com/mnemcik/cg-extensions/issues/45)).
+
+For every pull request:
+
+- Open it against `main`.
 - PR titles follow [Conventional Commits](https://www.conventionalcommits.org/) (see below) — they become the squash-merge commit subject.
 - Run `make check` locally before pushing.
 - CI (lint, including a Windows build, tests on Linux, macOS and Windows, cross-platform build) must be green.
 - When a change can behave differently per platform, run CI on your pushed branch before opening the PR: `gh workflow run ci.yml --ref <branch>` prints the run's URL (on gh older than 2.87, find the run with `gh run list --workflow ci.yml --branch <branch>`); then `gh run watch <run-id> --exit-status`. From a fork, run both in your fork (pass `-R <you>/consigliere`; Actions must be enabled there).
 - No DCO sign-off is required.
+
+### From issue to pull request
+
+1. **Issue first.** Every change starts as an issue. The maintainer triages it ([Triage](#triage)) and estimates its size: **S** (a few lines), **M** (one milestone) or **L** (several milestones, or new behaviour across components). The analysis confirms or changes the size; the agreement fixes it.
+2. **The item's folder.** The author writes the item's documents in `specs/<tracker>-<id>-<slug>/` (for an issue in this repository, `specs/gh-<number>-<slug>/`): `analysis.md`; `spec.md`, with the acceptance criteria; and `plan.md` and `tasks.md` as the size needs. The author pushes the folder on the item's branch, named like the folder, before asking for the agreement. The folder is committed with the change and kept as history.
+3. **The agreement.** The maintainer agrees the approach in one comment on the issue, naming the folder, the commit of the agreed `spec.md` and `plan.md`, and their committed content hashes (`git rev-parse <commit>:<path>`; "plan: none" for an S item). The maintainer posts it, or someone posts it for the maintainer and the comment says so. A later change to the spec or the plan needs a new agreement comment. Nothing is implemented before the agreement.
+4. **The pull request** is opened when the work is done, never as a draft. Its description says `Fixes #NNN`.
 
 ### How a PR gets to merge
 
@@ -164,8 +183,8 @@ If an issue is missing details, such as steps to reproduce, the cg version or th
 2. **The outcome comes as a PR comment:** agreed (and `impact-review` is set), or changes requested. A plain agree on the maintainer's own PR may come without a comment.
 3. **The PR's author carries it from there:** makes the requested changes, updates the branch from `main`, and runs the review loop until CI is green and every review comment is answered. On a PR from a fork, CI runs only after the maintainer approves the workflow run, so a waiting CI isn't a stalled PR.
 4. **A push leaves the new head without `impact-review`** (see [Impact review](#impact-review)). Before merge, the maintainer reviews the PR again at its final head: the whole PR, not only the new commits. A change in scope can mean a new review rather than a quick re-check; a push that only updates the branch from `main` needs just the check described there.
-5. **One approving review** is required by branch protection, from the maintainer or an automated reviewer; on PRs opened under the maintainer's account, GitHub allows only the automated reviewer. Later pushes don't dismiss it.
-6. **Merging is the maintainer's call.** An agent marks a draft ready or merges only on the maintainer's explicit go-ahead for that PR.
+5. **One approving review** is required by branch protection. The approval is the maintainer's: the maintainer approves, or obtains an automated reviewer's approval; on PRs opened under the maintainer's account, GitHub allows only the automated reviewer. Later pushes don't dismiss it.
+6. **Merging is the maintainer's.** Only the maintainer, or someone acting with the maintainer's authorisation, merges.
 
 **The description becomes the commit message.** PRs are squash-merged with the PR description as the commit body, so it ends up in `main`'s history. Keep it current, updating it after every push that changes what the PR does, and keep private details out of it.
 
@@ -181,7 +200,7 @@ Every PR changes what every workspace gets on `cg sync`, so every PR gets an **i
   ```
 
 - **New commits need a new review.** A status belongs to one commit, so a push leaves the new head without `success` until the maintainer reviews the PR again at its new head. That includes updating the branch from `main` (branch protection requires up-to-date branches): the maintainer re-marks the new head after checking that the PR's own change is unchanged and that nothing which landed on `main` since the last reviewed head contradicts it, already covers it, or removes what it builds on. If resolving conflicts changed the PR's own change, the resolution is reviewed too, and a larger change can mean a new review; if something that landed clashes with it, the maintainer comments as in step 2 of [How a PR gets to merge](#how-a-pr-gets-to-merge).
-- **Who can set it:** any account or app with write access to statuses. Fork contributors can't. An agent running under the maintainer's account can, so an agent sets `success` only on the maintainer's explicit go-ahead for that commit, never on its own judgement.
+- **Who sets it:** for PRs that aren't exempt, only the maintainer, or someone acting with the maintainer's authorisation, and only after reviewing that commit. Any account or app with write access to statuses technically can; fork contributors can't.
 - **Bot PRs are exempt by who opened them.** Commits a person pushes to a bot's PR get `success` too, so don't push changes to bot branches; open a separate PR. Updating a bot's branch from `main` by a **clean** merge (GitHub's **Update branch** when it reports no conflicts, or `gh pr update-branch`, which refuses on a conflict) is fine: it brings in only what is already on `main`, which was reviewed, or exempt, when it landed. The maintainer's re-check after an update from `main` (the bullet above) doesn't apply to bot PRs: the bot's own change is exempt from the impact review, so the only check left is the one at the end of this bullet. If the update conflicts, don't resolve it on the bot's branch: a conflict resolution is a person's edit, and it would get `success` unreviewed. Let the bot regenerate its branch, or open a separate PR. The exemption still sets `success` on the new head, so whoever updates the branch, and the maintainer before merging, checks that it adds nothing beyond `main` and the bot's own changes. A release PR needs this when a commit `release-please` doesn't release (`docs:`, `ci:`) lands on `main`, because `release-please` then leaves its branch behind.
 - **Fill in "Impact on workspaces"** in the PR template: what changes on `cg sync` for workspaces that never edited the affected files, which edited files will show as drifted (and, if known, what kind of workspaces edited them), and how Claude behaves differently.
 
@@ -190,13 +209,13 @@ Every PR changes what every workspace gets on `cg sync`, so every PR gets an **i
 Releases are automated by [release-please](https://github.com/googleapis/release-please).
 **Do not** hand-edit `CHANGELOG.md`, bump a version, or push tags.
 
-1. Merge PRs to `main` with Conventional-Commits titles (`feat:`, `fix:`, etc.). The
+1. PRs merge to `main` with Conventional-Commits titles (`feat:`, `fix:`, etc.). The
    PR title is validated by the **PR Title Lint** check and — because we squash-merge —
    becomes the single commit on `main` that release-please reads.
 2. release-please keeps an open **"chore: release X.Y.Z"** Release PR that accumulates
    the `CHANGELOG.md` section and the version bump derived from the merged commits.
    The version `cg init` writes into `.cg.json` comes from the binary, not a file.
-3. **To ship, merge the Release PR.** release-please then tags the repo and creates the
+3. **To ship, the maintainer merges the Release PR.** release-please then tags the repo and creates the
    GitHub Release; that release event triggers GoReleaser, which builds the
    cross-platform binaries, checksums, Homebrew cask, and `install.sh` artifacts.
 
