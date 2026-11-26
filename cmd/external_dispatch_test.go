@@ -749,7 +749,8 @@ func TestDispatchPathFallbackRefusesDeclaredNamespaceSpellings(t *testing.T) {
 	pathProgram(t, "shop")
 	var spellings []string
 	if foldsCase {
-		spellings = append(spellings, "Shop", "SHOP")
+		// ſ (U+017F) folds to s on these file systems, though ToLower keeps it.
+		spellings = append(spellings, "Shop", "SHOP", "ſhop", "ſHOP")
 	}
 	if isWindowsOS {
 		// LookPath tries a name that already has any extension as is.

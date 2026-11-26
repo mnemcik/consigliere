@@ -1032,14 +1032,39 @@ const foldsCase = isWindowsOS || runtime.GOOS == "darwin"
 // typed namespace spells differently but the PATH lookup would still match
 // (S33), or "".
 func declaredSpelling(roots []string, typed string) string {
+	// Declared namespaces are ASCII (wordRe), but the file system folds more
+	// than ToLower does (ſ, U+017F, matches s on macOS), so where lookups
+	// fold case the comparison uses Unicode case folding.
 	folded := fallbackNamespace(typed)
-	if folded == typed {
-		return ""
-	}
 	for _, root := range roots {
-		if entries, err := namespaceEntries(root, folded); err == nil && len(entries) > 0 {
-			return folded
+		for _, ns := range declaredNamespaces(root) {
+			if ns != typed && (ns == folded || (foldsCase && strings.EqualFold(ns, folded))) {
+				return ns
+			}
 		}
 	}
 	return ""
+}
+
+// declaredNamespaces lists the namespaces of the commands the extensions
+// installed in the workspace at root declare in their ledgers ("" entries and
+// unreadable ledgers skipped: dispatch reports those itself).
+func declaredNamespaces(root string) []string {
+	cfg, err := workspace.Detect(root)
+	if err != nil || cfg == nil {
+		return nil
+	}
+	var out []string
+	for i := range cfg.Extensions {
+		led, lerr := extension.LoadLedger(root, cfg.Extensions[i].Name)
+		if lerr != nil || led == nil {
+			continue
+		}
+		for _, c := range led.Commands {
+			if ns := extension.CommandNamespace(c.Command); ns != "" && !slices.Contains(out, ns) {
+				out = append(out, ns)
+			}
+		}
+	}
+	return out
 }
