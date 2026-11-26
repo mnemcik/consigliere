@@ -149,7 +149,7 @@ If an issue is missing details, such as steps to reproduce, the cg version or th
 - PR titles follow [Conventional Commits](https://www.conventionalcommits.org/) (see below) — they become the squash-merge commit subject.
 - Run `make check` locally before pushing.
 - CI (lint, including a Windows build, tests on Linux, macOS and Windows, cross-platform build) must be green.
-- When a change can behave differently per platform, run CI on your branch before opening the PR: `gh workflow run ci.yml --ref <branch>`, then `gh run watch`.
+- When a change can behave differently per platform, run CI on your pushed branch before opening the PR: `gh workflow run ci.yml --ref <branch>` prints the run's URL; then `gh run watch <run-id> --exit-status`. From a fork, run it in your fork (`-R <you>/consigliere`, with Actions enabled there).
 - No DCO sign-off is required.
 
 ### How a PR gets to merge
