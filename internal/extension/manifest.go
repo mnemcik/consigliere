@@ -22,21 +22,27 @@ import (
 )
 
 const (
-	// SchemaVersion is the cg-extension.json manifest schema version this build
-	// understands. The manifest's own "manifest" field must equal this.
-	SchemaVersion = 1
+	// SchemaVersion is the newest cg-extension.json manifest schema version
+	// this build understands. Version 2 adds commands; a version 1 manifest
+	// without commands is still accepted, so extensions that contribute no
+	// command don't have to change.
+	SchemaVersion = 2
 
 	// ManifestFile is the manifest filename at an extension repo root.
 	ManifestFile = "cg-extension.json"
 )
 
-// nameRe constrains extension names, section ids, and subcommand namespaces. A
+// wordRe constrains command words: a letter or digit first, so a word can
+// always be typed (typed words end at the first argument starting with "-").
+var wordRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+
+// nameRe constrains extension names, section ids and binaries. A
 // name is load-bearing: it is the install name, the .cg.json key, the clone
-// directory, the ext:<name>:section marker namespace, and the cg-<name> binary
-// stem. Keeping it to [a-z0-9-]+ keeps every one of those uses safe.
+// directory and the ext:<name>:section marker namespace. Keeping it to
+// [a-z0-9-]+ keeps every one of those uses safe.
 var nameRe = regexp.MustCompile(`^[a-z0-9-]+$`)
 
-// Manifest is a parsed cg-extension.json (schema v1).
+// Manifest is a parsed cg-extension.json (schema v1 or v2).
 type Manifest struct {
 	Manifest    int           `json:"manifest"`
 	Name        string        `json:"name"`
@@ -49,13 +55,14 @@ type Manifest struct {
 // is optional; an absent or empty array means the extension contributes nothing
 // of that type.
 type Contributions struct {
-	ClaudeMDSections []SectionContribution    `json:"claude-md-sections,omitempty"`
-	Notes            []CopyContribution       `json:"notes,omitempty"`
-	Hooks            []HookContribution       `json:"hooks,omitempty"`
-	Subcommands      []SubcommandContribution `json:"subcommands,omitempty"`
-	Templates        []CopyContribution       `json:"templates,omitempty"`
-	GitHooks         []GitHookContribution    `json:"git-hooks,omitempty"`
-	Gitignore        []SectionContribution    `json:"gitignore,omitempty"`
+	ClaudeMDSections []SectionContribution `json:"claude-md-sections,omitempty"`
+	Notes            []CopyContribution    `json:"notes,omitempty"`
+	Hooks            []HookContribution    `json:"hooks,omitempty"`
+	// Commands are the cg commands the extension provides (manifest v2).
+	Commands  []CommandContribution `json:"commands,omitempty"`
+	Templates []CopyContribution    `json:"templates,omitempty"`
+	GitHooks  []GitHookContribution `json:"git-hooks,omitempty"`
+	Gitignore []SectionContribution `json:"gitignore,omitempty"`
 	// Launcher wraps the agent command `cg start` runs (at most one entry).
 	Launcher []LauncherContribution `json:"launcher,omitempty"`
 }
@@ -92,10 +99,13 @@ type GitHookContribution struct {
 	Script string `json:"script"`
 }
 
-// SubcommandContribution exposes the extension's bin/<Binary> as cg <Namespace>.
-type SubcommandContribution struct {
-	Namespace string `json:"namespace"`
-	Binary    string `json:"binary"`
+// CommandContribution declares that `cg <Command> …` runs the extension's
+// bin/<Binary>. Command is one or more words, each matching [a-z0-9][a-z0-9-]*,
+// separated by single spaces; its first word is its namespace. The binary
+// receives the arguments after the namespace word.
+type CommandContribution struct {
+	Command string `json:"command"`
+	Binary  string `json:"binary"`
 }
 
 // LauncherContribution makes `cg start` (and bare `cg`) run the extension's
@@ -125,12 +135,15 @@ func LoadManifest(dir string) (*Manifest, error) {
 	return ParseManifest(data)
 }
 
-// Validate enforces the schema-v1 rules. It rejects an unknown schema version
-// up front so a future v2 manifest fails with a clear message rather than
-// silently losing fields.
+// Validate enforces the schema rules. It rejects an unknown schema version up
+// front so a future manifest fails with a clear message rather than silently
+// losing fields.
 func (m *Manifest) Validate() error {
-	if m.Manifest != SchemaVersion {
-		return fmt.Errorf("unsupported manifest schema version %d (this cg understands %d)", m.Manifest, SchemaVersion)
+	if m.Manifest < 1 || m.Manifest > SchemaVersion {
+		return fmt.Errorf("unsupported manifest schema version %d (this cg understands 1 to %d)", m.Manifest, SchemaVersion)
+	}
+	if len(m.Contributes.Commands) > 0 && m.Manifest < 2 {
+		return fmt.Errorf(`commands need "manifest": 2 (got %d)`, m.Manifest)
 	}
 	if !nameRe.MatchString(m.Name) {
 		return fmt.Errorf("invalid name %q: must match %s", m.Name, nameRe.String())
@@ -182,13 +195,18 @@ func (m *Manifest) Validate() error {
 			return fmt.Errorf("hooks[%d]: %w", i, err)
 		}
 	}
-	for i, s := range m.Contributes.Subcommands {
-		if !nameRe.MatchString(s.Namespace) {
-			return fmt.Errorf("subcommands[%d]: invalid namespace %q: must match %s", i, s.Namespace, nameRe.String())
+	commands := map[string]int{}
+	for i, c := range m.Contributes.Commands {
+		if err := ValidCommand(c.Command); err != nil {
+			return fmt.Errorf("commands[%d]: %w", i, err)
 		}
-		if !nameRe.MatchString(s.Binary) {
-			return fmt.Errorf("subcommands[%d]: invalid binary %q: must match %s", i, s.Binary, nameRe.String())
+		if !nameRe.MatchString(c.Binary) {
+			return fmt.Errorf("commands[%d]: invalid binary %q: must match %s", i, c.Binary, nameRe.String())
 		}
+		if j, dup := commands[c.Command]; dup {
+			return fmt.Errorf("commands[%d]: command %q is already declared by commands[%d]", i, c.Command, j)
+		}
+		commands[c.Command] = i
 	}
 	if len(m.Contributes.Launcher) > 1 {
 		return fmt.Errorf("launcher: at most one entry, got %d", len(m.Contributes.Launcher))
@@ -230,6 +248,25 @@ func (m *Manifest) Validate() error {
 			return fmt.Errorf("git-hooks[%d]: script %q installs to %s, as git-hooks[%d] does; give it a different file name", i, g.Script, dest, j)
 		}
 		gitHookDests[dest] = i
+	}
+	return nil
+}
+
+// ValidCommand checks a command's syntax: one or more words, each matching
+// [a-z0-9][a-z0-9-]*, separated by single spaces.
+func ValidCommand(command string) error {
+	switch {
+	case command == "":
+		return fmt.Errorf("command is required")
+	case strings.TrimSpace(command) != command:
+		return fmt.Errorf("invalid command %q: no leading or trailing space", command)
+	case strings.Contains(command, "  "):
+		return fmt.Errorf("invalid command %q: words must be separated by single spaces", command)
+	}
+	for _, w := range strings.Split(command, " ") {
+		if !wordRe.MatchString(w) {
+			return fmt.Errorf("invalid command %q: word %q must match %s", command, w, wordRe.String())
+		}
 	}
 	return nil
 }

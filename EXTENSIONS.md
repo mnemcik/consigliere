@@ -32,8 +32,8 @@ hooks/                     # bash hook wrappers (hooks)
   <file>.sh
 templates/                 # templates copied into the workspace (templates)
   <path>
-bin/                       # external subcommand binaries (subcommands)
-  cg-<name>
+bin/                       # binaries serving your commands (commands)
+  <binary>
 README.md
 LICENSE
 ```
@@ -42,11 +42,11 @@ You only need the directories your manifest actually references.
 
 ## The manifest
 
-`cg-extension.json` (manifest **schema** version 1):
+`cg-extension.json` (manifest **schema** version 2):
 
 ```json
 {
-  "manifest": 1,
+  "manifest": 2,
   "name": "foo",
   "version": "0.1.0",
   "description": "One-line summary shown in cg extension list and the registry",
@@ -60,8 +60,9 @@ You only need the directories your manifest actually references.
     "hooks": [
       { "event": "SessionStart", "wrapper": "hooks/foo-gate.sh", "command": "cg-foo gate" }
     ],
-    "subcommands": [
-      { "namespace": "foo", "binary": "cg-foo" }
+    "commands": [
+      { "command": "foo", "binary": "cg-foo" },
+      { "command": "foo sync", "binary": "cg-foo" }
     ],
     "templates": [
       { "src": "templates/foo.md", "dest": "templates/foo.md" }
@@ -73,15 +74,19 @@ You only need the directories your manifest actually references.
 ### Rules for `name`
 
 `name` is load-bearing — it's the install name, the `.cg.json` key, the clone
-directory, the `ext:<name>:section` marker namespace, and the `cg-<name>` binary
-stem. It must be lowercase `[a-z0-9-]+` and unique in the registry. Pick it once;
+directory and the `ext:<name>:section` marker namespace. It needn't match your
+commands or binaries. It must be lowercase `[a-z0-9-]+` and unique in the registry. Pick it once;
 changing it later is a breaking change for installed users.
 
 ### Every contribution key is optional
 
 Declare only what your extension actually provides. A pure-rules extension might
 only set `claude-md-sections` and `notes`; a tool extension might only set
-`subcommands`.
+`commands`.
+
+A manifest that declares `commands` needs `"manifest": 2`. One without
+`commands` may stay on `"manifest": 1`. The old `subcommands` key is no longer
+read: move to `commands` and `"manifest": 2` (cg 2.0 and later).
 
 ## Contribution points
 
@@ -118,7 +123,7 @@ Each `{ event, wrapper, command }` installs your bash `wrapper` into
 `.claude/hooks/` and registers it for `event` (e.g. `SessionStart`,
 `UserPromptSubmit`) in `.claude/settings.json`. The registration is an additive
 merge — existing hooks and user customizations survive. Your wrapper should
-`exec` a `cg-<name>` subcommand and degrade to a no-op when the binary is
+`exec` one of your binaries and degrade to a no-op when the binary is
 missing, matching framework hook style:
 
 ```bash
@@ -127,16 +132,50 @@ command -v cg-foo >/dev/null 2>&1 || exit 0
 exec cg-foo gate "$@"
 ```
 
-### `subcommands` — ship a `cg foo` command
+### `commands` — ship `cg foo …` commands
 
-Each `{ namespace, binary }` declares that `bin/<binary>` is exposed as
-`cg <namespace> …`. When a user runs `cg foo bar`, `cg` finds `cg-foo` (in your
-extension's `bin/` or on `$PATH`) and execs it with `bar`. Built-in `cg`
-subcommands always take precedence — you cannot shadow the framework.
+Each `{ command, binary }` declares that `cg <command> …` runs your
+`bin/<binary>`. A command is one or more lowercase words (`[a-z0-9][a-z0-9-]*`:
+a letter or digit first) separated by single spaces; the first word is its
+namespace. Your binary
+receives every argument after the namespace word, so `cg foo sync --dry-run`
+runs `bin/cg-foo sync --dry-run`, and `CG_COMMAND` in its environment says which
+declared command cg matched (`foo sync`). One binary may serve several
+commands.
+
+Your binary is also told which workspace served it, `CG_EXTENSION_WORKSPACE`,
+and gets the session's `CG_WORKSPACE` unchanged. Use them rather than the
+current directory: in a session started with `cg`, your command also runs from
+other directories, such as an external repository the session works in. See
+[Which workspace serves](docs/extensions.md#which-workspace-serves). A command
+that writes into the workspace follows the order in
+[Writers: where to write](docs/extensions.md#writers-where-to-write), starting
+with `CG_SESSION_WORKTREE`.
+
+Declare every command your binary handles, not just the namespace: agents grant
+permissions by the typed command (`Bash(cg foo sync *)`), and cg only runs a
+command some extension declares. Declare the bare namespace (`foo`) too if
+`cg foo`, `cg foo --help` or `cg foo --flag sync` should reach your binary:
+matching stops at the first argument that starts with `-`.
+
+Pick names by the rule in
+[`docs/extensions.md`](docs/extensions.md#naming): a subject namespace is
+vendor-neutral and may be shared with other extensions (`cg pr merge` from one,
+`cg pr watch` from another); vendor-specific commands use the vendor's namespace
+(`cg coderabbit approve`).
+
+cg owns the command tree. Install refuses your extension, before changing
+anything, if another installed extension declares the same command or one nested
+with it (`pr` against `pr merge`), or if your namespace is a built-in `cg`
+command (`start`, `extension`, `help`, …): built-ins always take precedence, so
+you cannot shadow the framework. If a later `cg` adds a built-in in a namespace
+you already use, your installed commands stay installed through updates, with a
+warning (they can't run while the built-in exists), but you can't add new ones
+there: move them to another namespace.
 
 Build your binary for the platforms you support and commit it to `bin/`, or ship
 it via your release assets (a future manifest version may fetch release
-binaries; v1 expects `bin/`).
+binaries; the current one expects `bin/`).
 
 ### `launcher` — wrap how the AI session starts
 

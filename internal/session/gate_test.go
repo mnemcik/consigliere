@@ -14,7 +14,7 @@ import (
 func TestGateSkipAll(t *testing.T) {
 	root := t.TempDir()
 	for _, p := range []string{"/wrap", "idea: a new thing", "just a quick question", "no project needed", "skip the project"} {
-		if _, emit := Gate(context.Background(), root, GateInput{Prompt: p, SessionID: "s", CWD: root}, "", 0); emit {
+		if _, emit := Gate(context.Background(), root, &GateInput{Prompt: p, SessionID: "s", CWD: root}, "", 0); emit {
 			t.Errorf("prompt %q should suppress the gate", p)
 		}
 	}
@@ -23,7 +23,7 @@ func TestGateSkipAll(t *testing.T) {
 func TestGateEmitsDefault(t *testing.T) {
 	root := t.TempDir()
 	text, emit := Gate(context.Background(), root,
-		GateInput{Prompt: "implement the thing", SessionID: "sess-123", CWD: root}, "", 0)
+		&GateInput{Prompt: "implement the thing", SessionID: "sess-123", CWD: root}, "", 0)
 	if !emit {
 		t.Fatal("expected the gate to emit for a normal prompt")
 	}
@@ -41,7 +41,7 @@ func TestGateUsesTemplate(t *testing.T) {
 		t.Fatal(err)
 	}
 	text, emit := Gate(context.Background(), root,
-		GateInput{Prompt: "do work", SessionID: "abc", CWD: root}, "gate.md", 0)
+		&GateInput{Prompt: "do work", SessionID: "abc", CWD: root}, "gate.md", 0)
 	if !emit || !strings.Contains(text, "CUSTOM gate for abc") {
 		t.Errorf("expected custom template body, got:\n%s", text)
 	}
@@ -65,7 +65,7 @@ func TestGatePrunesStaleContexts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	Gate(context.Background(), root, GateInput{Prompt: "work", SessionID: "x", CWD: root}, "", 7)
+	Gate(context.Background(), root, &GateInput{Prompt: "work", SessionID: "x", CWD: root}, "", 7)
 
 	if _, err := os.Stat(old); !os.IsNotExist(err) {
 		t.Error("stale context file should have been pruned")
@@ -111,7 +111,7 @@ func TestGateAddsSetContext(t *testing.T) {
 				t.Fatal(err)
 			}
 			text, emit := Gate(context.Background(), root,
-				GateInput{Prompt: "do work", SessionID: "abc", CWD: root}, "gate.md", 0)
+				&GateInput{Prompt: "do work", SessionID: "abc", CWD: root}, "gate.md", 0)
 			if !emit {
 				t.Fatal("expected the gate to emit")
 			}
@@ -160,5 +160,14 @@ func shippedGate(t *testing.T) string {
 func TestGateEmptyTemplateStartsWithBlock(t *testing.T) {
 	if got := withSetContext(" \n"); got != setContextBlock {
 		t.Errorf("empty template should render just the block, got:\n%q", got)
+	}
+}
+
+// SkipsPrompt matches the prompts Gate lets through silently.
+func TestSkipsPrompt(t *testing.T) {
+	for p, want := range map[string]bool{"/wrap": true, "  idea: x": true, "fix the bug": false} {
+		if got := SkipsPrompt(p); got != want {
+			t.Errorf("SkipsPrompt(%q) = %v, want %v", p, got, want)
+		}
 	}
 }

@@ -46,6 +46,9 @@ type Options struct {
 	Force bool
 }
 
+// Path is the worktree directory for slug: "<prefix>--<slug>", absolute.
+func (o Options) Path(slug string) string { return o.worktreePath(slug) }
+
 func (o Options) worktreePath(slug string) string {
 	prefix := o.Prefix
 	switch {

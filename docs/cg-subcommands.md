@@ -47,6 +47,7 @@ template.
 - **No agent, no error.** When the agent can't be started (not on `PATH`, an empty program name, or it is found but fails to start), bare `cg` prints help plus a one-line hint and exits 0; `cg start` prints the error and exits 1.
 - **Exit code and output.** On Unix the agent replaces the cg process, so its exit code and signals are its own. On Windows cg waits for it and exits with its code, printing nothing of its own.
 - **Root hooks.** Bare `cg` now runs the root pre-run hook (the one-time "cg updated" notice and the background update check), also when it falls back to help. The post-run notice (a new major version) runs only when cg is still there afterwards: not on Unix, where the agent replaces cg, but on Windows it can print after the session ends.
+- **The session carries its workspace.** The agent (or launcher) runs with `CG_WORKSPACE` set to the absolute workspace root `cg start` resolved (a worktree's root when started in one), and without `CG_COMMAND`, `CG_EXTENSION_WORKSPACE` and `CG_SESSION_WORKTREE`, which describe one extension-command run. Extension commands use it to find the workspace from other directories: see [Extension commands](extensions.md#which-workspace-serves).
 - **`start` is a built-in verb.** It takes precedence over an extension subcommand with the namespace `start` and over a `cg-start` executable on `PATH`.
 - **Flags.** Root flags go before `start` (`cg --no-auto-update start`); everything after `start` goes to the agent unchanged. A root flag before `start` that doesn't parse is an error; `cg --help start` shows `start`'s help and `cg --version start` the version.
 
@@ -217,9 +218,28 @@ repeated (a line counts as present only when its text matches exactly).
 ## Session badge file
 
 Each session's badge state lives in `.claude/session-context/<session-id>.json`
-under the **main worktree root**, so a session in a linked worktree reads and
-writes the same file. `cg session set-context` creates it; the directory is
-git-ignored.
+under the **main worktree root** of the session's workspace, so a session in a
+linked worktree reads and writes the same file. The session's workspace is the
+one `CG_WORKSPACE` names (set by `cg start`), else the current directory's, so
+a session working in an external repo still reaches its own file.
+`cg session set-context` creates it; the directory is git-ignored.
+
+The session commands (the start gate, `set-context`'s claim, `pause`,
+`release`, `cg active`) make one exception: run in another Consigliere
+workspace (not `CG_WORKSPACE`'s and not one of its linked worktrees), they use
+that workspace's file, gate and paused projects, not those of the workspace
+`CG_WORKSPACE` names. The hooks that follow the session reach both files the
+current directory leads to (that workspace's and the session's workspace's):
+`mark-dirty` marks the session's file in each, so no work goes unflagged (an
+older claim marked too stays listed until pruned), `cg session end` releases
+each clean claim in them, and the status line shows that workspace's claim,
+else the session's workspace's. That covers a
+`CG_WORKSPACE` inherited by accident, for example from a tmux server a `cg
+start` session set up. The trade-off: a session started in a workspace that
+changes into a cloned checkout with a planted `.cg.json` gets that checkout's
+gate text, paused-project prompts and `cg active`, as an agent started there
+would. The worktree record and extension dispatch are unaffected: they always
+use the session's workspace.
 
 ```jsonc
 {
@@ -228,12 +248,32 @@ git-ignored.
   "dirty": false,           // true once the session edits files
                             //   (`cg session mark-dirty`)
   "paused": true,           // only on the badge of the session that paused
-  "pausedAt": "2026-09-29T14:00:00Z" //   its project (`cg session pause`);
+  "pausedAt": "2026-09-29T14:00:00Z", //   its project (`cg session pause`);
                             //   cleared by `cg session set-context`
+  "worktree": "/home/me/ws--api-gateway" // the session's worktree (absolute):
+                            //   set by `cg worktree create` and `cg session
+                            //   set-context --worktree`, cleared from every
+                            //   session's file by `cg worktree remove` of
+                            //   that worktree
 }
 ```
 
-- The session ID must match `[A-Za-z0-9_-]+`.
+- The session ID must match `[A-Za-z0-9_-]+`; cg reads and writes no file for
+  any other ID. `cg worktree create` takes it from `CG_SESSION_ID`, else
+  `CLAUDE_CODE_SESSION_ID`, and records nothing without a valid one. It records
+  only a linked worktree of the session's workspace repo: one created in an
+  external repo the session works in leaves the record unchanged.
+  `cg worktree remove` clears the removed worktree from every session's file,
+  with or without a session ID.
+- A file with only `worktree` (no area or project) shows no badge and no
+  session in `cg active`.
+- `cg session set-context --worktree <path>` records a worktree the
+  workspace's own scripts created; it must be one of the workspace repo's
+  linked worktrees (in `git worktree list`, and not the main checkout, so
+  writers are never sent there; symlinks are resolved). It may be given alone
+  or with `--area` and `--project`. The worktree is recorded in the session's
+  workspace's file wherever the command runs; in another Consigliere workspace
+  the claim goes to that workspace's file (above).
 - Writers merge into the existing file and keep fields they do not own.
 - Each read-modify-write holds a per-session OS advisory lock (`flock` on
   Linux and macOS, `LockFileEx` on Windows) on `<session-id>.lock` next to the

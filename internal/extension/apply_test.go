@@ -45,13 +45,13 @@ func makeClone(t *testing.T, m *Manifest) string {
 
 func fullManifest() *Manifest {
 	return &Manifest{
-		Manifest: 1, Name: "demo", Version: "1.0.0", Description: "d",
+		Manifest: 2, Name: "demo", Version: "1.0.0", Description: "d",
 		Contributes: Contributions{
 			ClaudeMDSections: []SectionContribution{{ID: "demo-rules", Path: "fragments/rules.md"}},
 			Notes:            []CopyContribution{{Src: "notes/guide.md", Dest: "notes/demo-guide.md"}},
 			Templates:        []CopyContribution{{Src: "tpl/t.md", Dest: "templates/demo.md"}},
 			Hooks:            []HookContribution{{Event: "SessionStart", Wrapper: "hooks/gate.sh", Command: "cg-demo gate"}},
-			Subcommands:      []SubcommandContribution{{Namespace: "demo", Binary: "cg-demo"}},
+			Commands:         []CommandContribution{{Command: "demo", Binary: "cg-demo"}, {Command: "demo run", Binary: "cg-demo"}},
 		},
 	}
 }
@@ -92,7 +92,7 @@ func TestApplyAndReverseAllContributions(t *testing.T) {
 	}
 	// Ledger records everything.
 	if len(ledger.ClaudeMDSections) != 1 || len(ledger.Notes) != 1 || len(ledger.Templates) != 1 ||
-		len(ledger.Hooks) != 1 || len(ledger.Subcommands) != 1 {
+		len(ledger.Hooks) != 1 || len(ledger.Commands) != 2 || ledger.Commands[1].Command != "demo run" {
 		t.Errorf("ledger incomplete: %+v", ledger)
 	}
 

@@ -12,7 +12,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -84,6 +86,138 @@ func RunEnv(ctx context.Context, dir string, env []string, args ...string) (stri
 		return "", runError(args, err, errb.String())
 	}
 	return strings.TrimSpace(out.String()), nil
+}
+
+// RunClean is Run with git's repository variables removed from the
+// environment: every variable `git rev-parse --local-env-vars` lists (GIT_DIR,
+// GIT_WORK_TREE, GIT_COMMON_DIR, GIT_INDEX_FILE, GIT_CONFIG_PARAMETERS, …). It
+// is for questions about the repository at dir itself, which a caller's
+// environment must not redirect. RunEnv can only add variables, not remove
+// them.
+func RunClean(ctx context.Context, dir string, args ...string) (string, error) {
+	out, err := RunCleanRaw(ctx, dir, args...)
+	return strings.TrimSpace(string(out)), err
+}
+
+// RunCleanRaw is RunClean returning stdout unmodified, for output whose exact
+// bytes matter (paths with leading or trailing spaces).
+func RunCleanRaw(ctx context.Context, dir string, args ...string) ([]byte, error) {
+	env, err := cleanEnv(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cmd := command(ctx, dir, args...)
+	cmd.Env = env
+	var out, errb bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	if err := run(cmd); err != nil {
+		return nil, runError(args, err, errb.String())
+	}
+	return out.Bytes(), nil
+}
+
+// repoEnvSeed are repository variables removed even before git lists the rest,
+// so they can't affect the listing itself.
+var repoEnvSeed = []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT"}
+
+// cleanEnv returns the process environment without git's repository
+// variables. The list comes from git itself, so a newer git's additions are
+// covered; failing to get it is an error rather than a partial clean.
+func cleanEnv(ctx context.Context) ([]string, error) {
+	env := os.Environ()
+	if !hasGitVar(env) {
+		return env, nil // nothing to remove: skip asking git
+	}
+	seeded := withoutVars(env, repoEnvSeed)
+	vars, err := localEnvVars(ctx, seeded)
+	if err != nil {
+		return nil, err
+	}
+	return withoutVars(seeded, vars), nil
+}
+
+// hasGitVar reports whether env sets any GIT_* variable (all of git's
+// repository variables are named so). On Windows names are case-insensitive,
+// as withoutVars treats them, so Git_Dir counts too.
+func hasGitVar(env []string) bool {
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "GIT_") || (runtime.GOOS == "windows" && len(kv) >= 4 && strings.EqualFold(kv[:4], "GIT_")) {
+			return true
+		}
+	}
+	return false
+}
+
+// ClearRepoEnv removes git's repository variables (GIT_DIR, GIT_WORK_TREE,
+// …, as cleanEnv lists them) from this process's environment, so every git
+// call after it, in any directory, sees that directory's own repository. It
+// does nothing, and starts no git, when no GIT_* variable is set.
+func ClearRepoEnv(ctx context.Context) error {
+	if !hasGitVar(os.Environ()) {
+		return nil
+	}
+	vars, err := localEnvVars(ctx, withoutVars(os.Environ(), repoEnvSeed))
+	if err != nil {
+		return err
+	}
+	for _, v := range append(append([]string(nil), repoEnvSeed...), vars...) {
+		if err := os.Unsetenv(v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// localEnvVarsCache holds git's list once it has been read successfully: it
+// depends only on the git binary, so one read per process is enough. A failed
+// read is not cached.
+var localEnvVarsCache struct {
+	sync.Mutex
+	vars []string
+}
+
+// localEnvVars returns `git rev-parse --local-env-vars`, run with env.
+func localEnvVars(ctx context.Context, env []string) ([]string, error) {
+	localEnvVarsCache.Lock()
+	defer localEnvVarsCache.Unlock()
+	if localEnvVarsCache.vars != nil {
+		return localEnvVarsCache.vars, nil
+	}
+	cmd := command(ctx, "", "rev-parse", "--local-env-vars")
+	cmd.Env = env
+	var out, errb bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	if err := run(cmd); err != nil {
+		return nil, runError([]string{"rev-parse", "--local-env-vars"}, err, errb.String())
+	}
+	vars := strings.Fields(out.String())
+	if len(vars) == 0 {
+		return nil, errors.New("git rev-parse --local-env-vars listed no variables")
+	}
+	localEnvVarsCache.vars = vars
+	return vars, nil
+}
+
+// withoutVars returns env without the named variables, ignoring case on
+// Windows, where variable names are case-insensitive.
+func withoutVars(env, names []string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		k, _, _ := strings.Cut(kv, "=")
+		drop := false
+		for _, n := range names {
+			if k == n || (runtime.GOOS == "windows" && strings.EqualFold(k, n)) {
+				drop = true
+				break
+			}
+		}
+		if !drop {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
 
 // RunRaw runs git in dir and returns its stdout unmodified, for binary or
@@ -400,7 +534,18 @@ func RevParse(ctx context.Context, dir, rev string) (string, error) {
 // the directory the shell helpers referred to as WORKSPACE_ROOT, resolved from
 // any worktree rather than hardcoded.
 func CommonRoot(ctx context.Context, dir string) (string, error) {
-	out, err := Run(ctx, dir, "rev-parse", "--git-common-dir")
+	return commonRoot(ctx, dir, Run)
+}
+
+// CommonRootClean is CommonRoot with git's repository variables (GIT_DIR,
+// GIT_WORK_TREE, …) removed from git's environment, for a dir that may be
+// another repository than the one those variables name.
+func CommonRootClean(ctx context.Context, dir string) (string, error) {
+	return commonRoot(ctx, dir, RunClean)
+}
+
+func commonRoot(ctx context.Context, dir string, run func(context.Context, string, ...string) (string, error)) (string, error) {
+	out, err := run(ctx, dir, "rev-parse", "--git-common-dir")
 	if err != nil {
 		return "", err
 	}

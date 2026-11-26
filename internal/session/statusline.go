@@ -7,7 +7,6 @@ import (
 	"hash/fnv"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -93,7 +92,7 @@ func runUpstream(ctx context.Context, upstream string, input []byte) string {
 // the first bash on PATH, which can be WSL's. Without Git Bash it falls back to
 // PATH, so another bash a user has set up still works.
 func upstreamShell() string {
-	if runtime.GOOS == "windows" {
+	if isWindows {
 		if p, ok := gitbash.Find(""); ok {
 			return p
 		}
@@ -106,7 +105,7 @@ func upstreamShell() string {
 // quoting, so a value that names an existing file is passed as a quoted path
 // with forward slashes, which Git Bash accepts.
 func bashCommand(upstream string) string {
-	if runtime.GOOS != "windows" || !fileExists(upstream) {
+	if !isWindows || !fileExists(upstream) {
 		return upstream
 	}
 	return "'" + strings.ReplaceAll(filepath.ToSlash(upstream), "'", `'\''`) + "'"

@@ -59,9 +59,16 @@ type GateInput struct {
 	Prompt    string
 	SessionID string
 	CWD       string
-	// WorkspaceRoot is the workspace cwd belongs to, where paused projects are
-	// looked up (in every worktree, see Checkouts). Empty skips the lookup.
+	// WorkspaceRoot is the session's workspace (CG_WORKSPACE, else cwd's),
+	// where paused projects are looked up (in every worktree, see Checkouts).
+	// Empty skips the lookup.
 	WorkspaceRoot string
+}
+
+// SkipsPrompt reports whether the gate lets prompt through silently (slash
+// commands, quick questions), so a caller can skip resolving anything first.
+func SkipsPrompt(prompt string) bool {
+	return skipAllPattern.MatchString(strings.TrimSpace(prompt))
 }
 
 // Gate renders the session-start gate text for a prompt, or returns emit=false
@@ -70,10 +77,10 @@ type GateInput struct {
 // session-start-gate.sh; the wording is config-driven (DEC-001): a workspace
 // supplies its own via gateTemplatePath, else a framework-neutral default is
 // used. root is the main worktree root (where the badge files live).
-func Gate(ctx context.Context, root string, in GateInput, gateTemplatePath string, pruneDays int) (text string, emit bool) {
+func Gate(ctx context.Context, root string, in *GateInput, gateTemplatePath string, pruneDays int) (text string, emit bool) {
 	pruneStaleContexts(root, pruneDays)
 
-	if skipAllPattern.MatchString(strings.TrimSpace(in.Prompt)) {
+	if SkipsPrompt(in.Prompt) {
 		return "", false
 	}
 
@@ -88,8 +95,15 @@ func Gate(ctx context.Context, root string, in GateInput, gateTemplatePath strin
 		}
 	}
 
+	// The main-worktree warning is about the repo the agent works in, which
+	// may not be the session's (root): resolved here, after the skip check,
+	// so a skipped prompt runs no git.
+	checkout := root
+	if cr, err := gitx.CommonRoot(ctx, in.CWD); err == nil {
+		checkout = cr
+	}
 	warning := ""
-	if inMainWorktree(ctx, in.CWD, root) {
+	if inMainWorktree(ctx, in.CWD, checkout) {
 		warning = defaultWorktreeWarning
 	}
 

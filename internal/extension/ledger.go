@@ -20,15 +20,18 @@ const ledgerSubdir = ".cg/ext"
 // contributions writes no ledger, so there is never a ledger with nothing to
 // reverse.
 type Ledger struct {
-	Name             string                   `json:"name"`
-	Version          string                   `json:"version"`
-	ClaudeMDSections []string                 `json:"claudeMdSections,omitempty"`
-	Notes            []string                 `json:"notes,omitempty"`
-	Hooks            []LedgerHook             `json:"hooks,omitempty"`
-	Templates        []string                 `json:"templates,omitempty"`
-	Subcommands      []SubcommandContribution `json:"subcommands,omitempty"`
+	Name             string       `json:"name"`
+	Version          string       `json:"version"`
+	ClaudeMDSections []string     `json:"claudeMdSections,omitempty"`
+	Notes            []string     `json:"notes,omitempty"`
+	Hooks            []LedgerHook `json:"hooks,omitempty"`
+	Templates        []string     `json:"templates,omitempty"`
+	// Commands are the manifest's command entries (not file-backed). Dispatch
+	// reads them, and runs one only when the extension's manifest in its
+	// pinned tree declares it too.
+	Commands []CommandContribution `json:"commands,omitempty"`
 	// Launcher is the manifest's launcher entry (not file-backed, like
-	// Subcommands); `cg start` reads it to find the binary to run.
+	// Commands); `cg start` reads it to find the binary to run.
 	Launcher  []LauncherContribution `json:"launcher,omitempty"`
 	IndexRows []LedgerIndexRow       `json:"indexRows,omitempty"`
 	// GitHooks are the workspace-relative paths of installed git-hook scripts.

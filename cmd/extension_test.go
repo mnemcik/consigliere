@@ -171,6 +171,13 @@ func writeReferencedStubs(t *testing.T, dir, manifest string) {
 	for _, g := range m.Contributes.GitHooks {
 		write(g.Script, "#!/bin/sh\nexit 0\n")
 	}
+	for _, c := range m.Contributes.Commands {
+		p := filepath.Join(dir, "bin", c.Binary)
+		write("bin/"+c.Binary, "#!/bin/sh\necho \"$CG_COMMAND|$*\"\n")
+		if err := os.Chmod(p, 0o755); err != nil { //nolint:gosec // an extension binary must be executable
+			t.Fatal(err)
+		}
+	}
 }
 
 const testManifest = `{
@@ -534,7 +541,7 @@ func TestExtInstallOutsideWorkspaceFails(t *testing.T) {
 }
 
 const allContribManifest = `{
-  "manifest": 1,
+  "manifest": 2,
   "name": "full",
   "version": "1.0.0",
   "description": "every contribution type",
@@ -543,7 +550,7 @@ const allContribManifest = `{
     "notes": [{ "src": "notes/guide.md", "dest": "notes/full-guide.md" }],
     "templates": [{ "src": "tpl/t.md", "dest": "templates/full.md" }],
     "hooks": [{ "event": "SessionStart", "wrapper": "hooks/gate.sh", "command": "cg-full gate" }],
-    "subcommands": [{ "namespace": "full", "binary": "cg-full" }]
+    "commands": [{ "command": "full", "binary": "cg-full" }]
   }
 }`
 
@@ -587,7 +594,7 @@ func TestExtLifecycleAllContributions(t *testing.T) {
 		t.Fatalf("ledger missing: %v", err)
 	}
 	if len(led.ClaudeMDSections) != 1 || len(led.Notes) != 1 || len(led.Templates) != 1 ||
-		len(led.Hooks) != 1 || len(led.Subcommands) != 1 {
+		len(led.Hooks) != 1 || len(led.Commands) != 1 {
 		t.Errorf("ledger incomplete: %+v", led)
 	}
 

@@ -3,10 +3,15 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -59,6 +64,7 @@ hook's output to the user.`,
 }
 
 func runSessionEnd(cmd *cobra.Command, _ []string) error {
+	clearSessionGitEnv(cmd)
 	cmd.SilenceUsage = true
 
 	var in sessionEndInput
@@ -69,12 +75,17 @@ func runSessionEnd(cmd *cobra.Command, _ []string) error {
 	if cwd == "" {
 		cwd, _ = os.Getwd()
 	}
-	root, wsRoot, _ := sessionRoots(cmd.Context(), cwd)
-	if root == "" {
-		return nil
-	}
-	if _, err := session.EndSession(root, wsRoot, in.SessionID); err != nil {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "cg session end: %v\n", err)
+	// The claim may be in either file (made in another workspace, or in the
+	// session's own before moving there): end it in both. A root without the
+	// session's file is skipped before EndSession's git calls and lock wait,
+	// which share the hook's short time budget.
+	for _, r := range sessionStateRoots(cmd.Context(), cwd) {
+		if !stateFileExists(cmd.ErrOrStderr(), "end", r.badge, in.SessionID) {
+			continue
+		}
+		if _, err := session.EndSession(r.badge, r.ws, in.SessionID); err != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "cg session end: %v\n", err)
+		}
 	}
 	return nil
 }
@@ -98,6 +109,7 @@ var sessionMarkDirtyCmd = &cobra.Command{
 }
 
 func runSessionMarkDirty(cmd *cobra.Command, _ []string) error {
+	clearSessionGitEnv(cmd)
 	cmd.SilenceUsage = true
 
 	var in markDirtyInput
@@ -109,22 +121,31 @@ func runSessionMarkDirty(cmd *cobra.Command, _ []string) error {
 	if cwd == "" {
 		cwd, _ = os.Getwd()
 	}
-	root, _, _ := sessionRoots(cmd.Context(), cwd)
-	if root == "" {
-		return nil
-	}
+	roots := sessionStateRoots(cmd.Context(), cwd)
 
 	// Ignore writes to the badge file itself — framework bookkeeping isn't work.
 	filePath := in.ToolInput.FilePath
 	if filePath == "" {
 		filePath = in.ToolInput.NotebookPath
 	}
-	if session.IsContextPath(root, filePath) {
-		return nil
+	for _, r := range roots {
+		if session.IsContextPath(r.badge, filePath) {
+			return nil
+		}
 	}
 
-	if err := session.MarkDirty(root, in.SessionID); err != nil {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "cg session mark-dirty: %v\n", err)
+	// Mark the session's file wherever it has one: the work may belong to
+	// either claim, or to the worktree record in the session repo root's
+	// file, and a file left clean is released at end. An older claim marked
+	// too only lingers in cg active until pruned. A root without the file is
+	// skipped, so no lock file is left there.
+	for _, r := range roots {
+		if !stateFileExists(cmd.ErrOrStderr(), "mark-dirty", r.badge, in.SessionID) {
+			continue
+		}
+		if err := session.MarkDirty(r.badge, in.SessionID); err != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "cg session mark-dirty: %v\n", err)
+		}
 	}
 	return nil
 }
@@ -138,6 +159,7 @@ var sessionPullLatestCmd = &cobra.Command{
 }
 
 func runSessionPullLatest(cmd *cobra.Command, _ []string) error {
+	clearSessionGitEnv(cmd)
 	cmd.SilenceUsage = true
 
 	// Drain stdin so the hook driver never gets a SIGPIPE; we need no field.
@@ -258,13 +280,15 @@ var (
 	setContextSessionID string
 	setContextArea      string
 	setContextProject   string
+	setContextWorktree  string
 )
 
 var sessionSetContextCmd = &cobra.Command{
 	Use:   "set-context",
-	Short: "Record the session's area and project for the status-line badge",
+	Short: "Record the session's area and project (status-line badge) or its worktree",
 	Long: `Writes the area and project a session is working on to its badge state
-file (.claude/session-context/<session-id>.json under the main worktree root),
+file (.claude/session-context/<session-id>.json under the main worktree root
+of the session's workspace: CG_WORKSPACE, else the current one),
 creating it when absent. The status line renders the badge from this file and
 cg active lists sessions from it. Run it once the session-start gate's area and
 project are confirmed, and again whenever the session switches either one.
@@ -277,10 +301,18 @@ of the workspace), this session is resuming it, so the pausing session's claim
 is released, and the path of each resume.md is printed, with the worktree that
 holds the paused work.
 
+--worktree records the session's worktree, so the workspace's extension
+commands write there when the session runs them from other directories. cg
+worktree create records it already; use this when the workspace's own scripts
+create worktrees. The path must be one of the workspace repository's linked
+worktrees (in git worktree list, and not the main checkout, so writers are
+never sent there). It may be given alone, or with --area and --project.
+
 ` + sessionIDHelp,
-	Example: `  cg session set-context --session-id 1b2c... --area platform --project api-gateway`,
-	Args:    cobra.NoArgs,
-	RunE:    runSessionSetContext,
+	Example: `  cg session set-context --session-id 1b2c... --area platform --project api-gateway
+  cg session set-context --worktree "$(pwd)"`,
+	Args: cobra.NoArgs,
+	RunE: runSessionSetContext,
 }
 
 func init() {
@@ -288,9 +320,8 @@ func init() {
 	f.StringVar(&setContextSessionID, "session-id", "", "session ID (shown in the session-start gate; see below for defaults)")
 	f.StringVar(&setContextArea, "area", "", "area slug the session works in")
 	f.StringVar(&setContextProject, "project", "", "project slug the session works on")
-	for _, name := range []string{"area", "project"} {
-		_ = sessionSetContextCmd.MarkFlagRequired(name)
-	}
+	f.StringVar(&setContextWorktree, "worktree", "", "path of the session's worktree (one of the repository's linked worktrees, not the main checkout)")
+	sessionSetContextCmd.MarkFlagsRequiredTogether("area", "project")
 	sessionReleaseCmd.Flags().StringVar(&releaseSessionID, "session-id", "", "session ID (see below for defaults)")
 	sessionPauseCmd.Flags().StringVar(&pauseSessionID, "session-id", "", "session ID (see below for defaults)")
 }
@@ -314,6 +345,7 @@ cg session set-context clears the marker.
 }
 
 func runSessionPause(cmd *cobra.Command, _ []string) error {
+	clearSessionGitEnv(cmd)
 	cmd.SilenceUsage = true
 	id := resolveSessionID(pauseSessionID)
 	if !session.ValidSessionID(id) {
@@ -323,7 +355,7 @@ func runSessionPause(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	root, wsRoot, _ := sessionRoots(cmd.Context(), cwd)
+	root, wsRoot, _ := sessionCommandRoots(cmd.Context(), cwd)
 	if wsRoot == "" || root == "" {
 		return fmt.Errorf("not inside a Consigliere workspace: %s", cwd)
 	}
@@ -374,6 +406,7 @@ no badge file succeeds.
 }
 
 func runSessionRelease(cmd *cobra.Command, _ []string) error {
+	clearSessionGitEnv(cmd)
 	cmd.SilenceUsage = true
 	id := resolveSessionID(releaseSessionID)
 	if !session.ValidSessionID(id) {
@@ -383,7 +416,7 @@ func runSessionRelease(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	root, wsRoot, _ := sessionRoots(cmd.Context(), cwd)
+	root, wsRoot, _ := sessionCommandRoots(cmd.Context(), cwd)
 	if wsRoot == "" || root == "" {
 		return fmt.Errorf("not inside a Consigliere workspace: %s", cwd)
 	}
@@ -395,17 +428,27 @@ func runSessionRelease(cmd *cobra.Command, _ []string) error {
 }
 
 func runSessionSetContext(cmd *cobra.Command, _ []string) error {
+	clearSessionGitEnv(cmd)
 	// Flag values are validated below; a bad value is not a usage error.
 	cmd.SilenceUsage = true
 	id := resolveSessionID(setContextSessionID)
 	if !session.ValidSessionID(id) {
 		return fmt.Errorf("invalid or missing session ID %q (pass --session-id or set CG_SESSION_ID)", id)
 	}
-	// Required-flag checks only test presence, so --area "" would slip through.
+	// Flag checks only test presence, so --area "" would slip through.
 	setContextArea = strings.TrimSpace(setContextArea)
 	setContextProject = strings.TrimSpace(setContextProject)
-	if setContextArea == "" || setContextProject == "" {
+	claim := cmd.Flags().Changed("area") || cmd.Flags().Changed("project")
+	worktreeSet := cmd.Flags().Changed("worktree")
+	switch {
+	case !claim && !worktreeSet:
+		return fmt.Errorf("give --area and --project, or --worktree")
+	case claim && (setContextArea == "" || setContextProject == ""):
 		return fmt.Errorf("--area and --project must be non-empty")
+	case worktreeSet && strings.TrimSpace(setContextWorktree) == "":
+		// filepath.Abs("") is the current directory: an unset shell variable
+		// must not record wherever the command happens to run.
+		return fmt.Errorf("--worktree must be non-empty")
 	}
 
 	cwd, err := os.Getwd()
@@ -414,15 +457,49 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 	}
 	// Refuse outside a workspace: inside any other git repo the badge root
 	// would still resolve, leaving a stray .claude/ the status line never reads.
-	root, wsRoot, cfg := sessionRoots(cmd.Context(), cwd)
+	// The claim goes to the session commands root's state file (S38c); the
+	// worktree record stays with the session repo root's, wherever this runs
+	// (S36).
+	root, wsRoot, cfg := sessionCommandRoots(cmd.Context(), cwd)
 	if wsRoot == "" || root == "" {
 		return fmt.Errorf("not inside a Consigliere workspace: %s", cwd)
+	}
+	out := cmd.OutOrStdout()
+	// Validate the worktree before writing anything, and record it after the
+	// claim, so a refused path or a failed claim changes nothing about it.
+	var wtPath, wtBadge string
+	if worktreeSet {
+		badge, repoRoot, _ := sessionRoots(cmd.Context(), cwd)
+		if repoRoot == "" || badge == "" {
+			return fmt.Errorf("not inside a Consigliere workspace: %s", cwd)
+		}
+		p, werr := listedWorktree(cmd.Context(), repoRoot, setContextWorktree)
+		if werr != nil {
+			return werr
+		}
+		wtPath, wtBadge = p, badge
+	}
+	recordWorktree := func() error {
+		if !worktreeSet {
+			return nil
+		}
+		if err := session.SetWorktree(wtBadge, id, wtPath); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(out, "Session worktree set: %s (%s)\n", wtPath, session.ContextFile(wtBadge, id))
+		return nil
+	}
+	if !claim {
+		return recordWorktree()
 	}
 
 	if err := session.WriteContext(root, id, session.Claim{Area: setContextArea, Project: setContextProject}); err != nil {
 		return err
 	}
-	out := cmd.OutOrStdout()
+	// Right after the claim, before the hand-over steps that may fail.
+	if err := recordWorktree(); err != nil {
+		return err
+	}
 	_, _ = fmt.Fprintf(out, "Session badge set: [%s/%s] (%s)\n",
 		setContextArea, setContextProject, session.ContextFile(root, id))
 	retired, err := session.HandOver(root, wsRoot, id, setContextProject)
@@ -438,6 +515,22 @@ func runSessionSetContext(cmd *cobra.Command, _ []string) error {
 	}
 	printResumeNotice(out, setContextProject, resumes, cfg.WorktreeSettings().BranchPrefix)
 	return nil
+}
+
+// listedWorktree resolves p (relative to the current directory) and, when it is
+// one of the linked worktrees of the session repo whose root is repoRoot (S36:
+// listed by its `git worktree list`, not the main checkout), returns git's
+// listed spelling of it in recordPath form; otherwise an error.
+func listedWorktree(ctx context.Context, repoRoot, p string) (string, error) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	listed, ok := sessionRepoWorktreePath(ctx, repoRoot, abs)
+	if !ok {
+		return "", fmt.Errorf("%s is not one of the session repository's linked worktrees (see `git worktree list` in %s; the main checkout doesn't count)", abs, repoRoot)
+	}
+	return recordPath(listed), nil // the form create and remove record
 }
 
 // printResumeNotice tells the agent claiming a paused project where its pickup
@@ -506,6 +599,7 @@ var sessionStartGateCmd = &cobra.Command{
 }
 
 func runSessionStartGate(cmd *cobra.Command, _ []string) error {
+	clearSessionGitEnv(cmd)
 	cmd.SilenceUsage = true
 
 	var in startGateInput
@@ -516,22 +610,44 @@ func runSessionStartGate(cmd *cobra.Command, _ []string) error {
 	if cwd == "" {
 		cwd, _ = os.Getwd()
 	}
-
-	// Badge files live at the main worktree root; fall back to the walk-up root.
-	root, err := gitx.CommonRoot(cmd.Context(), cwd)
-	if err != nil {
-		root, _, _ = workspace.FindRoot(cwd)
+	// Prompts the gate lets through need no roots (and no git); stale badge
+	// pruning waits for the next prompt that shows the gate.
+	if session.SkipsPrompt(in.Prompt) {
+		return nil
 	}
-	cfg, _ := workspace.Detect(root)
-	s := cfg.SessionSettings()
 
-	wsRoot, _, _ := workspace.FindRoot(cwd)
-	text, emit := session.Gate(cmd.Context(), root, session.GateInput{
+	// Badge files live at the main worktree root of the session repo root
+	// (CG_WORKSPACE, else cwd's workspace), as for every other badge command,
+	// so a session working in an external repo is told its own file. Without
+	// a session repo root, fall back to cwd's repository.
+	root, wsRoot, cfg := sessionCommandRoots(cmd.Context(), cwd)
+	if root == "" {
+		var err error
+		if root, err = gitx.CommonRoot(cmd.Context(), cwd); err != nil {
+			root, _, _ = workspace.FindRoot(cwd)
+		}
+		cfg, _ = workspace.Detect(root)
+	}
+	s := cfg.SessionSettings()
+	// A relative template belongs to the directory whose .cg.json named it:
+	// wsRoot when its own .cg.json was read, else root (sessionRoots' fallback).
+	tpl := s.GateTemplate
+	if tpl != "" && !filepath.IsAbs(tpl) {
+		base := root
+		if wsRoot != "" {
+			if c, derr := workspace.Detect(wsRoot); derr == nil && c != nil {
+				base = wsRoot
+			}
+		}
+		tpl = filepath.Join(base, tpl)
+	}
+
+	text, emit := session.Gate(cmd.Context(), root, &session.GateInput{
 		Prompt:        in.Prompt,
 		SessionID:     in.SessionID,
 		CWD:           cwd,
 		WorkspaceRoot: wsRoot,
-	}, s.GateTemplate, s.PruneDays)
+	}, tpl, s.PruneDays)
 	if emit {
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), text)
 	}
@@ -553,6 +669,7 @@ var sessionStatuslineCmd = &cobra.Command{
 }
 
 func runSessionStatusline(cmd *cobra.Command, _ []string) error {
+	clearSessionGitEnv(cmd)
 	cmd.SilenceUsage = true
 
 	raw, _ := io.ReadAll(cmd.InOrStdin())
@@ -563,7 +680,17 @@ func runSessionStatusline(cmd *cobra.Command, _ []string) error {
 		cwd, _ = os.Getwd()
 	}
 
-	root, _, cfg := sessionRoots(cmd.Context(), cwd)
+	// The badge is the session commands root's claim, else the session repo
+	// root's (one made before moving to another workspace), which is
+	// resolved only when needed: this renders often.
+	root, wsRoot, cfg := sessionCommandRoots(cmd.Context(), cwd)
+	if !holdsClaim(root, in.SessionID) {
+		if rr := sessionRepoRoot(cwd); rr != "" && rr != wsRoot {
+			if r, _, rcfg := rootsOf(cmd.Context(), rr); r != "" && r != root && holdsClaim(r, in.SessionID) {
+				root, cfg = r, rcfg
+			}
+		}
+	}
 	s := cfg.SessionSettings()
 
 	out := session.Statusline(cmd.Context(), root, session.StatuslineInput{
@@ -576,15 +703,91 @@ func runSessionStatusline(cmd *cobra.Command, _ []string) error {
 }
 
 // sessionRoots resolves where a session's badge file lives and which workspace
-// cwd belongs to. badgeRoot is the main worktree root (where start-gate puts
-// badge files), so a session in a linked worktree still finds its badge; it
-// falls back to the walk-up workspace root outside a git repo. wsRoot is the
-// walk-up workspace root ("" when cwd is not in a workspace). cfg is the
-// workspace config, read from wsRoot and else from badgeRoot, so a workspace
-// nested below the git top level keeps its settings.
+// the session serves. wsRoot is the session repo root: the session's workspace
+// (CG_WORKSPACE, when it isn't ignored), else the walk-up workspace root of cwd
+// ("" when there is neither), so a session working in an external repo still
+// reads and writes its own badge. badgeRoot is the main worktree root of
+// wsRoot's repository (where start-gate puts badge files), so a session in a
+// linked worktree still finds its badge; it falls back to wsRoot outside a git
+// repo. cfg is the workspace config, read from wsRoot and else from
+// badgeRoot, so a workspace nested below the git top level keeps its settings.
 func sessionRoots(ctx context.Context, cwd string) (badgeRoot, wsRoot string, cfg *workspace.Config) {
-	wsRoot, cfg, _ = workspace.FindRoot(cwd)
-	badgeRoot, err := gitx.CommonRoot(ctx, cwd)
+	return rootsOf(ctx, sessionRepoRoot(cwd))
+}
+
+// sessionCommandRoots is sessionRoots for the session commands S38c lists
+// (start gate, set-context's claim, pause, release, cg active): from the
+// session commands root, so another Consigliere workspace the agent works in
+// keeps its own session state. end, mark-dirty and the status line reach both
+// roots' files (sessionStateRoots, runSessionStatusline).
+func sessionCommandRoots(ctx context.Context, cwd string) (badgeRoot, wsRoot string, cfg *workspace.Config) {
+	return rootsOf(ctx, sessionCommandsRoot(cwd))
+}
+
+// stateRoot is a badge root and the workspace root it belongs to.
+type stateRoot struct{ badge, ws string }
+
+// sessionStateRoots returns the roots of the session commands root and the
+// session repo root, each once and in that order, for the commands S38c
+// doesn't switch that must reach the session's file under either root (end,
+// mark-dirty). Each root is resolved once.
+func sessionStateRoots(ctx context.Context, cwd string) []stateRoot {
+	var out []stateRoot
+	cr, rr := sessionCommandsRoot(cwd), sessionRepoRoot(cwd)
+	for _, ws := range []string{cr, rr} {
+		if ws == "" || slices.ContainsFunc(out, func(r stateRoot) bool { return r.ws == ws }) {
+			continue
+		}
+		badge, wsRoot, _ := rootsOf(ctx, ws)
+		if badge == "" || slices.ContainsFunc(out, func(r stateRoot) bool { return r.badge == badge }) {
+			continue
+		}
+		out = append(out, stateRoot{badge, wsRoot})
+	}
+	return out
+}
+
+// stateFileExists reports whether the session's state file under the badge
+// root exists. Absence is silent; any other error (permission denied, I/O) is
+// reported on errw as `cg session <hook>: …`, and the root counts as without
+// the file, so the hook goes on with the other root.
+func stateFileExists(errw io.Writer, hook, root, id string) bool {
+	_, err := os.Lstat(session.ContextFile(root, id))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) { // ENOTDIR: a file where a directory on the path should be
+		_, _ = fmt.Fprintf(errw, "cg session %s: %v\n", hook, err)
+	}
+	return err == nil
+}
+
+// clearSessionGitEnv removes git's repository variables from the process
+// environment for a session command. Its git calls run in the session's
+// roots (the session commands root, the session repo root, their worktrees),
+// which an inherited GIT_DIR naming another repository would redirect. A
+// failure to clear is reported and the command goes on.
+func clearSessionGitEnv(cmd *cobra.Command) {
+	if err := gitx.ClearRepoEnv(cmd.Context()); err != nil {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "cg session: can't clear git's repository variables: %v\n", err)
+	}
+}
+
+// holdsClaim reports whether the state file for id under the badge root
+// root can be read and holds a claim (an area or a project, as the status
+// line shows).
+func holdsClaim(root, id string) bool {
+	if root == "" {
+		return false
+	}
+	c, err := session.ReadContext(root, id)
+	return err == nil && c != nil && (c.Area != "" || c.Project != "")
+}
+
+// rootsOf is sessionRoots' result for the root wsRoot ("" for none).
+func rootsOf(ctx context.Context, wsRoot string) (badgeRoot, _ string, cfg *workspace.Config) {
+	if wsRoot == "" {
+		return "", "", nil
+	}
+	cfg, _ = workspace.Detect(wsRoot)
+	badgeRoot, err := gitx.CommonRootClean(ctx, wsRoot)
 	if err != nil {
 		badgeRoot = wsRoot
 	}

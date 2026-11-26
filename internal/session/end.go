@@ -8,7 +8,8 @@ import "fmt"
 //
 //   - a dirty badge is kept, because the session ended without a wrap and its
 //     worktree may hold unlanded work; cg active keeps listing it within the
-//     dirty window;
+//     dirty window, and a resumed session (same ID) keeps its recorded
+//     worktree;
 //   - the badge carrying the pause marker is kept while its project's
 //     resume.md exists, because a pause keeps its claim until another session
 //     resumes the project.

@@ -14,8 +14,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 )
+
+// isWindows selects Windows rules (case-insensitive paths, the upstream
+// status line run through Git Bash).
+const isWindows = runtime.GOOS == "windows"
 
 // ContextDirName is the per-session badge state directory, relative to the
 // workspace root.
@@ -37,6 +42,7 @@ const (
 	keyDirty    = "dirty"
 	keyPaused   = "paused"
 	keyPausedAt = "pausedAt"
+	keyWorktree = "worktree"
 )
 
 // Context is the per-session badge state the status line renders.
@@ -48,6 +54,9 @@ type Context struct {
 	// project (cg session pause). Claiming a project clears both.
 	Paused   bool   `json:"paused,omitempty"`
 	PausedAt string `json:"pausedAt,omitempty"`
+	// Worktree is the session's worktree (absolute path), recorded by
+	// cg worktree create or cg session set-context --worktree.
+	Worktree string `json:"worktree,omitempty"`
 }
 
 // Claim is what a session records in its badge when it takes on work: the
@@ -58,8 +67,12 @@ type Claim struct {
 }
 
 // ReadContext loads the badge state for a session. It returns (nil, nil) when
-// the file does not exist (tracking is opt-in — no file means no badge).
+// the file does not exist (tracking is opt-in — no file means no badge). An
+// invalid session ID is an error, and no file is read.
 func ReadContext(root, sessionID string) (*Context, error) {
+	if !ValidSessionID(sessionID) {
+		return nil, fmt.Errorf("invalid session id %q", sessionID)
+	}
 	data, err := os.ReadFile(ContextFile(root, sessionID))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -71,6 +84,7 @@ func ReadContext(root, sessionID string) (*Context, error) {
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, err
 	}
+	c.Worktree = filepath.FromSlash(c.Worktree)
 	return &c, nil
 }
 
@@ -179,3 +193,129 @@ func writeJSONAtomic(path string, v any) error {
 	}
 	return os.Rename(tmpName, path)
 }
+
+// SetWorktree records the session's worktree (an absolute path) in its state
+// file, creating the session-context directory and file when absent and
+// keeping every other field.
+func SetWorktree(root, sessionID, path string) error {
+	if !ValidSessionID(sessionID) {
+		return fmt.Errorf("invalid session id %q", sessionID)
+	}
+	if err := os.MkdirAll(ContextDir(root), 0o755); err != nil {
+		return err
+	}
+	return withBadgeLock(root, sessionID, func() error {
+		file := ContextFile(root, sessionID)
+		m, err := readContextMap(file)
+		if errors.Is(err, fs.ErrNotExist) {
+			m, err = map[string]any{}, nil
+		}
+		if err != nil {
+			return err
+		}
+		m[keyWorktree] = filepath.ToSlash(path) // files cg stores use '/' on every OS
+		return writeJSONAtomic(file, m)
+	})
+}
+
+// ClearWorktree removes the session's recorded worktree when it is path, and
+// reports whether it did. A missing state file is left missing.
+func ClearWorktree(root, sessionID, path string) (bool, error) {
+	if !ValidSessionID(sessionID) {
+		return false, fmt.Errorf("invalid session id %q", sessionID)
+	}
+	cleared := false
+	err := withBadgeLock(root, sessionID, func() error {
+		file := ContextFile(root, sessionID)
+		m, err := readContextMap(file)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !sameRecord(m, path) {
+			return nil
+		}
+		delete(m, keyWorktree)
+		cleared = true
+		return writeJSONAtomic(file, m)
+	})
+	return cleared, err
+}
+
+// ClearWorktreeAll clears every session's record of the worktree path, so a
+// worktree created again at that path later isn't taken for theirs.
+// The directory is listed, not globbed: the root's path may contain glob
+// metacharacters. A file whose record doesn't match is read without its lock,
+// so sessions this doesn't concern aren't waited on.
+func ClearWorktreeAll(root, path string) error {
+	entries, err := os.ReadDir(ContextDir(root))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, e := range entries {
+		id, ok := strings.CutSuffix(e.Name(), ".json")
+		if !ok || e.IsDir() || !ValidSessionID(id) {
+			continue
+		}
+		m, rerr := readContextMap(ContextFile(root, id))
+		if rerr != nil {
+			if !errors.Is(rerr, fs.ErrNotExist) {
+				errs = append(errs, fmt.Errorf("%s: %w", ContextFile(root, id), rerr))
+			}
+			continue
+		}
+		if !sameRecord(m, path) {
+			continue
+		}
+		if _, err := ClearWorktree(root, id, path); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// sameRecord reports whether the state map records the worktree path,
+// comparing both with '/' separators (a record written in the OS's form by an
+// earlier build still matches).
+func sameRecord(m map[string]any, path string) bool {
+	v, _ := m[keyWorktree].(string)
+	if v == "" {
+		return false
+	}
+	a, b := filepath.ToSlash(v), filepath.ToSlash(path)
+	if a == b {
+		return true
+	}
+	// Case-insensitive file systems are the default there, but a volume can
+	// be case-sensitive (APFS, NTFS directories), where /w/Task and /w/task
+	// are two worktrees.
+	return (isWindows || runtime.GOOS == "darwin") && strings.EqualFold(a, b) && sameEntry(filepath.FromSlash(v), path)
+}
+
+// sameEntry reports whether two spellings of a path that differ only in case
+// name one entry: both exist and are the same file. If only one exists, the
+// volume tells them apart; if neither does (a removed worktree), there is
+// nothing left to tell apart and they count as one. A spelling that can't be
+// checked (permission denied, an I/O error) might be a live worktree, so they
+// don't count as one.
+func sameEntry(a, b string) bool {
+	fa, errA := statPath(a)
+	fb, errB := statPath(b)
+	switch {
+	case errA == nil && errB == nil:
+		return os.SameFile(fa, fb)
+	case errA == nil || errB == nil:
+		return false
+	}
+	return errors.Is(errA, fs.ErrNotExist) && errors.Is(errB, fs.ErrNotExist)
+}
+
+// statPath is os.Stat, a variable so tests can simulate a case-sensitive
+// volume.
+var statPath = os.Stat

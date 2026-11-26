@@ -14,7 +14,7 @@ func TestLedgerSaveLoadRoundtrip(t *testing.T) {
 		Notes:            []string{"notes/credentials-policy.md"},
 		Hooks:            []LedgerHook{{Event: "SessionStart", Wrapper: ".claude/hooks/gate.sh"}},
 		Templates:        []string{"templates/req.md"},
-		Subcommands:      []SubcommandContribution{{Namespace: "secret", Binary: "cg-1password"}},
+		Commands:         []CommandContribution{{Command: "secret get", Binary: "cg-1password"}},
 		IndexRows:        []LedgerIndexRow{{File: "notes/INDEX.md", Marker: "ext:1password"}},
 	}
 	if err := l.Save(root); err != nil {
@@ -42,8 +42,8 @@ func TestLedgerSaveLoadRoundtrip(t *testing.T) {
 	if len(got.Hooks) != 1 || got.Hooks[0].Event != "SessionStart" {
 		t.Errorf("hooks roundtrip: %+v", got.Hooks)
 	}
-	if len(got.Subcommands) != 1 || got.Subcommands[0].Binary != "cg-1password" {
-		t.Errorf("subcommands roundtrip: %+v", got.Subcommands)
+	if len(got.Commands) != 1 || got.Commands[0] != (CommandContribution{Command: "secret get", Binary: "cg-1password"}) {
+		t.Errorf("commands roundtrip: %+v", got.Commands)
 	}
 }
 

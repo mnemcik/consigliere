@@ -77,11 +77,17 @@ func Execute() error {
 		autoupdate.RunWorker(Version)
 		return nil
 	}
-	// External-subcommand dispatch (git's `git foo` → `git-foo` pattern): if the
-	// first arg isn't a built-in cg command but an installed extension or $PATH
-	// provides cg-<verb>, exec it. Built-ins always take precedence.
-	if path, rest, ok := externalDispatch(os.Args[1:]); ok {
-		return runExternal(path, rest)
+	// Extension commands: if the first arg isn't a built-in cg command but an
+	// installed extension declares a command in its namespace (or, failing
+	// that, $PATH provides cg-<namespace>), run it. Built-ins always take
+	// precedence.
+	run, err := externalDispatch(os.Args[1:])
+	if err != nil {
+		rootCmd.PrintErrln("Error:", err)
+		return err
+	}
+	if run != nil {
+		return run.run()
 	}
 	args, err := argsForStart(os.Args[1:])
 	if err != nil {
@@ -89,5 +95,9 @@ func Execute() error {
 		return err
 	}
 	rootCmd.SetArgs(args)
-	return rootCmd.Execute()
+	err = rootCmd.Execute()
+	if hint := unknownCommandHint(err); hint != "" {
+		rootCmd.PrintErrln(hint)
+	}
+	return err
 }

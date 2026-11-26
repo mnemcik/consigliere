@@ -106,7 +106,7 @@ func TestResumeSkipsUnreadableOtherWorktree(t *testing.T) {
 func TestGateListsPausedProjects(t *testing.T) {
 	mainWS, linkedWS := pausedWorktreeRepo(t, "")
 	text, emit := Gate(context.Background(), mainWS,
-		GateInput{Prompt: "carry on", SessionID: "s", CWD: mainWS, WorkspaceRoot: mainWS}, "", 0)
+		&GateInput{Prompt: "carry on", SessionID: "s", CWD: mainWS, WorkspaceRoot: mainWS}, "", 0)
 	if !emit || !strings.Contains(text, "Paused projects") || !strings.Contains(text, "p: "+ResumeFile(linkedWS, "p")) {
 		t.Errorf("gate text lacks the paused project:\n%s", text)
 	}
@@ -114,7 +114,7 @@ func TestGateListsPausedProjects(t *testing.T) {
 		t.Errorf("notice must sit inside the hook block:\n%s", text)
 	}
 	text, _ = Gate(context.Background(), mainWS,
-		GateInput{Prompt: "carry on", SessionID: "s", CWD: mainWS}, "", 0)
+		&GateInput{Prompt: "carry on", SessionID: "s", CWD: mainWS}, "", 0)
 	if strings.Contains(text, "Paused projects") {
 		t.Error("no WorkspaceRoot: the gate must not list paused projects")
 	}

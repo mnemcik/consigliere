@@ -134,6 +134,11 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	warnings, err := checkCommands(root, cfg.Extensions, map[string][]extension.CommandContribution{m.Name: m.Contributes.Commands}, false)
+	if err != nil {
+		return err
+	}
+	printCommandWarnings(cmd.ErrOrStderr(), warnings)
 	prev, prevCertain := "", false
 	if old, ok := findExtension(cfg, m.Name); ok {
 		prev, prevCertain = previousSource(old), extension.ValidCommit(old.Commit)
@@ -353,22 +358,73 @@ func printGitHookWarnings(w io.Writer, msgs []string) {
 // restored at exactly that commit, so every machine applies the same content.
 // An entry without one predates the store: when its legacy clone is missing it
 // is installed from the default branch and its commit is recorded. Present
-// sources are left as they are. It returns the entries, with any newly
-// recorded commits, and short descriptions for the init summary.
-func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspace.ExtensionRef) ([]workspace.ExtensionRef, []string, error) {
+// sources are left as they are. Every source is fetched, and the commands of
+// the whole set checked, before the first is applied, so a conflict applies
+// none. It returns the entries, with any newly recorded commits, and short
+// descriptions for the init summary.
+func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspace.ExtensionRef) (_ []workspace.ExtensionRef, _ []string, retErr error) {
 	out := append([]workspace.ExtensionRef(nil), exts...)
-	var done []string
+	// The trees this run fetches for pinned entries were missing, which is
+	// how cg init tells "not restored yet". If it stops with an error, every
+	// one of them that some entry didn't get applied from is removed again,
+	// so the next cg init restores that entry instead of taking its source
+	// for present. (A tree two entries share stays only when both applied.)
+	var fetched []string
+	fetchedSet := map[string]bool{} // fetched, as a set
+	// Sources missing when the run starts. A tree this run creates for an
+	// earlier entry (two extensions of one repo at one commit share it,
+	// also when the earlier one is legacy) still counts as missing; a tree
+	// that was already there is never removed.
+	missing := map[string]bool{}
+	for i := range out {
+		if t := extension.SourceRoot(&out[i]); t != "" {
+			if _, err := os.Stat(t); err != nil {
+				missing[t] = true
+			}
+		}
+	}
+	users := map[string]int{}   // entries to restore from each fetched tree
+	applied := map[string]int{} // of them, the ones already applied
+	defer func() {
+		if retErr == nil {
+			return
+		}
+		for _, t := range fetched {
+			if applied[t] == users[t] {
+				continue
+			}
+			if rerr := os.RemoveAll(t); rerr != nil {
+				// Left in place, the tree would look restored to the next
+				// cg init.
+				retErr = fmt.Errorf("%w; also couldn't remove %s (%w): remove it before the next cg init", retErr, t, rerr)
+			}
+		}
+	}()
+	type restore struct {
+		e           *workspace.ExtensionRef
+		m           *extension.Manifest
+		manifestDir string
+		prev        string // base for a ledger that predates content ids
+		commit      string
+		tree        string // the store tree the entry is restored from
+	}
+	var (
+		todo    []restore
+		present []workspace.ExtensionRef
+	)
+	incoming := map[string][]extension.CommandContribution{}
 	for i := range out {
 		e := &out[i]
-		if _, err := os.Stat(extension.SourceRoot(e)); err == nil {
+		if !missing[extension.SourceRoot(e)] {
+			present = append(present, *e)
 			continue // source present; nothing to restore
 		}
 		if !gitx.Available() {
-			return out, done, cgerr.New(cgerr.ExitUsage, "git is required to re-install extension %q", e.Name)
+			return out, nil, cgerr.New(cgerr.ExitUsage, "git is required to re-install extension %q", e.Name)
 		}
 		path, perr := extension.CleanSubdir(e.Path)
 		if perr != nil {
-			return out, done, cgerr.New(cgerr.ExitUsage, "extension %q: %v", e.Name, perr)
+			return out, nil, cgerr.New(cgerr.ExitUsage, "extension %q: %v", e.Name, perr)
 		}
 		var (
 			m      *extension.Manifest
@@ -379,14 +435,18 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		if extension.ValidCommit(commit) {
 			tree, err = extension.FetchTree(cmd.Context(), e.Repo, commit)
 			if err != nil {
-				return out, done, cgerr.New(cgerr.ExitUsage, "restoring %q at %s: %v", e.Name, commit[:12], err)
+				return out, nil, cgerr.New(cgerr.ExitUsage, "restoring %q at %s: %v", e.Name, commit[:12], err)
+			}
+			if t := extension.SourceRoot(e); !fetchedSet[t] {
+				fetchedSet[t] = true
+				fetched = append(fetched, t)
 			}
 			m, err = loadValidManifest(filepath.Join(tree, path), e.Name)
 		} else {
 			m, tree, commit, err = installFrom(cmd.Context(), e.Repo, "", path)
 		}
 		if err != nil {
-			return out, done, err
+			return out, nil, err
 		}
 		// A pinned commit is exactly what was installed, so its tree is the
 		// base for a ledger that predates content ids. A legacy entry's base
@@ -395,11 +455,25 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		if extension.ValidCommit(e.Commit) {
 			prev = filepath.Join(tree, path)
 		}
-		if _, err := reapply(root, filepath.Join(tree, path), m, prev, prev != "", false); err != nil {
+		todo = append(todo, restore{e: e, m: m, manifestDir: filepath.Join(tree, path), prev: prev, commit: commit, tree: tree})
+		users[tree]++
+		incoming[m.Name] = m.Contributes.Commands
+	}
+	// S9: every command cg init restores counts as owned, so a built-in
+	// namespace only warns.
+	warnings, err := checkCommands(root, present, incoming, true)
+	if err != nil {
+		return out, nil, err
+	}
+	printCommandWarnings(commandErr(cmd), warnings)
+	var done []string
+	for _, r := range todo {
+		if _, err := reapply(root, r.manifestDir, r.m, r.prev, r.prev != "", false); err != nil {
 			return out, done, err
 		}
-		e.Commit = commit
-		done = append(done, fmt.Sprintf("extension %q v%s (re-installed at %s)", m.Name, m.Version, commit[:12]))
+		applied[r.tree]++
+		r.e.Commit = r.commit
+		done = append(done, fmt.Sprintf("extension %q v%s (re-installed at %s)", r.m.Name, r.m.Version, r.commit[:12]))
 	}
 	return out, done, nil
 }
@@ -522,32 +596,89 @@ func runExtList(cmd *cobra.Command, _ []string) error {
 		exts = cfg.Extensions
 	}
 	out := cmd.OutOrStdout()
-
-	if extListJSON {
-		if exts == nil {
-			exts = []workspace.ExtensionRef{}
+	listed := make([]listedExtension, len(exts))
+	for i := range exts {
+		listed[i] = listedExtension{ExtensionRef: exts[i], Commands: []listedCommand{}}
+		led, lerr := extension.LoadLedger(root, exts[i].Name)
+		if lerr != nil {
+			listed[i].LedgerError = lerr.Error()
+			continue
 		}
-		enc := json.NewEncoder(out)
-		enc.SetIndent("", "  ")
-		return enc.Encode(exts)
+		if led == nil {
+			continue
+		}
+		dir, m, verr := verifiedManifest(&exts[i])
+		for _, c := range led.Commands {
+			lc := listedCommand{Command: c.Command, Binary: c.Binary, ShadowedByBuiltin: builtinFor(c.Command)}
+			switch {
+			case verr != nil:
+				lc.Unverified = verr.Error()
+			case !verifiedCommand(dir, m, c):
+				lc.Unverified = "its manifest doesn't declare it with that binary, or the binary is missing"
+			}
+			listed[i].Commands = append(listed[i].Commands, lc)
+		}
 	}
 
-	if len(exts) == 0 {
+	if extListJSON {
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		return enc.Encode(listed)
+	}
+
+	if len(listed) == 0 {
 		_, _ = fmt.Fprintln(out, "no extensions installed")
 		return nil
 	}
 	_, _ = fmt.Fprintf(out, "%-20s %-10s %-12s %s\n", "NAME", "VERSION", "SOURCE", "REPO")
-	for i := range exts {
-		e := &exts[i]
+	for i := range listed {
+		l := &listed[i]
 		// For registry installs show the alias the extension came from (its
 		// fully-qualified prefix); direct installs show "direct".
-		src := e.Source
-		if e.Registry != "" {
-			src = "registry:" + e.Registry
+		src := l.Source
+		if l.Registry != "" {
+			src = "registry:" + l.Registry
 		}
-		_, _ = fmt.Fprintf(out, "%-20s %-10s %-12s %s\n", e.Name, e.Version, src, e.Repo)
+		_, _ = fmt.Fprintf(out, "%-20s %-10s %-12s %s\n", l.Name, l.Version, src, l.Repo)
+		if len(l.Commands) > 0 {
+			cs := make([]string, len(l.Commands))
+			for i, c := range l.Commands {
+				cs[i] = c.Command
+				if c.ShadowedByBuiltin != "" {
+					cs[i] += fmt.Sprintf(" (can't run: the built-in \"cg %s\" wins)", c.ShadowedByBuiltin)
+				}
+				if c.Unverified != "" {
+					cs[i] += fmt.Sprintf(" (not verified: %s; it won't run)", c.Unverified)
+				}
+			}
+			_, _ = fmt.Fprintf(out, "  commands: %s\n", strings.Join(cs, ", "))
+		}
+		if l.LedgerError != "" {
+			_, _ = fmt.Fprintf(out, "  commands: (can't read %s: %s)\n", extension.LedgerPath(root, l.Name), l.LedgerError)
+		}
 	}
 	return nil
+}
+
+// listedExtension is one row of `cg extension list`: the .cg.json entry and
+// the commands its ledger records.
+type listedExtension struct {
+	workspace.ExtensionRef
+	Commands []listedCommand `json:"commands"`
+	// LedgerError says the extension's ledger can't be read, so its
+	// commands are unknown (and dispatch stops on it).
+	LedgerError string `json:"ledgerError,omitempty"`
+}
+
+// listedCommand is a command an installed extension declares. ShadowedByBuiltin
+// names the built-in cg command its namespace resolves to, so the extension's
+// command can't run: the built-in wins.
+type listedCommand struct {
+	Command           string `json:"command"`
+	Binary            string `json:"binary"`
+	ShadowedByBuiltin string `json:"shadowedByBuiltin,omitempty"`
+	// Unverified says why dispatch refuses the entry (S17), "" when it runs.
+	Unverified string `json:"unverified,omitempty"`
 }
 
 // looksLikeRepoSource reports whether s is a git URL or local path rather than a
@@ -630,7 +761,7 @@ func printInstallSummary(cmd *cobra.Command, m *extension.Manifest, dest, source
 	add(len(c.Notes), "note(s)")
 	add(len(c.Hooks), "hook(s)")
 	add(len(c.GitHooks), "git hook script(s)")
-	add(len(c.Subcommands), "subcommand(s)")
+	add(len(c.Commands), "command(s)")
 	add(len(c.Launcher), "launcher")
 	add(len(c.Templates), "template(s)")
 	if len(declared) == 0 {
@@ -726,36 +857,62 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	out := cmd.OutOrStdout()
+	// Resolve every target and check the commands of the whole new set before
+	// applying any, so a conflict leaves every installed version in place.
+	updates := make([]pendingUpdate, len(targets))
+	incoming := map[string][]extension.CommandContribution{}
 	for i := range targets {
-		old := targets[i].Version
-		newVer, commit, err := updateOne(cmd.Context(), out, root, &targets[i])
+		u, err := resolveUpdate(cmd.Context(), &targets[i])
 		if err != nil {
 			return err
 		}
-		ref := targets[i]
-		ref.Version = newVer
-		ref.Commit = commit
+		updates[i] = u
+		incoming[u.ref.Name] = u.m.Contributes.Commands
+	}
+	warnings, err := checkCommands(root, cfg.Extensions, incoming, false)
+	if err != nil {
+		return err
+	}
+	printCommandWarnings(cmd.ErrOrStderr(), warnings)
+
+	out := cmd.OutOrStdout()
+	for i := range updates {
+		u := &updates[i]
+		old := u.ref.Version
+		if err := applyUpdate(out, root, u); err != nil {
+			return err
+		}
+		ref := u.ref
+		ref.Version = u.m.Version
+		ref.Commit = u.commit
 		cfg.UpsertExtension(&ref)
 		// Persist after each target so a later target's failure can't leave an
 		// already-applied update unrecorded in .cg.json.
 		if err := cfg.Save(root); err != nil {
 			return fmt.Errorf("updating %s: %w", workspace.ConfigFile, err)
 		}
-		if old == newVer {
-			_, _ = fmt.Fprintf(out, "%s: already at v%s\n", ref.Name, newVer)
+		if old == ref.Version {
+			_, _ = fmt.Fprintf(out, "%s: already at v%s\n", ref.Name, ref.Version)
 		} else {
-			_, _ = fmt.Fprintf(out, "%s: v%s → v%s\n", ref.Name, old, newVer)
+			_, _ = fmt.Fprintf(out, "%s: v%s → v%s\n", ref.Name, old, ref.Version)
 		}
 	}
 	printGitHookWarnings(cmd.ErrOrStderr(), ensureGitHooks(cmd.Context(), root))
 	return nil
 }
 
-// updateOne fetches the extension's repo into the store, picks the commit to
-// move to, re-validates the manifest at <tree>/<path>, re-applies its
-// contributions (new manifest first, then reverse what it dropped), and
-// returns the new version (the manifest's own version field) and commit.
+// pendingUpdate is an extension's next version, fetched and validated but not
+// yet applied.
+type pendingUpdate struct {
+	ref         workspace.ExtensionRef // the entry as recorded before the update
+	m           *extension.Manifest
+	manifestDir string
+	commit      string
+}
+
+// resolveUpdate fetches the extension's repo into the store, picks the commit
+// to move to, and re-validates the manifest at <tree>/<path>. It doesn't touch
+// the workspace; applyUpdate does.
 //
 // Commit selection depends on layout. A root extension (path == "") is its own
 // repo, so its git tags are its releases: take the latest tag, or the default
@@ -763,38 +920,44 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 // siblings, so whole-repo tags don't map to a single extension's version:
 // take the default branch and let the manifest's version field be the source
 // of truth.
-func updateOne(ctx context.Context, out io.Writer, root string, ref *workspace.ExtensionRef) (version, commit string, err error) {
+func resolveUpdate(ctx context.Context, ref *workspace.ExtensionRef) (pendingUpdate, error) {
 	path, err := extension.CleanSubdir(ref.Path)
 	if err != nil {
-		return "", "", cgerr.New(cgerr.ExitUsage, "extension %q: %v", ref.Name, err)
+		return pendingUpdate{}, cgerr.New(cgerr.ExitUsage, "extension %q: %v", ref.Name, err)
 	}
 	mirror, err := extension.EnsureMirror(ctx, ref.Repo, true)
 	if err != nil {
-		return "", "", cgerr.New(cgerr.ExitUsage, "fetching %q: %v", ref.Name, err)
+		return pendingUpdate{}, cgerr.New(cgerr.ExitUsage, "fetching %q: %v", ref.Name, err)
 	}
 	target := ""
 	if tag := gitx.LatestTag(ctx, mirror); path == "" && tag != "" {
 		target = tag
 	}
-	commit, err = extension.ResolveCommit(ctx, mirror, target)
+	commit, err := extension.ResolveCommit(ctx, mirror, target)
 	if err != nil {
-		return "", "", cgerr.New(cgerr.ExitUsage, "resolving %q: %v", ref.Name, err)
+		return pendingUpdate{}, cgerr.New(cgerr.ExitUsage, "resolving %q: %v", ref.Name, err)
 	}
 	tree, err := extension.EnsureTree(ctx, ref.Repo, mirror, commit)
 	if err != nil {
-		return "", "", fmt.Errorf("exporting %q at %s: %w", ref.Name, commit[:12], err)
+		return pendingUpdate{}, fmt.Errorf("exporting %q at %s: %w", ref.Name, commit[:12], err)
 	}
 	manifestDir := filepath.Join(tree, path)
 	m, err := loadValidManifest(manifestDir, ref.Name)
 	if err != nil {
-		return "", "", err
+		return pendingUpdate{}, err
 	}
-	res, err := reapply(root, manifestDir, m, previousSource(ref), extension.ValidCommit(ref.Commit), false)
+	return pendingUpdate{ref: *ref, m: m, manifestDir: manifestDir, commit: commit}, nil
+}
+
+// applyUpdate re-applies the new version's contributions (new manifest first,
+// then reverse what it dropped).
+func applyUpdate(out io.Writer, root string, u *pendingUpdate) error {
+	res, err := reapply(root, u.manifestDir, u.m, previousSource(&u.ref), extension.ValidCommit(u.ref.Commit), false)
 	if err != nil {
-		return "", "", err
+		return err
 	}
-	printFileOutcomes(out, ref.Name, res)
-	return m.Version, commit, nil
+	printFileOutcomes(out, u.ref.Name, res)
+	return nil
 }
 
 // findExtension returns the workspace's recorded entry for name.

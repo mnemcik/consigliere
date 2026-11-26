@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -12,6 +14,7 @@ import (
 
 	"github.com/mnemcik/consigliere/internal/cgerr"
 	"github.com/mnemcik/consigliere/internal/gitx"
+	"github.com/mnemcik/consigliere/internal/session"
 	"github.com/mnemcik/consigliere/internal/workspace"
 	"github.com/mnemcik/consigliere/internal/worktree"
 )
@@ -124,9 +127,32 @@ func runWorktreeCreate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	recordSessionWorktree(ctx, cmd.ErrOrStderr(), path)
 
 	_, _ = fmt.Fprintln(cmd.OutOrStdout(), path)
 	return nil
+}
+
+// recordSessionWorktree records path as the worktree of the session named by
+// CG_SESSION_ID or CLAUDE_CODE_SESSION_ID, in its state file under the session
+// repo's badge root, so the session's extension commands write there from
+// other directories (S35). It records only one of the session repo's linked
+// worktrees: one created in another repo (an external repo the session works
+// in) leaves the record unchanged. Without a valid session ID, or without a
+// session repo root, nothing is recorded. A failure is a warning: the worktree
+// itself is ready.
+func recordSessionWorktree(ctx context.Context, errw io.Writer, path string) {
+	id := resolveSessionID("")
+	if !session.ValidSessionID(id) {
+		return
+	}
+	badge, ok := sessionRepoBadge(ctx, path)
+	if !ok {
+		return
+	}
+	if err := session.SetWorktree(badge, id, recordPath(path)); err != nil {
+		_, _ = fmt.Fprintf(errw, "warning: could not record the worktree for session %s: %v\n", id, err)
+	}
 }
 
 // landStrategy picks the strategy for `cg worktree land`: the --strategy flag
@@ -278,14 +304,74 @@ func runWorktreeRemove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	return worktree.Remove(ctx, args[0], worktree.Options{
+	opts := worktree.Options{
 		Root:          root,
 		Prefix:        w.Root,
 		BranchPrefix:  w.BranchPrefix,
 		LandingBranch: w.LandingBranch,
 		Local:         w.LandingStrategy == workspace.StrategyLocal,
 		Force:         worktreeRemoveForce,
-	}, cmd.ErrOrStderr())
+	}
+	path := recordPath(opts.Path(args[0]))
+	if err := worktree.Remove(ctx, args[0], opts, cmd.ErrOrStderr()); err != nil {
+		return err
+	}
+	// Every session's record of this worktree goes with it (S37), so a
+	// worktree created at the same path later isn't taken for theirs.
+	// Records live under the badge root of the repo the worktree belongs to
+	// (root, from worktreeRootConfig: other sessions of that workspace) and of
+	// the session repo running this; a worktree of another repo matches none
+	// of the latter's records.
+	for _, badge := range uniqueRoots(root, sessionBadgeRoot(ctx)) {
+		if err := session.ClearWorktreeAll(badge, path); err != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not clear worktree records of %s: %v\n", path, err)
+		}
+	}
+	return nil
+}
+
+// uniqueRoots returns the non-empty roots, each directory once.
+func uniqueRoots(roots ...string) []string {
+	var out []string
+	for _, r := range roots {
+		if r == "" || slices.ContainsFunc(out, func(o string) bool { return samePath(o, r) }) {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// sessionBadgeRoot is the badge root of the session repo root (the main
+// checkout of its repository), or "" when there is no session repo root.
+func sessionBadgeRoot(ctx context.Context) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	badge, _, _ := sessionRoots(ctx, cwd)
+	return badge
+}
+
+// sessionRepoBadge returns the session repo's badge root when path is one of
+// the session repo's linked worktrees (S35).
+func sessionRepoBadge(ctx context.Context, path string) (string, bool) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", false
+	}
+	badge, srr, _ := sessionRoots(ctx, cwd)
+	if srr == "" || badge == "" || !sessionRepoWorktree(ctx, srr, path) {
+		return "", false
+	}
+	return badge, true
+}
+
+// recordPath is the spelling of a worktree path cg records: its parent
+// directory with symlinks resolved, then its own name. The parent exists
+// even after the worktree itself is gone, so create and remove agree.
+func recordPath(p string) string {
+	return filepath.Join(canonicalPath(filepath.Dir(p)), filepath.Base(p))
 }
 
 var worktreeListCmd = &cobra.Command{
