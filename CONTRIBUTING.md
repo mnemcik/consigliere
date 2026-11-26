@@ -147,13 +147,17 @@ If an issue is missing details, such as steps to reproduce, the cg version or th
 
 A change goes through three roles. Whoever fills a role, a person or an agent, has its responsibilities:
 
-- **Author:** picks up the issue, writes the analysis and the change, opens the pull request and carries it to merge.
+- **Author:** picks up the issue, writes the analysis and the change, opens the pull request and carries it until it is ready to merge.
 - **Maintainer:** triages issues, agrees the approach, reviews the impact, sets `impact-review`, approves and merges. Someone acting with the maintainer's authorisation, such as an intake agent, can set `impact-review`, approve and merge for the maintainer.
 - **Reviewer:** reviews the code; a person or an automated reviewer.
 
+The author never sets `impact-review`, approves or merges its own PR, even under the maintainer's account. Acting with the maintainer's authorisation means an explicit grant from the maintainer, for one PR or a standing one the maintainer set up.
+
 The same rules apply to outside contributors. How an agent acts in a role is defined in the [`pr-workflow` plugin](https://github.com/mnemcik/claude-marketplace) (skills `pr-author` and `pr-intake`), and later in the cg `pr-workflow` extension ([cg-extensions#45](https://github.com/mnemcik/cg-extensions/issues/45)).
 
-- Open a pull request against `main`.
+For every pull request:
+
+- Open it against `main`.
 - PR titles follow [Conventional Commits](https://www.conventionalcommits.org/) (see below) — they become the squash-merge commit subject.
 - Run `make check` locally before pushing.
 - CI (lint, including a Windows build, tests on Linux, macOS and Windows, cross-platform build) must be green.
@@ -163,7 +167,7 @@ The same rules apply to outside contributors. How an agent acts in a role is def
 ### From issue to pull request
 
 1. **Issue first.** Every change starts as an issue. The maintainer triages it ([Triage](#triage)) and estimates its size: **S** (a few lines), **M** (one milestone) or **L** (several milestones, or new behaviour across components). The analysis confirms or changes the size; the agreement fixes it.
-2. **The item's folder.** The author writes the item's documents in `specs/<tracker>-<id>-<slug>/` (for an issue in this repository, `specs/gh-<number>-<slug>/`): `analysis.md`; `spec.md`, with the acceptance criteria; and `plan.md` and `tasks.md` as the size needs. The folder is committed with the change and kept as history.
+2. **The item's folder.** The author writes the item's documents in `specs/<tracker>-<id>-<slug>/` (for an issue in this repository, `specs/gh-<number>-<slug>/`): `analysis.md`; `spec.md`, with the acceptance criteria; and `plan.md` and `tasks.md` as the size needs. The author pushes the folder on the item's branch, named like the folder, before asking for the agreement. The folder is committed with the change and kept as history.
 3. **The agreement.** The maintainer agrees the approach in one comment on the issue, naming the folder, the commit of the agreed `spec.md` and `plan.md`, and their committed content hashes (`git rev-parse <commit>:<path>`; "plan: none" for an S item). The maintainer posts it, or someone posts it for the maintainer and the comment says so. A later change to the spec or the plan needs a new agreement comment. Nothing is implemented before the agreement.
 4. **The pull request** is opened when the work is done, never as a draft. Its description says `Fixes #NNN`.
 
