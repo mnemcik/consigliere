@@ -55,6 +55,7 @@ for records.
 }
 
 func runActive(cmd *cobra.Command, _ []string) error {
+	clearSessionGitEnv(cmd)
 	cmd.SilenceUsage = true
 	if activeSlugs && activeJSON {
 		return fmt.Errorf("--slugs and --json are mutually exclusive")

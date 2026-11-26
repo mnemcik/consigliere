@@ -2,6 +2,7 @@ package gitx
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -137,5 +138,27 @@ func TestRunCleanUsesGitsList(t *testing.T) {
 	}
 	if _, err := Run(ctx, repo, "rev-parse", "--verify", "HEAD^{commit}"); err == nil {
 		t.Error("Run ignored GIT_OBJECT_DIRECTORY; the test proves nothing")
+	}
+}
+
+// ClearRepoEnv removes git's repository variables from the process
+// environment, and without any GIT_* variable it starts no git.
+func TestClearRepoEnv(t *testing.T) {
+	if !Available() {
+		t.Skip("git not available on PATH")
+	}
+	t.Setenv("GIT_DIR", t.TempDir())
+	t.Setenv("GIT_WORK_TREE", t.TempDir())
+	if err := ClearRepoEnv(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []string{"GIT_DIR", "GIT_WORK_TREE"} {
+		if _, set := os.LookupEnv(v); set {
+			t.Errorf("%s still set", v)
+		}
+	}
+	t.Setenv("PATH", t.TempDir()) // no git: the fast path mustn't need it
+	if err := ClearRepoEnv(context.Background()); err != nil {
+		t.Errorf("without GIT_* variables: %v", err)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -63,6 +64,7 @@ hook's output to the user.`,
 }
 
 func runSessionEnd(cmd *cobra.Command, _ []string) error {
+	clearSessionGitEnv(cmd)
 	cmd.SilenceUsage = true
 
 	var in sessionEndInput
@@ -107,6 +109,7 @@ var sessionMarkDirtyCmd = &cobra.Command{
 }
 
 func runSessionMarkDirty(cmd *cobra.Command, _ []string) error {
+	clearSessionGitEnv(cmd)
 	cmd.SilenceUsage = true
 
 	var in markDirtyInput
@@ -156,6 +159,7 @@ var sessionPullLatestCmd = &cobra.Command{
 }
 
 func runSessionPullLatest(cmd *cobra.Command, _ []string) error {
+	clearSessionGitEnv(cmd)
 	cmd.SilenceUsage = true
 
 	// Drain stdin so the hook driver never gets a SIGPIPE; we need no field.
@@ -341,6 +345,7 @@ cg session set-context clears the marker.
 }
 
 func runSessionPause(cmd *cobra.Command, _ []string) error {
+	clearSessionGitEnv(cmd)
 	cmd.SilenceUsage = true
 	id := resolveSessionID(pauseSessionID)
 	if !session.ValidSessionID(id) {
@@ -401,6 +406,7 @@ no badge file succeeds.
 }
 
 func runSessionRelease(cmd *cobra.Command, _ []string) error {
+	clearSessionGitEnv(cmd)
 	cmd.SilenceUsage = true
 	id := resolveSessionID(releaseSessionID)
 	if !session.ValidSessionID(id) {
@@ -422,6 +428,7 @@ func runSessionRelease(cmd *cobra.Command, _ []string) error {
 }
 
 func runSessionSetContext(cmd *cobra.Command, _ []string) error {
+	clearSessionGitEnv(cmd)
 	// Flag values are validated below; a bad value is not a usage error.
 	cmd.SilenceUsage = true
 	id := resolveSessionID(setContextSessionID)
@@ -592,6 +599,7 @@ var sessionStartGateCmd = &cobra.Command{
 }
 
 func runSessionStartGate(cmd *cobra.Command, _ []string) error {
+	clearSessionGitEnv(cmd)
 	cmd.SilenceUsage = true
 
 	var in startGateInput
@@ -661,6 +669,7 @@ var sessionStatuslineCmd = &cobra.Command{
 }
 
 func runSessionStatusline(cmd *cobra.Command, _ []string) error {
+	clearSessionGitEnv(cmd)
 	cmd.SilenceUsage = true
 
 	raw, _ := io.ReadAll(cmd.InOrStdin())
@@ -744,10 +753,21 @@ func sessionStateRoots(ctx context.Context, cwd string) []stateRoot {
 // the file, so the hook goes on with the other root.
 func stateFileExists(errw io.Writer, hook, root, id string) bool {
 	_, err := os.Lstat(session.ContextFile(root, id))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) { // ENOTDIR: a file where a directory on the path should be
 		_, _ = fmt.Fprintf(errw, "cg session %s: %v\n", hook, err)
 	}
 	return err == nil
+}
+
+// clearSessionGitEnv removes git's repository variables from the process
+// environment for a session command. Its git calls run in the session's
+// roots (the session commands root, the session repo root, their worktrees),
+// which an inherited GIT_DIR naming another repository would redirect. A
+// failure to clear is reported and the command goes on.
+func clearSessionGitEnv(cmd *cobra.Command) {
+	if err := gitx.ClearRepoEnv(cmd.Context()); err != nil {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "cg session: can't clear git's repository variables: %v\n", err)
+	}
 }
 
 // holdsClaim reports whether the state file for id under the badge root

@@ -455,3 +455,32 @@ func TestSessionHooksReportUninspectableStateFile(t *testing.T) {
 		t.Errorf("W's claim: %+v, want marked dirty (and kept by end)", c)
 	}
 }
+
+// An inherited GIT_DIR naming X doesn't redirect the git calls end makes for
+// W: W's paused claim, whose resume.md is in one of W's linked worktrees, is
+// kept.
+func TestSessionEndIgnoresGitDirForPausedClaim(t *testing.T) {
+	requireGit(t)
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	w := committedWorkspace(t, cfgHome)
+	wl := addBranchWorktree(t, w, "paused")
+	x := committedWorkspace(t, cfgHome)
+	t.Setenv(envWorkspace, w)
+	resume := filepath.Join(wl, "projects", "wproj", "resume.md")
+	if err := os.MkdirAll(filepath.Dir(resume), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(resume, []byte("pick up here\n"), 0o644); err != nil { //nolint:gosec // a test fixture
+		t.Fatal(err)
+	}
+	writeStateFile(t, w, "s18", `{"area":"a","project":"wproj","paused":true,"pausedAt":"2026-11-26T10:00:00Z"}`)
+	t.Setenv("GIT_DIR", filepath.Join(x, ".git"))
+	in := `{"session_id":"s18","cwd":"` + filepath.ToSlash(x) + `"}`
+	if out, err := runSession(t, x, in, "end"); err != nil {
+		t.Fatalf("end: %v\n%s", err, out)
+	}
+	if c, _ := session.ReadContext(w, "s18"); c == nil {
+		t.Error("W's paused claim released although its resume.md is in W's worktree")
+	}
+}

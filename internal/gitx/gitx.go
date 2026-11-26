@@ -125,12 +125,47 @@ var repoEnvSeed = []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_CO
 // variables. The list comes from git itself, so a newer git's additions are
 // covered; failing to get it is an error rather than a partial clean.
 func cleanEnv(ctx context.Context) ([]string, error) {
-	seeded := withoutVars(os.Environ(), repoEnvSeed)
+	env := os.Environ()
+	if !hasGitVar(env) {
+		return env, nil // nothing to remove: skip asking git
+	}
+	seeded := withoutVars(env, repoEnvSeed)
 	vars, err := localEnvVars(ctx, seeded)
 	if err != nil {
 		return nil, err
 	}
 	return withoutVars(seeded, vars), nil
+}
+
+// hasGitVar reports whether env sets any GIT_* variable (all of git's
+// repository variables are named so).
+func hasGitVar(env []string) bool {
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "GIT_") {
+			return true
+		}
+	}
+	return false
+}
+
+// ClearRepoEnv removes git's repository variables (GIT_DIR, GIT_WORK_TREE,
+// …, as cleanEnv lists them) from this process's environment, so every git
+// call after it, in any directory, sees that directory's own repository. It
+// does nothing, and starts no git, when no GIT_* variable is set.
+func ClearRepoEnv(ctx context.Context) error {
+	if !hasGitVar(os.Environ()) {
+		return nil
+	}
+	vars, err := localEnvVars(ctx, withoutVars(os.Environ(), repoEnvSeed))
+	if err != nil {
+		return err
+	}
+	for _, v := range append(append([]string(nil), repoEnvSeed...), vars...) {
+		if err := os.Unsetenv(v); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // localEnvVarsCache holds git's list once it has been read successfully: it
