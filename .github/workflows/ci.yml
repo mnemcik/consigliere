@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Lets an author run the full matrix on a branch before its PR exists:
+  # gh workflow run ci.yml --ref <branch>
+  workflow_dispatch:
 
 permissions:
   contents: read
