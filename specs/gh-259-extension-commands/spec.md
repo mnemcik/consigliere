@@ -212,6 +212,10 @@ commands root for the session commands (S38c).
   paused projects and badge root, not W's (the session commands root). Dispatch is unchanged: from X, W is still
   consulted first (S22). The worktree record is unchanged too: a worktree created while in X belongs to W's record
   only if it is one of W's linked worktrees (S35), and writers served from W get W's record (S38), never X's.
+  The session hooks S38c doesn't list reach the session's state file under both the session commands root and the
+  session repo root: `cg session mark-dirty` marks it in each that has one, `cg session end` releases each clean
+  claim there, and the status line shows the session commands root's claim, else the session repo root's;
+  `release` stays on the session commands root alone.
 
 ### Unchanged
 
