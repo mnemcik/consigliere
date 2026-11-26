@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -160,5 +161,19 @@ func TestClearRepoEnv(t *testing.T) {
 	t.Setenv("PATH", t.TempDir()) // no git: the fast path mustn't need it
 	if err := ClearRepoEnv(context.Background()); err != nil {
 		t.Errorf("without GIT_* variables: %v", err)
+	}
+}
+
+// hasGitVar matches names as the platform does: case-insensitively on
+// Windows.
+func TestHasGitVar(t *testing.T) {
+	if hasGitVar([]string{"PATH=/bin", "HOME=/h"}) {
+		t.Error("no GIT_* variable reported as one")
+	}
+	if !hasGitVar([]string{"GIT_DIR=/x"}) {
+		t.Error("GIT_DIR not seen")
+	}
+	if got, want := hasGitVar([]string{"Git_Dir=/x"}), runtime.GOOS == "windows"; got != want {
+		t.Errorf("Git_Dir seen = %v, want %v on %s", got, want, runtime.GOOS)
 	}
 }

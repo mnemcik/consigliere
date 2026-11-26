@@ -138,10 +138,11 @@ func cleanEnv(ctx context.Context) ([]string, error) {
 }
 
 // hasGitVar reports whether env sets any GIT_* variable (all of git's
-// repository variables are named so).
+// repository variables are named so). On Windows names are case-insensitive,
+// as withoutVars treats them, so Git_Dir counts too.
 func hasGitVar(env []string) bool {
 	for _, kv := range env {
-		if strings.HasPrefix(kv, "GIT_") {
+		if strings.HasPrefix(kv, "GIT_") || (runtime.GOOS == "windows" && len(kv) >= 4 && strings.EqualFold(kv[:4], "GIT_")) {
 			return true
 		}
 	}
