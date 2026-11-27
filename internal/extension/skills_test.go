@@ -948,16 +948,23 @@ func TestSkillPathTypeChanges(t *testing.T) {
 			}
 			writeTree(t, clone, map[string]string{"skills/s/" + firstKey(c.after): c.after[firstKey(c.after)], "skills/s/zz.md": "z"})
 			// A failure after the new layout is written rolls it back.
+			newLayout := false
 			skillWriteHook = func(dest string) error {
 				if strings.HasSuffix(dest, "zz.md") {
+					got := filepath.Join(root, ".claude", "skills", "s", filepath.FromSlash(firstKey(c.after)))
+					b, err := os.ReadFile(got) //nolint:gosec // test temp dir
+					newLayout = err == nil && string(b) == c.after[firstKey(c.after)]
 					return errors.New("disk full")
 				}
 				return nil
 			}
 			_, _, err := runSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l})
 			skillWriteHook = nil
-			if err == nil {
-				t.Fatal("expected the injected failure")
+			if err == nil || !strings.Contains(err.Error(), "disk full") {
+				t.Fatalf("expected the injected failure, got %v", err)
+			}
+			if !newLayout {
+				t.Fatal("the failure came before the new layout was written")
 			}
 			if after := snapshotTree(t, root); !maps.Equal(before, after) {
 				t.Errorf("not rolled back:\nbefore %v\nafter  %v", before, after)
@@ -1055,5 +1062,114 @@ func TestWithinDirExactSpelling(t *testing.T) {
 	}
 	if withinDir(filepath.Join(base, "Repo"), filepath.Join(base, "Repository")) {
 		t.Error("a sibling with the same prefix counted as inside")
+	}
+}
+
+// A template destination spelled ./… that becomes a skill file with the same
+// bytes: adopted, not reversed as an orphan.
+func TestSkillTemplateDotSlashMove(t *testing.T) {
+	clone := skillClone(t, "s", nil)
+	writeTree(t, clone, map[string]string{"tpl/SKILL.md": skillMD("s")})
+	asTemplate := &Manifest{Manifest: 2, Name: "demo", Version: "1", Description: "d", Contributes: Contributions{Templates: []CopyContribution{
+		{Src: "tpl/SKILL.md", Dest: "./.claude/skills/s/SKILL.md"}}}}
+	root := t.TempDir()
+	l, _ := mustRunSkills(t, root, clone, asTemplate, skillRunOpts{})
+	l2, _ := mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l})
+	if orphan := OrphanLedger(l, l2); orphan != nil && len(orphan.Templates) > 0 {
+		t.Errorf("the adopted file is an orphan: %v", orphan.Templates)
+	}
+}
+
+// A managed file replaced by a symbolic link (even to a clean tracked file)
+// refuses the update; the link stays.
+func TestSkillManagedFileReplacedByLink(t *testing.T) {
+	clone := skillClone(t, "s", map[string]string{"a.md": "a1"})
+	root := gitWorkspace(t)
+	l, _ := mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{})
+	writeTree(t, root, map[string]string{"clean.md": "x"})
+	commitAll(t, root)
+	a := filepath.Join(root, ".claude", "skills", "s", "a.md")
+	if err := os.Remove(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("..", "..", "..", "clean.md"), a); err != nil {
+		t.Skipf("no symlinks: %v", err)
+	}
+	writeTree(t, clone, map[string]string{"skills/s/a.md": "a2"})
+	_, _, err := runSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l})
+	wantErr(t, err, ".claude/skills/s/a.md is a symbolic link")
+	if !isLink(a) {
+		t.Error("the link was replaced")
+	}
+	// Dropped by the new version: refused too, not deleted.
+	if err := os.Remove(filepath.Join(clone, "skills", "s", "a.md")); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = runSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l})
+	wantErr(t, err, "symbolic link")
+	if !isLink(a) {
+		t.Error("the link was deleted")
+	}
+}
+
+// A file the plan judged committed that changes before its replace: the run
+// stops and rolls back instead of overwriting the new change.
+func TestSkillReplaceRechecks(t *testing.T) {
+	clone := skillClone(t, "s", map[string]string{"a.md": "a1", "b.md": "b1"})
+	root := gitWorkspace(t)
+	l, _ := mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{})
+	writeTree(t, root, map[string]string{".claude/skills/s/a.md": "mine-a", ".claude/skills/s/b.md": "mine-b"})
+	commitAll(t, root)
+	b := filepath.Join(root, ".claude", "skills", "s", "b.md")
+	skillWriteHook = func(dest string) error {
+		if strings.HasSuffix(dest, "a.md") {
+			return os.WriteFile(b, []byte("saved meanwhile"), 0o644) //nolint:gosec // test temp dir
+		}
+		return nil
+	}
+	t.Cleanup(func() { skillWriteHook = nil })
+	_, _, err := runSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l})
+	wantErr(t, err, "b.md changed while cg was running")
+	if readText(t, b) != "saved meanwhile" {
+		t.Error("the change made during the run was overwritten")
+	}
+}
+
+// A source file whose name can't be recorded as given is refused.
+func TestReadSkillRefusesUnrecordableName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows can't create a name ending in a space")
+	}
+	clone := skillClone(t, "s", map[string]string{"notes.md ": "x"})
+	_, _, err := runSkills(t, t.TempDir(), clone, oneSkill("s"), skillRunOpts{})
+	wantErr(t, err, "can't be recorded")
+}
+
+// The skill name comes from the cleaned src ("skills/demo/." is demo).
+func TestSkillNameCleanSrc(t *testing.T) {
+	for src, want := range map[string]string{"skills/demo/.": "demo", "skills/demo/": "demo", "skills/demo": "demo", `skills\demo`: "demo", "./demo": "demo"} {
+		if got := SkillName(SkillContribution{Src: src}); got != want {
+			t.Errorf("SkillName(%q) = %q, want %q", src, got, want)
+		}
+	}
+	if err := skillManifest(SkillContribution{Src: "skills/demo/."}).Validate(); err != nil {
+		t.Errorf("skills/demo/. refused: %v", err)
+	}
+}
+
+// A directory standing at a captured path is never removed by a rollback.
+func TestSnapshotKeepsExistingDirectory(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "settings.json")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	snap := newSnapshot()
+	if err := snap.capture(dir); err != nil {
+		t.Fatal(err)
+	}
+	snap.restore()
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		t.Error("the existing directory was removed")
 	}
 }

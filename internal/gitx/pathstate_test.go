@@ -30,8 +30,13 @@ func wantStates(t *testing.T, ctx context.Context, dir string, want map[string]P
 		t.Fatal(err)
 	}
 	for p, w := range want {
-		if got[p] != w {
-			t.Errorf("%s: got state %d, want %d", p, got[p], w)
+		g, ok := got[p]
+		if !ok {
+			t.Errorf("%s: no state returned", p)
+			continue
+		}
+		if g != w {
+			t.Errorf("%s: got state %d, want %d", p, g, w)
 		}
 	}
 }

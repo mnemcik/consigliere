@@ -605,7 +605,14 @@ func TestListJSONWithoutSkills(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(out, `"skills"`) {
+	var entries []map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(out), &entries); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, out)
+	}
+	if len(entries) != 1 || string(entries[0]["name"]) != `"demo"` {
+		t.Fatalf("entries: %s", out)
+	}
+	if _, has := entries[0]["skills"]; has {
 		t.Errorf("skills key for an extension without skills:\n%s", out)
 	}
 }
@@ -640,5 +647,65 @@ func TestSkillMoveOverlappingCycles(t *testing.T) {
 	wantConflict(t, err, out, "one or more cycles", "\n  aa, bb, cc\n", "repeat until no cycle is left")
 	if strings.Contains(err.Error(), "one extension each") {
 		t.Errorf("the advice promises one removal is enough: %v", err)
+	}
+}
+
+// A skill gained by one extension where another's old template sits, and the
+// other's new version drops that template: refused as a move.
+func TestSkillMoveFromTemplate(t *testing.T) {
+	requireGit(t)
+	cfgHome, ws := t.TempDir(), newWorkspace(t)
+	tpl := `{"manifest": 2, "name": "alpha", "version": "1", "description": "d",
+	  "contributes": {"templates": [{"src": "skills/digest/SKILL.md", "dest": ".claude/skills/digest/SKILL.md"}]}}`
+	alpha := makeExtRepo(t, tpl)
+	writeReferencedStubs(t, alpha, skillsManifest("alpha", "1", "digest")) // a valid SKILL.md as the template's source
+	if _, err := gitx.Run(context.Background(), alpha, "add", "-A"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitx.Run(context.Background(), alpha, "commit", "--quiet", "-m", "stub"); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := runExtCfg(t, cfgHome, ws, "install", alpha); err != nil {
+		t.Fatalf("install alpha: %v\n%s", err, out)
+	}
+	beta := installRepo(t, cfgHome, ws, skillsManifest("beta", "1"))
+	releaseExtRepo(t, alpha, `{"manifest": 2, "name": "alpha", "version": "2", "description": "d", "contributes": {}}`)
+	releaseExtRepo(t, beta, skillsManifest("beta", "2", "digest"))
+	before := snapshotDir(t, ws)
+	out, err := runExtCfg(t, cfgHome, ws, "update")
+	wantConflict(t, err, out, `skill "digest" moves from extension "alpha" to extension "beta"`, "cg extension update alpha\n  cg extension update beta")
+	assertUnchanged(t, ws, before)
+}
+
+// Linked target directories: a skill one extension installs for claude and
+// another for agents is the same directory, so it conflicts.
+func TestSkillConflictThroughLinkedTargets(t *testing.T) {
+	requireGit(t)
+	cfgHome, ws := t.TempDir(), newWorkspace(t)
+	if err := os.MkdirAll(filepath.Join(ws, ".agents", "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(ws, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("..", ".agents", "skills"), filepath.Join(ws, ".claude", "skills")); err != nil {
+		t.Skipf("no symlinks: %v", err)
+	}
+	setTargets(t, ws, "claude")
+	installRepo(t, cfgHome, ws, skillsManifest("alpha", "1", "digest"))
+	setTargets(t, ws, "agents")
+	md := filepath.Join(ws, ".agents", "skills", "digest", "SKILL.md")
+	before := readRepoFile(t, ws, ".agents/skills/digest/SKILL.md")
+	out, err := runExtCfg(t, cfgHome, ws, "install", makeExtRepo(t, skillsManifest("beta", "1", "digest")))
+	wantConflict(t, err, out, `skill "digest" of extension "beta" is already shipped by extension "alpha"`, "same as target")
+	// (snapshotDir can't walk the linked directory.) Nothing was applied:
+	if led, _ := extension.LoadLedger(ws, "beta"); led != nil {
+		t.Error("beta has a ledger")
+	}
+	if cfg, _ := workspace.Detect(ws); findRef(cfg.Extensions, "beta") != nil {
+		t.Error("beta was recorded in .cg.json")
+	}
+	if b, _ := os.ReadFile(md); string(b) != before { //nolint:gosec // test temp dir
+		t.Error("alpha's skill file changed")
 	}
 }
