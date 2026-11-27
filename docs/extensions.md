@@ -124,9 +124,10 @@ Lives at the root of every extension repo. The schema is intentionally minimal;
 the `"manifest"` integer versions the schema itself for forward compatibility.
 It forbids cross-extension dependencies (declare none).
 
-Version 2 adds [`commands`](#extension-commands). A manifest that declares
-commands must say `"manifest": 2`; a version 1 manifest without commands still
-installs, so an extension that contributes no command needn't change. cg 1.x
+Version 2 adds [`commands`](#extension-commands) and the `matcher` and `if`
+filters on [`hooks`](#contribution-points) entries. A manifest that declares
+commands or sets a filter must say `"manifest": 2`; a version 1 manifest without
+them still installs, so an extension that uses neither needn't change. cg 1.x
 refuses a version 2 manifest with "unsupported manifest schema version". From
 cg 2.0, that refusal also says the manifest needs a newer cg and how to update
 it.
@@ -172,7 +173,7 @@ an extension that still uses it contributes no command until it moves to
 
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
-| `manifest` | int | yes | Manifest **schema** version: `2`, or `1` for a manifest without `commands`. `cg` refuses a manifest whose `manifest` it doesn't understand. |
+| `manifest` | int | yes | Manifest **schema** version: `2`, or `1` for a manifest without `commands` and without hook filters. `cg` refuses a manifest whose `manifest` it doesn't understand. |
 | `name` | string | yes | Short, lowercase, `[a-z0-9-]+`. The install name, the `.cg.json` key, the legacy clone directory and the `ext:<name>:section` namespace. Must be unique in the registry. It needn't match a command or a binary. |
 | `version` | string | yes | Extension semver. Recorded in `.cg.json`; compared on `cg extension update`. |
 | `description` | string | yes | One line, shown in `cg extension list` and the registry. |
@@ -235,13 +236,34 @@ release: `v2.1.0-4-gabc1234` meets `2.1.0`. The registry schema accepts
    [Files you change](#files-you-change). The notes are also listed in the
    workspace notes index: see [Notes index rows](#notes-index-rows).
 
-3. **`hooks`** — `[{ event, wrapper, command }]`. Installs the bash wrapper at
-   `wrapper` into `.claude/hooks/`, registers it for `event` in
-   `.claude/settings.json` (additive merge — never clobbers existing hooks or
-   user padding), and the wrapper `exec`s `command` (typically one of the
-   extension's binaries).
+3. **`hooks`** — `[{ event, wrapper, command, matcher?, if? }]`. Installs the
+   bash wrapper at `wrapper` into `.claude/hooks/<name>-<base>`, registers it
+   for `event` in `.claude/settings.json` (additive merge — never clobbers
+   existing hooks or user padding), and the wrapper `exec`s `command` (typically
+   one of the extension's binaries).
    Mirrors framework hook style (DEC-004): user-readable, degrades to a no-op
    when the binary is absent.
+   - **Filters (manifest v2).** `matcher` and `if` are optional strings that cg
+     writes as Claude Code's own fields: `matcher` on the matcher group, `if`
+     on the handler. Their meaning is Claude Code's; see the
+     [hooks reference](https://code.claude.com/docs/en/hooks). An empty string
+     is the same as leaving the field out. cg doesn't check `matcher`. It
+     refuses `if` on an event where Claude Code doesn't evaluate it; the events
+     where it does are `PreToolUse`, `PostToolUse`, `PostToolUseFailure`,
+     `PermissionRequest`, `PermissionDenied` and `PreSkillShellCommand`,
+     compared exactly. cg writes no other handler field (`onFailure`,
+     `timeout`, …): other keys in an entry are ignored.
+   - **One wrapper, several entries.** `if` holds one permission rule, so a
+     hook that needs two rules lists two entries with the same `wrapper`. The
+     wrapper is installed once, and each entry gets its own matcher group, in
+     the manifest's order. cg refuses two entries with the same event,
+     matcher, `if` and wrapper (an omitted matcher and `"*"` count as the
+     same), and two different wrappers with the same file name, since both
+     would install to the same path.
+   - **Install and update** remove every earlier registration of the
+     extension's wrappers, in any event, before registering the current
+     entries, so a changed or dropped filter takes effect. A hand edit to one
+     of these groups in `settings.json` is replaced.
 
 4. **`commands`** — `[{ command, binary }]` (manifest v2). Each entry declares
    that `cg <command> …` runs the extension's `bin/<binary>`. A command is one

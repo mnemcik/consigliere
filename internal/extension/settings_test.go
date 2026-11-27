@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -288,4 +289,139 @@ func readSettings(t *testing.T, root string) map[string]any {
 		t.Fatal(err)
 	}
 	return m
+}
+
+// registerHook registers one unfiltered hook, as cg did for every entry before
+// matcher and if.
+func registerHook(root, event, commandRel string) error {
+	return registerHooks(root, []hookReg{{Event: event, CommandRel: commandRel}})
+}
+
+// countSaves replaces saveSettings with a counting wrapper for the test.
+func countSaves(t *testing.T) *int {
+	t.Helper()
+	n := 0
+	orig := saveSettings
+	saveSettings = func(path string, settings map[string]any) error {
+		n++
+		return orig(path, settings)
+	}
+	t.Cleanup(func() { saveSettings = orig })
+	return &n
+}
+
+// groups returns the matcher groups registered for event, decoded.
+func groups(t *testing.T, root, event string) []map[string]any {
+	t.Helper()
+	hooks, _ := readSettings(t, root)["hooks"].(map[string]any)
+	arr, _ := hooks[event].([]any)
+	out := make([]map[string]any, 0, len(arr))
+	for _, g := range arr {
+		out = append(out, g.(map[string]any))
+	}
+	return out
+}
+
+func group(matcher, command, ifRule string) map[string]any {
+	h := map[string]any{"type": "command", "command": command}
+	if ifRule != "" {
+		h["if"] = ifRule
+	}
+	return map[string]any{"matcher": matcher, "hooks": []any{h}}
+}
+
+// H9, H13, H15: one group per registration, in order, after the existing
+// groups; the if key only when set; other entries kept; one save.
+func TestRegisterHooksWritesFilters(t *testing.T) {
+	root := t.TempDir()
+	seed := `{
+	  "statusLine": {"type":"command","command":"$CLAUDE_PROJECT_DIR/.claude/statusline.sh"},
+	  "permissions": {"allow": ["Bash(ls)"]},
+	  "hooks": {
+	    "PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"$CLAUDE_PROJECT_DIR/.claude/hooks/framework.sh"}]}],
+	    "Stop":[{"matcher":"","hooks":[{"type":"command","command":"/usr/local/bin/user-hook"}]}]
+	  }
+	}`
+	if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(settingsPath(root), []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	saves := countSaves(t)
+	err := registerHooks(root, []hookReg{
+		{Event: "PreToolUse", Matcher: "Bash", If: "Bash(gh pr *)", CommandRel: ".claude/hooks/x-guard.sh"},
+		{Event: "PreToolUse", Matcher: "Bash", If: "Bash(gh api *)", CommandRel: ".claude/hooks/x-guard.sh"},
+		{Event: "SessionStart", Matcher: "compact|clear", CommandRel: ".claude/hooks/x-remind.sh"},
+		{Event: "SessionStart", CommandRel: ".claude/hooks/x-guard.sh"},
+	})
+	if err != nil {
+		t.Fatalf("registerHooks: %v", err)
+	}
+	if *saves != 1 {
+		t.Errorf("settings.json saved %d times, want 1", *saves)
+	}
+	guard, remind := "$CLAUDE_PROJECT_DIR/.claude/hooks/x-guard.sh", "$CLAUDE_PROJECT_DIR/.claude/hooks/x-remind.sh"
+	wantPre := []map[string]any{
+		group("Bash", "$CLAUDE_PROJECT_DIR/.claude/hooks/framework.sh", ""),
+		group("Bash", guard, "Bash(gh pr *)"),
+		group("Bash", guard, "Bash(gh api *)"),
+	}
+	if got := groups(t, root, "PreToolUse"); !reflect.DeepEqual(got, wantPre) {
+		t.Errorf("PreToolUse = %v\nwant %v", got, wantPre)
+	}
+	wantStart := []map[string]any{group("compact|clear", remind, ""), group("", guard, "")}
+	if got := groups(t, root, "SessionStart"); !reflect.DeepEqual(got, wantStart) {
+		t.Errorf("SessionStart = %v\nwant %v", got, wantStart)
+	}
+	settings := readSettings(t, root)
+	if got := groups(t, root, "Stop"); !reflect.DeepEqual(got, []map[string]any{group("", "/usr/local/bin/user-hook", "")}) {
+		t.Errorf("user hook changed: %v", got)
+	}
+	if _, ok := settings["statusLine"]; !ok {
+		t.Error("statusLine must be kept")
+	}
+	if _, ok := settings["permissions"]; !ok {
+		t.Error("permissions must be kept")
+	}
+}
+
+// H12 at the settings level: re-registering replaces every earlier group of
+// the same commands, in any event, so a changed or dropped filter is gone.
+func TestRegisterHooksReplacesEarlierRegistrations(t *testing.T) {
+	root := t.TempDir()
+	if err := registerHooks(root, []hookReg{
+		{Event: "PreToolUse", Matcher: "Bash", If: "Bash(gh pr *)", CommandRel: ".claude/hooks/x-guard.sh"},
+		{Event: "PreToolUse", Matcher: "Bash", If: "Bash(gh api *)", CommandRel: ".claude/hooks/x-guard.sh"},
+		{Event: "Stop", CommandRel: ".claude/hooks/x-guard.sh"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := registerHooks(root, []hookReg{
+		{Event: "PreToolUse", Matcher: "Bash", If: "Bash(gh issue *)", CommandRel: ".claude/hooks/x-guard.sh"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	guard := "$CLAUDE_PROJECT_DIR/.claude/hooks/x-guard.sh"
+	if got := groups(t, root, "PreToolUse"); !reflect.DeepEqual(got, []map[string]any{group("Bash", guard, "Bash(gh issue *)")}) {
+		t.Errorf("PreToolUse = %v", got)
+	}
+	if got := groups(t, root, "Stop"); len(got) != 0 {
+		t.Errorf("Stop should be gone, got %v", got)
+	}
+}
+
+// H10: an unfiltered registration is written key for key as before.
+func TestRegisterHooksUnfilteredShape(t *testing.T) {
+	root := t.TempDir()
+	if err := registerHook(root, "SessionStart", ".claude/hooks/x-gate.sh"); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"hooks": map[string]any{"SessionStart": []any{map[string]any{
+		"matcher": "",
+		"hooks":   []any{map[string]any{"type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/x-gate.sh"}},
+	}}}}
+	if got := readSettings(t, root); !reflect.DeepEqual(got, want) {
+		t.Errorf("settings = %v\nwant %v", got, want)
+	}
 }

@@ -314,3 +314,131 @@ func TestParseManifestLauncher(t *testing.T) {
 		t.Errorf("ledger launcher = %+v, want %+v", led.Launcher, want)
 	}
 }
+
+// hookManifest is a minimal manifest of schema version v with the given hook
+// entries.
+func hookManifest(v int, hooks ...HookContribution) Manifest {
+	return Manifest{Manifest: v, Name: "a", Version: "1.0.0", Description: "d",
+		Contributes: Contributions{Hooks: hooks}}
+}
+
+// H1, H4, H5, Q4: filters in v2, any matcher on any event, one wrapper in
+// several entries; an empty matcher needs no v2.
+func TestValidateHookFilters(t *testing.T) {
+	for name, m := range map[string]Manifest{
+		"v2 matcher, if, both, neither": hookManifest(2,
+			HookContribution{Event: "PreToolUse", Matcher: "Bash", Wrapper: "hooks/a.sh", Command: "c"},
+			HookContribution{Event: "PostToolUse", If: "Bash(gh *)", Wrapper: "hooks/b.sh", Command: "c"},
+			HookContribution{Event: "PreToolUse", Matcher: "Bash", If: "Bash(gh pr *)", Wrapper: "hooks/c.sh", Command: "c"},
+			HookContribution{Event: "SessionStart", Wrapper: "hooks/d.sh", Command: "c"}),
+		"matcher on any event, unchecked": hookManifest(2,
+			HookContribution{Event: "UserPromptSubmit", Matcher: "((not a regex", Wrapper: "hooks/a.sh", Command: "c"},
+			HookContribution{Event: "NoSuchEvent", Matcher: "x", Wrapper: "hooks/b.sh", Command: "c"}),
+		"if on every if event": hookManifest(2, ifOnEveryEvent()...),
+		"one wrapper, several entries": hookManifest(2,
+			HookContribution{Event: "PreToolUse", Matcher: "Bash", If: "Bash(gh pr *)", Wrapper: "hooks/a.sh", Command: "c"},
+			HookContribution{Event: "PreToolUse", Matcher: "Bash", If: "Bash(gh api *)", Wrapper: "./hooks/a.sh", Command: "c"},
+			HookContribution{Event: "PreToolUse", Matcher: "Edit", Wrapper: "hooks/a.sh", Command: "c"},
+			HookContribution{Event: "SessionStart", Wrapper: "hooks/a.sh", Command: "c"}),
+		"v1 without filters":    hookManifest(1, HookContribution{Event: "SessionStart", Wrapper: "hooks/a.sh", Command: "c"}),
+		"v1 with empty matcher": hookManifest(1, HookContribution{Event: "SessionStart", Matcher: "", If: "", Wrapper: "hooks/a.sh", Command: "c"}),
+		"v1, one wrapper in two events": hookManifest(1,
+			HookContribution{Event: "SessionStart", Wrapper: "hooks/a.sh", Command: "c"},
+			HookContribution{Event: "Stop", Wrapper: "hooks/a.sh", Command: "c"}),
+	} {
+		if err := m.Validate(); err != nil {
+			t.Errorf("%s: Validate: %v", name, err)
+		}
+	}
+}
+
+func ifOnEveryEvent() []HookContribution {
+	hs := make([]HookContribution, 0, len(IfEvents))
+	for i, e := range IfEvents {
+		hs = append(hs, HookContribution{Event: e, If: "Bash(x *)", Wrapper: "hooks/" + string(rune('a'+i)) + ".sh", Command: "c"})
+	}
+	return hs
+}
+
+// H1: the filter fields are read from the manifest JSON.
+func TestParseHookFilters(t *testing.T) {
+	m, err := ParseManifest([]byte(`{"manifest": 2, "name": "a", "version": "1", "description": "d",
+	  "contributes": {"hooks": [{"event": "PreToolUse", "matcher": "Bash", "if": "Bash(gh pr *)",
+	    "wrapper": "hooks/a.sh", "command": "c", "onFailure": "block", "timeout": 5}]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := HookContribution{Event: "PreToolUse", Matcher: "Bash", If: "Bash(gh pr *)", Wrapper: "hooks/a.sh", Command: "c"}
+	if len(m.Contributes.Hooks) != 1 || m.Contributes.Hooks[0] != want {
+		t.Errorf("hooks = %+v, want [%+v]", m.Contributes.Hooks, want)
+	}
+	// H8: unknown keys are ignored.
+	if err := m.Validate(); err != nil {
+		t.Errorf("Validate: %v", err)
+	}
+}
+
+// H2, H3, H6, H7: the refusals, each naming the entries.
+func TestValidateHookFiltersRejects(t *testing.T) {
+	cases := []struct {
+		name string
+		m    Manifest
+		want string
+	}{
+		{"H2 matcher in v1", hookManifest(1,
+			HookContribution{Event: "SessionStart", Wrapper: "hooks/a.sh", Command: "c"},
+			HookContribution{Event: "PreToolUse", Matcher: "Bash", Wrapper: "hooks/b.sh", Command: "c"}),
+			`hooks[1]: matcher and if need "manifest": 2 (got 1)`},
+		{"H2 if in v1", hookManifest(1,
+			HookContribution{Event: "PreToolUse", If: "Bash(x)", Wrapper: "hooks/a.sh", Command: "c"}),
+			`hooks[0]: matcher and if need "manifest": 2 (got 1)`},
+		{"H3 if on a non-if event", hookManifest(2,
+			HookContribution{Event: "SessionStart", If: "Bash(x)", Wrapper: "hooks/a.sh", Command: "c"}),
+			`hooks[0]: if is not evaluated on event "SessionStart" (it is on PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest, PermissionDenied, PreSkillShellCommand)`},
+		{"H3 case matters", hookManifest(2,
+			HookContribution{Event: "pretooluse", If: "Bash(x)", Wrapper: "hooks/a.sh", Command: "c"}),
+			`hooks[0]: if is not evaluated on event "pretooluse"`},
+		{"H6 exact duplicate", hookManifest(2,
+			HookContribution{Event: "PreToolUse", Matcher: "Bash", If: "Bash(x)", Wrapper: "hooks/a.sh", Command: "c"},
+			HookContribution{Event: "Stop", Wrapper: "hooks/a.sh", Command: "c"},
+			HookContribution{Event: "PreToolUse", Matcher: "Bash", If: "Bash(x)", Wrapper: "./hooks/a.sh", Command: "c"}),
+			`hooks[2]: same event, matcher, if and wrapper as hooks[0]`},
+		{"H6 duplicate differing only in command", hookManifest(2,
+			HookContribution{Event: "PreToolUse", Matcher: "Bash", Wrapper: "hooks/a.sh", Command: "c1"},
+			HookContribution{Event: "PreToolUse", Matcher: "Bash", Wrapper: "hooks/a.sh", Command: "c2"}),
+			`hooks[1]: same event, matcher, if and wrapper as hooks[0]`},
+		{"H6 Q5 star and unset matcher", hookManifest(2,
+			HookContribution{Event: "PreToolUse", Wrapper: "hooks/a.sh", Command: "c"},
+			HookContribution{Event: "PreToolUse", Matcher: "*", Wrapper: "hooks/a.sh", Command: "c"}),
+			`hooks[1]: same event, matcher, if and wrapper as hooks[0]`},
+		{"H6 in v1", hookManifest(1,
+			HookContribution{Event: "SessionStart", Wrapper: "hooks/a.sh", Command: "c"},
+			HookContribution{Event: "SessionStart", Wrapper: "hooks/a.sh", Command: "c"}),
+			`hooks[1]: same event, matcher, if and wrapper as hooks[0]`},
+		{"H7 same install path", hookManifest(2,
+			HookContribution{Event: "PreToolUse", Wrapper: "hooks/a.sh", Command: "c"},
+			HookContribution{Event: "Stop", Wrapper: "hooks/b.sh", Command: "c"},
+			HookContribution{Event: "PostToolUse", Wrapper: "other/a.sh", Command: "c"}),
+			`hooks[2]: wrapper "other/a.sh" installs to .claude/hooks/a-a.sh, as hooks[0] does; give it a different file name`},
+		{"H7 in v1", hookManifest(1,
+			HookContribution{Event: "SessionStart", Wrapper: "hooks/a.sh", Command: "c"},
+			HookContribution{Event: "Stop", Wrapper: "other/a.sh", Command: "c"}),
+			`hooks[1]: wrapper "other/a.sh" installs to .claude/hooks/a-a.sh, as hooks[0] does`},
+	}
+	for _, tc := range cases {
+		err := tc.m.Validate()
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want it to contain %q", tc.name, err, tc.want)
+		}
+	}
+}
+
+// Q5: matchers other than "*" compare as written.
+func TestValidateHookMatchersCompareAsWritten(t *testing.T) {
+	m := hookManifest(2,
+		HookContribution{Event: "PreToolUse", Matcher: "Bash|Edit", Wrapper: "hooks/a.sh", Command: "c"},
+		HookContribution{Event: "PreToolUse", Matcher: "Edit|Bash", Wrapper: "hooks/a.sh", Command: "c"})
+	if err := m.Validate(); err != nil {
+		t.Errorf("Validate: %v", err)
+	}
+}

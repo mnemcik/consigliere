@@ -23,9 +23,9 @@ import (
 
 const (
 	// SchemaVersion is the newest cg-extension.json manifest schema version
-	// this build understands. Version 2 adds commands; a version 1 manifest
-	// without commands is still accepted, so extensions that contribute no
-	// command don't have to change.
+	// this build understands. Version 2 adds commands and the matcher and if
+	// filters on hook entries; a version 1 manifest that uses none of them is
+	// still accepted, so extensions that don't need them don't have to change.
 	SchemaVersion = 2
 
 	// ManifestFile is the manifest filename at an extension repo root.
@@ -95,10 +95,48 @@ type CopyContribution struct {
 
 // HookContribution installs the bash Wrapper into .claude/hooks/, registers it
 // for Event in .claude/settings.json, and the wrapper execs Command.
+//
+// Matcher and If (manifest v2) are Claude Code's filter fields, written as they
+// are: Matcher on the matcher group, If on the handler. cg checks only that If
+// is used on an event Claude Code evaluates it on (IfEvents). An empty string
+// means the field is unset.
 type HookContribution struct {
 	Event   string `json:"event"`
 	Wrapper string `json:"wrapper"`
 	Command string `json:"command"`
+	Matcher string `json:"matcher,omitempty"`
+	If      string `json:"if,omitempty"`
+}
+
+// IfEvents are the hook events on which Claude Code evaluates a handler's if
+// field (https://code.claude.com/docs/en/hooks). A hook entry may set if only on
+// one of them, compared exactly. When Claude Code adds one, add it here.
+var IfEvents = []string{
+	"PreToolUse",
+	"PostToolUse",
+	"PostToolUseFailure",
+	"PermissionRequest",
+	"PermissionDenied",
+	"PreSkillShellCommand",
+}
+
+func isIfEvent(event string) bool {
+	for _, e := range IfEvents {
+		if e == event {
+			return true
+		}
+	}
+	return false
+}
+
+// hookKey identifies a hook entry for the duplicate check: Claude Code treats
+// an unset matcher and "*" alike (match all), so they count as one; any other
+// matcher compares as written.
+func hookKey(event, matcher, ifRule, wrapper string) [4]string {
+	if matcher == "*" {
+		matcher = ""
+	}
+	return [4]string{event, matcher, ifRule, wrapper}
 }
 
 // GitHookContribution installs the executable Script (extension-relative) as
@@ -203,13 +241,8 @@ func (m *Manifest) Validate() error {
 			return fmt.Errorf("notes[%d]: index must be a single line", i)
 		}
 	}
-	for i, h := range m.Contributes.Hooks {
-		if h.Event == "" || h.Wrapper == "" || h.Command == "" {
-			return fmt.Errorf("hooks[%d]: event, wrapper, and command are required", i)
-		}
-		if err := insideDir("wrapper", h.Wrapper, "extension"); err != nil {
-			return fmt.Errorf("hooks[%d]: %w", i, err)
-		}
+	if err := m.validateHooks(); err != nil {
+		return err
 	}
 	commands := map[string]int{}
 	for i, c := range m.Contributes.Commands {
@@ -264,6 +297,45 @@ func (m *Manifest) Validate() error {
 			return fmt.Errorf("git-hooks[%d]: script %q installs to %s, as git-hooks[%d] does; give it a different file name", i, g.Script, dest, j)
 		}
 		gitHookDests[dest] = i
+	}
+	return nil
+}
+
+// validateHooks checks the hook entries: required fields, the wrapper inside the
+// extension, matcher and if only in manifest v2, if only on an if event, no
+// exact duplicate entry, and no two wrappers installing to one path.
+func (m *Manifest) validateHooks() error {
+	entries := map[[4]string]int{}
+	wrappers := map[string]string{} // cleaned wrapper -> install path
+	dests := map[string]int{}       // install path -> first entry index
+	for i, h := range m.Contributes.Hooks {
+		if h.Event == "" || h.Wrapper == "" || h.Command == "" {
+			return fmt.Errorf("hooks[%d]: event, wrapper, and command are required", i)
+		}
+		if err := insideDir("wrapper", h.Wrapper, "extension"); err != nil {
+			return fmt.Errorf("hooks[%d]: %w", i, err)
+		}
+		if (h.Matcher != "" || h.If != "") && m.Manifest < 2 {
+			return fmt.Errorf(`hooks[%d]: matcher and if need "manifest": 2 (got %d)`, i, m.Manifest)
+		}
+		if h.If != "" && !isIfEvent(h.Event) {
+			return fmt.Errorf("hooks[%d]: if is not evaluated on event %q (it is on %s)", i, h.Event, strings.Join(IfEvents, ", "))
+		}
+		clean, _ := CleanSubdir(h.Wrapper) // valid: insideDir passed
+		wrapper := filepath.ToSlash(clean)
+		key := hookKey(h.Event, h.Matcher, h.If, wrapper)
+		if j, dup := entries[key]; dup {
+			return fmt.Errorf("hooks[%d]: same event, matcher, if and wrapper as hooks[%d]", i, j)
+		}
+		entries[key] = i
+		dest := hookDestRel(m.Name, wrapper)
+		if _, seen := wrappers[wrapper]; !seen {
+			if j, clash := dests[dest]; clash {
+				return fmt.Errorf("hooks[%d]: wrapper %q installs to %s, as hooks[%d] does; give it a different file name", i, h.Wrapper, dest, j)
+			}
+			wrappers[wrapper] = dest
+			dests[dest] = i
+		}
 	}
 	return nil
 }
