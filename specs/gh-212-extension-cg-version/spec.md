@@ -220,3 +220,22 @@ Each has a proposed answer; none is decided here.
 
 - A last 1.x release (decision 7, lapsed), requirements on other tools (decision 8, #308), version ranges or
   upper bounds, and updating cg automatically when a requirement is unmet (analysis, "Deferred").
+
+## Review
+
+**Review 1** — `spec.md` + `plan.md` @ `66f973b` · 2026-11-27
+- Reviewers: doc-reviewer (builder, claims, fidelity to the decided analysis, missed option, hidden constraints,
+  governing rules)
+- Findings: 0 blocker, 3 should-fix, 6 nit → fixed in `54023f3`: Q5's reason for git-hook trust restated as its
+  real trade-off; the registry pattern gets a whitespace guard (Python `re`'s `$` matches before a final newline),
+  surfaced in Q2; S13 states precedence over #259 S17 and its exact text; nits (S14 wrapping, all-digit hash,
+  `list` without a ledger, closed `requires` in Q2, `"cg": null`, a stray reference). Owner's: none beyond Q1–Q8.
+- Verified true: code references and caller lists; version injection (GoReleaser, `make build`); #259 S6–S17, S33;
+  #300 S20; registry schema and CI; every scenario maps to a test.
+- Not verified: Python `jsonschema` behaviour run for real (plan R.4 runs it).
+
+**Review 2** (delta) — @ `54023f3` · 2026-11-27 · **clean**
+- Reviewers: doc-reviewer (delta; regression check of round 1)
+- Findings: 0 blocker, 0 should-fix, 1 nit → fixed after the round: `RunningCore` part form without leading zeros
+  (plan M1). Round-1 findings confirmed fixed.
+- Not verified: unchanged sections (reviewed in round 1).

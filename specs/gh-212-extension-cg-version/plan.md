@@ -23,8 +23,8 @@ Scenarios: S1–S6, S14.
   registry step's samples); message as S2 with `%q`. The schema-version refusal adds the update hint when
   `m.Manifest > SchemaVersion` (S14).
 - New `internal/extension/requires.go`:
-  - `RunningCore(v string) (string, bool)`: an optional leading `v`, then `^(\d+)\.(\d+)\.(\d+)` followed by
-    the end, `-` or `+`; all three parts required, so `dev`, a hash (also an all-digit one such as `1234567-dirty`)
+  - `RunningCore(v string) (string, bool)`: an optional leading `v`, then three parts in the S2 part form
+    `(0|[1-9][0-9]*)`, dot-separated, followed by the end, `-` or `+`; all three parts required, so `dev`, a hash (also an all-digit one such as `1234567-dirty`)
     and empty return false (S6).
   - `UnmetRequirement(m *Manifest, running string) (need, have string, unmet bool)`: `semver.Compare("v"+need,
     "v"+core) > 0`; short forms compare as their `.0` completions (S5).
