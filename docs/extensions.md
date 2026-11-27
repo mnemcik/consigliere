@@ -127,7 +127,9 @@ It forbids cross-extension dependencies (declare none).
 Version 2 adds [`commands`](#extension-commands). A manifest that declares
 commands must say `"manifest": 2`; a version 1 manifest without commands still
 installs, so an extension that contributes no command needn't change. cg 1.x
-refuses a version 2 manifest with "unsupported manifest schema version".
+refuses a version 2 manifest with "unsupported manifest schema version". From
+cg 2.0, that refusal also says the manifest needs a newer cg and how to update
+it.
 Version 1's `subcommands` key is gone: cg ignores it like any unknown key, so
 an extension that still uses it contributes no command until it moves to
 `commands`.
@@ -174,7 +176,48 @@ an extension that still uses it contributes no command until it moves to
 | `name` | string | yes | Short, lowercase, `[a-z0-9-]+`. The install name, the `.cg.json` key, the legacy clone directory and the `ext:<name>:section` namespace. Must be unique in the registry. It needn't match a command or a binary. |
 | `version` | string | yes | Extension semver. Recorded in `.cg.json`; compared on `cg extension update`. |
 | `description` | string | yes | One line, shown in `cg extension list` and the registry. |
+| `requires` | object | no | What the extension needs. Its one key, `cg`, is the lowest cg release the extension works with: `MAJOR`, `MAJOR.MINOR` or `MAJOR.MINOR.PATCH` (`2.1` means `2.1.0`), no leading `v`, no leading zeros, no suffix. Allowed in v1 and v2 manifests. See [Requiring a cg version](#requiring-a-cg-version). |
 | `contributes` | object | yes | The contribution points (all eight keys below). Each is an array; an empty/absent array means "contributes nothing of this type". |
+
+### Requiring a cg version
+
+```json
+"manifest": 2,
+"name": "shopping",
+"requires": { "cg": "2.1.0" },
+```
+
+Set `requires.cg` when the extension depends on something a given cg release
+brought: a cg fix it relies on, or a contribution point an older cg ignores by
+design (such as `gitignore` or `launcher`) that the extension can't work
+without. Leave it out otherwise. A v2 manifest already implies cg 2.0, since
+an older cg refuses it, so `"cg": "2"` adds nothing to one.
+
+`requires.cg` doesn't replace a `manifest` version bump: a new field that an
+older cg must not ignore still needs a new `manifest` version, because a cg
+from before `requires.cg` ignores the key: cg 2.0 and later check it, and an
+older cg installs the extension as if the key weren't there.
+
+When the running cg is older than `requires.cg`:
+
+- `cg extension install`, `cg extension update` and `cg init` (re-installing a
+  missing extension) refuse before applying anything, naming every such
+  extension of the run: `extension "<name>" needs cg <version> or newer; this is
+  cg <running>. Update cg (cg update upgrade, or brew upgrade --cask cg), then
+  run this again.` `--force` doesn't skip the check. `update` checks only the
+  extensions it updates, and `cg init` only those it re-installs.
+- An extension already installed (from a pulled `.cg.json`, or by a newer cg on
+  a shared store) keeps its commands for the [ownership
+  check](#ownership-checked-before-anything-is-applied), but its
+  [commands](#dispatch) stop with the same reason and hint instead of running,
+  `cg start` skips its launcher with a warning, and `cg extension list` shows a
+  `needs cg <version> or newer` line (`requirementUnmet` in `--json`). Its git
+  hooks keep running.
+
+A development build (`dev`, or a version without `MAJOR.MINOR.PATCH`) skips
+the check. A release candidate or a `git describe` build counts as its
+release: `v2.1.0-4-gabc1234` meets `2.1.0`. The registry schema accepts
+`requires.cg` with the same pattern.
 
 ### Contribution points
 
@@ -309,7 +352,7 @@ an extension that still uses it contributes no command until it moves to
 | `cg extension install <repo-url>` | Skip the registry: fetch the URL directly, read its manifest, take `name` from the manifest. Source recorded as `direct`. |
 | `cg extension install … --ref <tag\|branch\|commit>` | Install at that ref. Default: the default branch. |
 | `cg extension install <repo-url> --path <subdir>` | Install a co-located extension whose manifest lives in `<subdir>` of a monorepo. Direct installs only; registry entries carry their own `path`. See [Co-located extensions](#co-located-extensions-monorepo). |
-| `cg extension list [--json]` | List installed extensions for the current workspace: name, version, source, repo, and the commands each declares. A command whose namespace is a built-in is flagged: it can't run, because the built-in wins. |
+| `cg extension list [--json]` | List installed extensions for the current workspace: name, version, source, repo, and the commands each declares. A command whose namespace is a built-in is flagged: it can't run, because the built-in wins. An extension that [needs a newer cg](#requiring-a-cg-version) is flagged too. |
 | `cg extension remove <name> [--purge]` | Reverse every contribution recorded in the workspace ledger (delete the `ext:<name>:section` block, copied notes/templates that are still as cg wrote them, hook wrapper + settings entry, git-hook scripts and any dispatcher left with nothing to run, the notes index block), drop the `.cg.json` entry, delete the ledger. The store's trees are shared, so they stay; `--purge` deletes only a legacy name-keyed clone. |
 | `cg extension update [<name>]` | Move a **single-repo** extension to its latest tag (or its default branch when untagged), record the new commit, then re-apply contributions (replace-in-place). A **co-located** (subdir) extension instead tracks the default branch and versions from its manifest — see [Co-located extensions](#co-located-extensions-monorepo). No `<name>` updates all installed extensions. Copied notes and templates you changed are kept: see [Files you change](#files-you-change). Every target's new version is fetched and its [commands checked](#extension-commands), with the extensions not being updated, before any target is applied. |
 | `cg extension pending [--json]` | List copied files that both you and the extension changed, which update left as yours. |
