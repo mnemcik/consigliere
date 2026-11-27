@@ -89,9 +89,10 @@ func SkillTargetAliases(root, t string) []string {
 
 // SameSkillTargetDir reports whether targets a and b put skills in the same
 // place on disk. A missing directory counts by where it would be created:
-// the real path of its longest existing part, plus the rest (so
-// .claude -> .agents makes .claude/skills and .agents/skills one place even
-// before skills/ exists).
+// its longest existing part, compared with os.SameFile (spelling and case
+// don't matter), and the parts below it, which must be equal. So .claude ->
+// .agents makes .claude/skills and .agents/skills one place even before
+// skills/ exists.
 func SameSkillTargetDir(root, a, b string) bool {
 	if a == b {
 		return true
@@ -101,27 +102,29 @@ func SameSkillTargetDir(root, a, b string) bool {
 	if !ok1 || !ok2 {
 		return false
 	}
-	ra, okA := resolvedLocation(root, da)
-	rb, okB := resolvedLocation(root, db)
-	return okA && okB && ra == rb
+	ia, restA, okA := existingPart(root, da)
+	ib, restB, okB := existingPart(root, db)
+	return okA && okB && slices.Equal(restA, restB) && os.SameFile(ia, ib)
 }
 
-// resolvedLocation is rel's location: the real path of its longest existing
-// part, joined with the parts below it that don't exist yet.
-func resolvedLocation(root, rel string) (string, bool) {
+// existingPart returns what os.Stat reports for rel's longest existing part,
+// and the parts of rel below it.
+func existingPart(root, rel string) (os.FileInfo, []string, bool) {
 	parts := strings.Split(rel, "/")
+	info, err := os.Stat(root)
+	if err != nil {
+		return nil, nil, false
+	}
 	n := 0
 	for n < len(parts) {
-		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(strings.Join(parts[:n+1], "/")))); err != nil {
+		next, err := os.Stat(filepath.Join(root, filepath.FromSlash(strings.Join(parts[:n+1], "/"))))
+		if err != nil {
 			break
 		}
+		info = next
 		n++
 	}
-	existing, err := filepath.EvalSymlinks(filepath.Join(root, filepath.FromSlash(strings.Join(parts[:n], "/"))))
-	if err != nil {
-		return "", false
-	}
-	return filepath.Join(append([]string{existing}, parts[n:]...)...), true
+	return info, parts[n:], true
 }
 
 // SkillDir is the workspace-relative directory of skill name under target.

@@ -1243,3 +1243,38 @@ func TestSkillCaseRenameRecheck(t *testing.T) {
 		t.Error("the change made during the run was overwritten")
 	}
 }
+
+// Target directories compare by location, not by the spelling a link
+// records: .claude -> .AGENTS on a case-insensitive file system is the same
+// place as .agents, with or without skills/ in it.
+func TestSameSkillTargetDirCaseLink(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".AGENTS")); err != nil {
+		t.Skip("case-sensitive file system")
+	}
+	symlink(t, ".AGENTS", filepath.Join(root, ".claude"))
+	if !SameSkillTargetDir(root, "claude", "agents") {
+		t.Error("before skills/ exists: not the same place")
+	}
+	if err := os.Mkdir(filepath.Join(root, ".agents", "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !SameSkillTargetDir(root, "claude", "agents") {
+		t.Error("with skills/: not the same place")
+	}
+}
+
+// Separate target directories are not the same place.
+func TestSameSkillTargetDirSeparate(t *testing.T) {
+	root := t.TempDir()
+	writeTree(t, root, map[string]string{".claude/skills/x": "", ".agents/skills/y": ""})
+	if SameSkillTargetDir(root, "claude", "agents") {
+		t.Error("separate directories are one place")
+	}
+	if SameSkillTargetDir(t.TempDir(), "claude", "agents") {
+		t.Error("two missing directories are one place")
+	}
+}
