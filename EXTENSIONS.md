@@ -84,8 +84,8 @@ Declare only what your extension actually provides. A pure-rules extension might
 only set `claude-md-sections` and `notes`; a tool extension might only set
 `commands`.
 
-A manifest that declares `commands`, or sets `matcher` or `if` on a hook, needs
-`"manifest": 2`. One without them may stay on `"manifest": 1`. The old
+A manifest that declares `commands` or `skills`, or sets `matcher` or `if` on a
+hook, needs `"manifest": 2`. One without them may stay on `"manifest": 1`. The old
 `subcommands` key is no longer read: move to `commands` and `"manifest": 2`
 (cg 2.0 and later).
 

@@ -24,8 +24,8 @@ import (
 
 const (
 	// SchemaVersion is the newest cg-extension.json manifest schema version
-	// this build understands. Version 2 adds commands and the matcher and if
-	// filters on hook entries; a version 1 manifest that uses none of them is
+	// this build understands. Version 2 adds commands, skills and the matcher
+	// and if filters on hook entries; a version 1 manifest that uses none of them is
 	// still accepted, so extensions that don't need them don't have to change.
 	SchemaVersion = 2
 

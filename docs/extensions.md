@@ -124,10 +124,11 @@ Lives at the root of every extension repo. The schema is intentionally minimal;
 the `"manifest"` integer versions the schema itself for forward compatibility.
 It forbids cross-extension dependencies (declare none).
 
-Version 2 adds [`commands`](#extension-commands) and the `matcher` and `if`
-filters on [`hooks`](#contribution-points) entries. A manifest that declares
-commands or sets a filter must say `"manifest": 2`; a version 1 manifest without
-them still installs, so an extension that uses neither needn't change. cg 1.x
+Version 2 adds [`commands`](#extension-commands), [`skills`](#extension-skills)
+and the `matcher` and `if` filters on [`hooks`](#contribution-points) entries. A
+manifest that declares commands or skills, or sets a filter, must say
+`"manifest": 2`; a version 1 manifest without them still installs, so an
+extension that uses none of them needn't change. cg 1.x
 refuses a version 2 manifest with "unsupported manifest schema version".
 Version 1's `subcommands` key is gone: cg ignores it like any unknown key, so
 an extension that still uses it contributes no command until it moves to
