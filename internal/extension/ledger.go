@@ -38,7 +38,12 @@ type Ledger struct {
 	GitHooks []string `json:"gitHooks,omitempty"`
 	// Gitignore are the ids of the ext:<name>:gitignore blocks in .gitignore.
 	Gitignore []string `json:"gitignore,omitempty"`
-	// Files maps each copied note and template destination to the blob id of
+	// Skills are the skills installed, each with its targets and the
+	// workspace-relative path of every managed file. A skill's files are
+	// found from this list, never by path prefix; their bases are in Files.
+	Skills []LedgerSkill `json:"skills,omitempty"`
+	// Files maps each copied note and template destination, and each managed
+	// skill file, to the blob id of
 	// the version cg last wrote: the base for deciding, on update and remove,
 	// whether the user changed it (see ownership.go). A ledger written before
 	// cg recorded it has none.
@@ -46,6 +51,13 @@ type Ledger struct {
 	// Pending lists copied files both the user and the extension changed. cg
 	// left the user's version; `cg extension resolve` settles each one.
 	Pending []PendingFile `json:"pending,omitempty"`
+}
+
+// LedgerSkill records one installed skill.
+type LedgerSkill struct {
+	Name    string   `json:"name"`
+	Targets []string `json:"targets"`
+	Files   []string `json:"files,omitempty"`
 }
 
 // LedgerHook records an installed hook wrapper so remove can delete it and

@@ -1,9 +1,11 @@
 package extension
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/mnemcik/consigliere/internal/githooks"
@@ -52,13 +54,30 @@ type ApplyOptions struct {
 	// NotesIndex is the workspace-relative notes index the notes' rows go in
 	// (see indexrows.go). Empty writes no rows.
 	NotesIndex string
+
+	// SkillTargets are the agent tools skills are installed for (.cg.json
+	// skills.targets); nil means the default.
+	SkillTargets []string
+	// SkillMode says how edited managed skill files are treated.
+	SkillMode SkillMode
+	// Context bounds the git calls that tell committed skill files apart.
+	Context context.Context
+	// ExtensionName and Repo name the extension in skill warnings.
+	ExtensionName string
+	Repo          string
+	// SkillReport, when set, receives what the run tells the user about
+	// skills.
+	SkillReport *SkillReport
 }
 
 func (o *ApplyOptions) base(dest string) fileBase {
 	if o.Old == nil {
 		return fileBase{}
 	}
-	b := fileBase{tracked: containsStr(o.Old.Notes, dest) || containsStr(o.Old.Templates, dest)}
+	// A destination the old version shipped as a skill file is cg's too: its
+	// base is in Files (S41).
+	_, skill := oldSkillFiles(o.Old)[dest]
+	b := fileBase{tracked: containsStr(o.Old.Notes, dest) || containsStr(o.Old.Templates, dest) || skill}
 	if o.Old.Files != nil {
 		b.id = o.Old.Files[dest]
 	} else {
@@ -118,12 +137,24 @@ func planCopies(root, cloneDir string, m *Manifest, opts *ApplyOptions) ([]copyP
 // such a file is left in place, and recorded as pending when the extension
 // changed it too. It refuses, before writing anything, when an unrecorded file
 // that differs from the extension's version is in the way, unless opts.Force.
+//
+//nolint:gocritic // by value on purpose: ApplyWith fills in its own copy
 func ApplyWith(root, cloneDir string, m *Manifest, opts ApplyOptions) (*Ledger, error) {
 	plans, err := planCopies(root, cloneDir, m, &opts)
 	if err != nil {
 		return nil, err
 	}
+	if opts.ExtensionName == "" {
+		opts.ExtensionName = m.Name
+	}
+	skills, err := planSkills(root, cloneDir, m, &opts, opts.SkillReport)
+	if err != nil {
+		return nil, err
+	}
 	snap := newSnapshot()
+	if err := captureSkills(root, skills, snap); err != nil {
+		return nil, err
+	}
 	capture := func(rel string) error {
 		return snap.capture(filepath.Join(root, filepath.FromSlash(rel)))
 	}
@@ -169,6 +200,15 @@ func ApplyWith(root, cloneDir string, m *Manifest, opts ApplyOptions) (*Ledger, 
 	if err := applyAll(root, cloneDir, m, l, plans, opts.NotesIndex); err != nil {
 		snap.restore() // workspace returns to its pre-apply state
 		return nil, err
+	}
+	if len(skills.paths) > 0 || len(skills.skills) > 0 || len(skills.gone) > 0 {
+		if l.Files == nil {
+			l.Files = map[string]string{}
+		}
+		if err := applySkills(root, skills, l, snap, opts.SkillReport); err != nil {
+			snap.restore()
+			return nil, err
+		}
 	}
 	return l, nil
 }
@@ -334,14 +374,16 @@ func OrphanLedger(old, next *Ledger) *Ledger {
 			orphan.ClaudeMDSections = append(orphan.ClaudeMDSections, id)
 		}
 	}
-	// A destination that moved between notes and templates is still shipped.
+	// A destination that moved between notes, templates and skills is still
+	// shipped (S40). Skill files themselves are deleted by the skill plan.
+	nextSkills := oldSkillFiles(next)
 	for _, p := range old.Notes {
-		if !containsStr(next.Notes, p) && !containsStr(next.Templates, p) {
+		if _, skill := nextSkills[p]; !containsStr(next.Notes, p) && !containsStr(next.Templates, p) && !skill {
 			orphan.Notes = append(orphan.Notes, p)
 		}
 	}
 	for _, p := range old.Templates {
-		if !containsStr(next.Notes, p) && !containsStr(next.Templates, p) {
+		if _, skill := nextSkills[p]; !containsStr(next.Notes, p) && !containsStr(next.Templates, p) && !skill {
 			orphan.Templates = append(orphan.Templates, p)
 		}
 	}
@@ -512,6 +554,8 @@ func removeIfPresent(path string) error {
 type snapshot struct {
 	files []fileSnapshot
 	seen  map[string]bool
+	// dirs are directories the run created, removed again on restore.
+	dirs []string
 }
 
 type fileSnapshot struct {
@@ -547,6 +591,22 @@ func (s *snapshot) capture(path string) error {
 	return nil
 }
 
+// captureDirs records the directories between root and path's parent that
+// don't exist yet, so restore can remove them again.
+func (s *snapshot) captureDirs(root, path string) error {
+	var missing []string
+	for dir := filepath.Dir(path); dir != root && len(dir) > len(root); dir = filepath.Dir(dir) {
+		if _, err := os.Lstat(dir); err == nil {
+			break
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		missing = append(missing, dir)
+	}
+	s.dirs = append(s.dirs, missing...) // deepest first within each call
+	return nil
+}
+
 // restore returns every captured file to its recorded state. It is best-effort:
 // it is only ever called on an already-failing path, so a restore error can't
 // improve the outcome and would only mask the original failure.
@@ -558,5 +618,12 @@ func (s *snapshot) restore() {
 		} else {
 			_ = os.Remove(f.path)
 		}
+	}
+	// Created directories, deepest first; one still holding a file restored
+	// above (or anything else) stays.
+	dirs := append([]string(nil), s.dirs...)
+	sort.Slice(dirs, func(i, j int) bool { return len(dirs[i]) > len(dirs[j]) })
+	for _, d := range dirs {
+		_ = os.Remove(d)
 	}
 }
