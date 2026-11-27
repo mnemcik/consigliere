@@ -22,7 +22,8 @@ func parseValid(t *testing.T, data string) (*Manifest, error) {
 	if err != nil {
 		t.Fatalf("ParseManifest(%s): %v", data, err)
 	}
-	return m, m.Validate()
+	err = m.Validate()
+	return m, err
 }
 
 // validVersionSamples and invalidVersionSamples are the requires.cg values

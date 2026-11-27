@@ -16,7 +16,7 @@ const UpdateHint = "Update cg (cg update upgrade, or brew upgrade --cask cg), th
 // suffix. The registry schema uses the same pattern (plus a guard against
 // whitespace, which Python's re lets through before a final newline; Go's $
 // without the m flag matches only at the very end).
-var versionRe = regexp.MustCompile(`^(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){0,2}$`)
+var versionRe = regexp.MustCompile(`^(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){0,2}$`) //nolint:gocritic // the spec's and the registry schema's pattern as written; \d is Unicode in Python
 
 // runningRe matches a running cg version: an optional "v", MAJOR.MINOR.PATCH
 // in the requirement's part form, then the end, a pre-release ("-") or a build

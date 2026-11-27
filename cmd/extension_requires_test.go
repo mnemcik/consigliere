@@ -34,10 +34,13 @@ func withRequires(manifest, need string) string {
 	return strings.Replace(manifest, `"name":`, `"requires": {"cg": "`+need+`"}, "name":`, 1)
 }
 
+// oldCG is the running cg version the refusal tests use.
+const oldCG = "2.0.0"
+
 // wantRequirementErr fails unless err is a usage error that carries the
-// requirement message for each extension in names (needing need, on have),
-// one per line.
-func wantRequirementErr(t *testing.T, err error, out, need, have string, names ...string) {
+// requirement message for each extension in names (needing need, on cg
+// oldCG), one per line.
+func wantRequirementErr(t *testing.T, err error, out, need string, names ...string) {
 	t.Helper()
 	if err == nil {
 		t.Fatalf("expected the requirement to be refused, got success:\n%s", out)
@@ -48,7 +51,7 @@ func wantRequirementErr(t *testing.T, err error, out, need, have string, names .
 	}
 	lines := strings.Split(err.Error(), "\n")
 	for _, n := range names {
-		want := extension.RequirementMessage(n, need, have)
+		want := extension.RequirementMessage(n, need, oldCG)
 		found := false
 		for _, l := range lines {
 			found = found || l == want
@@ -91,7 +94,7 @@ func TestInstallRefusesUnmetRequirement(t *testing.T) {
 				args = append(args, repo)
 			}
 			out, err := runExtCfg(t, cfgHome, ws, append(args, tc.extra...)...)
-			wantRequirementErr(t, err, out, "2.1", "2.0.0", "shop")
+			wantRequirementErr(t, err, out, "2.1", "shop")
 			assertUnchanged(t, ws, before)
 		})
 	}
@@ -137,7 +140,7 @@ func TestUpdateRefusesUnmetRequirement(t *testing.T) {
 		updateExtRepo(t, repos["beta"], withRequires(commandsManifest("beta", "1.1.0", "beta"), "2.0.1"), "")
 		before := snapshotDir(t, ws)
 		out, err := runExtCfg(t, cfgHome, ws, "update")
-		wantRequirementErr(t, err, out, "2.0.1", "2.0.0", "beta")
+		wantRequirementErr(t, err, out, "2.0.1", "beta")
 		assertUnchanged(t, ws, before)
 	})
 	t.Run("two unmet", func(t *testing.T) {
@@ -146,7 +149,7 @@ func TestUpdateRefusesUnmetRequirement(t *testing.T) {
 		updateExtRepo(t, repos["gamma"], withRequires(commandsManifest("gamma", "1.1.0", "gamma"), "2.1"), "")
 		before := snapshotDir(t, ws)
 		out, err := runExtCfg(t, cfgHome, ws, "update")
-		wantRequirementErr(t, err, out, "2.1", "2.0.0", "alpha", "gamma")
+		wantRequirementErr(t, err, out, "2.1", "alpha", "gamma")
 		assertUnchanged(t, ws, before)
 	})
 	t.Run("the one target", func(t *testing.T) {
@@ -154,7 +157,7 @@ func TestUpdateRefusesUnmetRequirement(t *testing.T) {
 		updateExtRepo(t, repos["beta"], withRequires(commandsManifest("beta", "1.1.0", "beta"), "3"), "")
 		before := snapshotDir(t, ws)
 		out, err := runExtCfg(t, cfgHome, ws, "update", "beta")
-		wantRequirementErr(t, err, out, "3", "2.0.0", "beta")
+		wantRequirementErr(t, err, out, "3", "beta")
 		assertUnchanged(t, ws, before)
 	})
 	t.Run("a neighbour isn't checked", func(t *testing.T) {
@@ -204,7 +207,7 @@ func TestInitRefusesUnmetRequirement(t *testing.T) {
 		}
 		Version = "2.0.0"
 		out, err := runInitForce(t, cfgHome, ws)
-		wantRequirementErr(t, err, out, "2.1", "2.0.0", "alpha", "beta")
+		wantRequirementErr(t, err, out, "2.1", "alpha", "beta")
 		for i := range refs {
 			n := refs[i].Name
 			if _, serr := os.Lstat(extension.LedgerPath(ws, n)); !errors.Is(serr, fs.ErrNotExist) {
@@ -359,7 +362,7 @@ func TestStartSkipsLauncherWithUnmetRequirement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(p, []byte(withRequires(string(data), "2.1")), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte(withRequires(string(data), "2.1")), 0o644); err != nil { //nolint:gosec // the test's own store
 		t.Fatal(err)
 	}
 	setVersion(t, "2.0.0")
