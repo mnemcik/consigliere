@@ -28,8 +28,14 @@ In the workflow, and nowhere else:
   blocks `pull_request_target` in public repositories from 2026-12-02, and the action needs only a read-only token,
   which fork PRs get on `pull_request`.
 
-Not changed (decisions 1, 3): no Actions event policy; branch protection, required checks, `CONTRIBUTING.md`,
+Not changed (decisions 1, 3, 5): no Actions event policy; branch protection, required checks, `CONTRIBUTING.md`,
 `impact-review.yml` and every other workflow stay as they are.
+
+## Timing
+
+Merged as soon as it is reviewed, independent of the 2.0.0 rollout, by the end of 2026-12-01 UTC at the latest
+(decision 4). If it slips, there is no stopgap: no Actions policy, and other PRs with new heads wait until it merges
+(decision 5).
 
 ## Acceptance criteria
 
@@ -38,11 +44,13 @@ Not changed (decisions 1, 3): no Actions event policy; branch protection, requir
   run's URL and event (`gh run list --workflow pr-title-lint.yml --event pull_request --commit <head>`).
 - **A2 — still validates the title.** The `pull_request` run fails on a title that isn't a Conventional Commit and
   passes again on a valid one. Shown on the fix PR: change the title to an invalid one (for example `Title check on
-  pull_request`), see the `edited` run fail, restore the `ci: …` title, see the next `edited` run pass. This also
-  shows that an `edited` event starts a run (the analysis's one open assumption). Both run URLs go on the PR.
-- **A3 — reports on a fork PR.** A fork PR gets the check from the `pull_request` run once the maintainer approves
-  the fork's workflow run (fork approval is required for all outside contributors), with a read-only token that is
-  enough for the action. How this is shown: Q1.
+  pull_request`), see the `edited` run fail, restore the A7 title, see the next `edited` run pass. This also
+  shows that an `edited` event starts a run (the analysis's one open assumption). Both run URLs go on the PR. Editing
+  the description is also an `edited` event, so every description update starts a run too; those extra runs are
+  expected.
+- **A3 — reports on a fork PR.** A fork PR gets the check from the `pull_request` run, with a read-only token that is
+  enough for the action. For an outside contributor the run waits for the maintainer's approval (this repository's
+  fork-approval setting covers all outside contributors). How this is shown: Q1.
 - **A4 — reports under the 2026-12-02 conditions.** The check comes from the `pull_request` event alone, so it
   reports when `pull_request_target` is blocked. How this is shown: Q2.
 - **A5 — no other workflow changed.** The PR's diff against `main` touches only `.github/workflows/pr-title-lint.yml`
@@ -64,16 +72,19 @@ Not changed (decisions 1, 3): no Actions event policy; branch protection, requir
 
 ## Questions for the owner (gaps, each with a proposed answer)
 
-- **Q1 — how A3 (fork PR) is shown.** The decisions ask for a check that reports on fork PRs, but a fork PR can't be
-  opened from the owner's own account (GitHub doesn't let an owner fork their own repository into the same account),
-  and no second account is in scope. **Proposed:** A3 is shown by documented behaviour, not a live fork PR: GitHub's
-  events reference (fork PRs run `pull_request` workflows with a read-only `GITHUB_TOKEN` and no secrets, after
-  approval) and the action's README (`pull_request` "works for pull requests from forks too"; read-only is "all the
-  action needs"). Both are cited in the PR description, and the first fork PR after the merge is the live
-  confirmation; if it doesn't report, that is a new issue, not a reason to hold this one.
+- **Q1 — how A3 (fork PR) is shown.** A user account can't fork its own repository, so a live fork PR needs a fork
+  in another account or in an organisation the owner can create repositories in. **Proposed:** A3 is shown by
+  documented behaviour, not a live fork PR: GitHub's events reference (fork PRs run `pull_request` workflows with a
+  read-only `GITHUB_TOKEN` and no other secrets), the action's README (`pull_request` "works for pull requests from
+  forks too"; read-only is "all the action needs"), and the repository's fork-approval setting for the approval step.
+  All three are cited in the PR description. The first fork PR after the merge is the live confirmation; it is a
+  follow-up, not part of acceptance, and if it doesn't report, that is a new issue. **Alternative, if the owner
+  prefers a live test:** fork into an organisation the owner controls and open a throwaway PR from it against the fix
+  branch's head; it shows the read-only fork run, but not the approval step (the owner has write access).
 - **Q2 — how A4 (after 2026-12-02) is shown.** The block can't be switched on before the date, and the brownout
   windows are over. **Proposed:** A4 is shown by A1 (the passing check comes from a run whose event is
   `pull_request`) together with the 2026-11-16 brownout runs in the analysis, where `pull_request` runs were not
   blocked while `pull_request_target` ones were. Until the merge, the fix PR also gets the base branch's
   `pull_request_target` run with the same check name; the evidence names the `pull_request` run explicitly so the
-  two aren't confused. Merged before 2026-12-02, the first PR after the date is the live confirmation.
+  two aren't confused. Merged before 2026-12-02, the first PR after the date is the live confirmation; like Q1's, it is a
+  follow-up, not part of acceptance, so the item closes at the merge.
