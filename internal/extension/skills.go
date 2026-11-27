@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"syscall"
 	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
@@ -434,6 +435,9 @@ type skillPathPlan struct {
 	// renameFrom is the old path of a rename that only changes case, on a
 	// file system that ignores case: the file is renamed to dest first.
 	renameFrom string
+	// clearDir says dest is now a directory, every file in it dropped: it is
+	// removed (once emptied) before the file is written.
+	clearDir bool
 }
 
 // skillPlan is every decision for an extension's skills, made before anything
@@ -522,7 +526,7 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 			sources = append(sources, s)
 		}
 		for _, c := range append(append([]CopyContribution(nil), m.Contributes.Notes...), m.Contributes.Templates...) {
-			shipped[c.Dest] = true
+			shipped[CleanDest(c.Dest)] = true
 		}
 	}
 	plan := &skillPlan{now: map[string]string{}, shipped: shipped}
@@ -622,16 +626,51 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 		}
 		return opts.LegacyBases[dest], tracked
 	}
-	var refused, edited []string
-	editedAt := map[string]int{}
-	for _, dest := range order {
-		w := wanted[dest]
-		abs := filepath.Join(root, filepath.FromSlash(dest))
-		disk, err := fileID(abs)
+	var refused, edited, blocked []string
+	droppedSet := make(map[string]bool, len(dropped))
+	for _, d := range dropped {
+		droppedSet[d] = true
+	}
+	// Dropped paths first: deleting them can clear the way for a wanted path
+	// (a managed directory replaced by a file, or the reverse).
+	for _, dest := range dropped {
+		disk, err := skillDiskID(filepath.Join(root, filepath.FromSlash(dest)))
 		if err != nil {
 			return nil, err
 		}
-		p := skillPathPlan{dest: dest, data: w.data, mode: w.mode, next: ContentID(w.data), missing: disk == ""}
+		p := skillPathPlan{dest: dest, missing: disk == ""}
+		b, _ := base(dest)
+		switch {
+		case disk == "":
+			p.op = opForget
+		case disk == b:
+			p.op = opDelete
+		case opts.SkillMode == SkillsRestore:
+			p.op = opLeave
+		default:
+			edited = append(edited, dest)
+			p.op = opDeleteEdited
+		}
+		plan.paths = append(plan.paths, p)
+	}
+	for _, dest := range order {
+		w := wanted[dest]
+		abs := filepath.Join(root, filepath.FromSlash(dest))
+		if why := blockedBy(root, dest, droppedSet); why != "" {
+			blocked = append(blocked, why)
+			continue
+		}
+		p := skillPathPlan{dest: dest, data: w.data, mode: w.mode, next: ContentID(w.data)}
+		disk := ""
+		if info, err := os.Stat(abs); err == nil && info.IsDir() {
+			p.clearDir = true // a managed directory the new version makes a file
+		} else {
+			var err error
+			if disk, err = skillDiskID(abs); err != nil {
+				return nil, err
+			}
+		}
+		p.missing = disk == ""
 		if from := renamed[dest]; from != "" && strings.EqualFold(from, dest) {
 			p.renameFrom = from // a case-only rename: give the file the new name
 		}
@@ -653,32 +692,13 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 		case opts.SkillMode == SkillsRestore:
 			p.op = opKeep
 		default:
-			editedAt[dest] = len(plan.paths)
 			edited = append(edited, dest)
 			p.op = opReplace
 		}
 		plan.paths = append(plan.paths, p)
 	}
-	for _, dest := range dropped {
-		disk, err := fileID(filepath.Join(root, filepath.FromSlash(dest)))
-		if err != nil {
-			return nil, err
-		}
-		p := skillPathPlan{dest: dest, missing: disk == ""}
-		b, _ := base(dest)
-		switch {
-		case disk == "":
-			p.op = opForget
-		case disk == b:
-			p.op = opDelete
-		case opts.SkillMode == SkillsRestore:
-			p.op = opLeave
-		default:
-			editedAt[dest] = len(plan.paths)
-			edited = append(edited, dest)
-			p.op = opDeleteEdited
-		}
-		plan.paths = append(plan.paths, p)
+	if len(blocked) > 0 {
+		return nil, fmt.Errorf("these skill paths are blocked: %s; move what is in the way aside and run the command again", strings.Join(blocked, "; "))
 	}
 	if len(refused) > 0 {
 		return nil, &ConflictError{Paths: refused}
@@ -793,13 +813,9 @@ func realRel(root, rootReal, rel string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	r, err := filepath.Rel(rootReal, resolved)
-	if err != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+	out, ok := relWithin(rootReal, resolved)
+	if !ok {
 		return "", false
-	}
-	out := filepath.ToSlash(r)
-	if out == "." {
-		out = ""
 	}
 	if rest := strings.Join(parts[n:], "/"); rest != "" {
 		if out != "" {
@@ -851,6 +867,12 @@ func ledgerRel(l *Ledger) string { return ledgerSubdir + "/" + l.Name + ".json" 
 // ledgerFix says how to get past a ledger entry cg refuses.
 func ledgerFix(l *Ledger) string {
 	return "restore " + ledgerRel(l) + " from git, or correct or delete that skill entry in it, then run the command again"
+}
+
+// CleanDest is a manifest or ledger destination as the writer resolves it:
+// slash-separated and cleaned ("./notes/a.md" is "notes/a.md").
+func CleanDest(dest string) string {
+	return path.Clean(strings.ReplaceAll(dest, `\`, "/"))
 }
 
 // skillDirOf returns the <target dir>/<name> part of managed path p.
@@ -953,6 +975,9 @@ func checkInsideWorkspace(root, rootReal, rel string) error {
 			}
 		}
 		cur, existing = next, next
+		if fi, err := os.Stat(next); err == nil && !fi.IsDir() {
+			break // a file on the way: blockedBy decides whether it goes first
+		}
 	}
 	resolved, err := filepath.EvalSymlinks(existing)
 	if err != nil {
@@ -971,14 +996,84 @@ func relTo(root, p string) string {
 	return p
 }
 
-// withinDir reports whether p is dir or inside it. Case is ignored where the
-// usual file systems ignore it (macOS, Windows).
+// withinDir reports whether p is dir or inside it, by location: p's
+// spelling under dir, or else an ancestor of p that is dir on disk (the same
+// directory spelled with another case). Case-folded spelling alone never
+// counts, so two directories that differ only in case stay apart.
 func withinDir(dir, p string) bool {
-	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
-		dir, p = strings.ToLower(dir), strings.ToLower(p)
+	_, ok := relWithin(dir, p)
+	return ok
+}
+
+// relWithin returns p relative to dir (slash-separated, "" for dir itself)
+// when p is dir or inside it, decided as withinDir says.
+func relWithin(dir, p string) (string, bool) {
+	if rel, err := filepath.Rel(dir, p); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel) {
+		if rel == "." {
+			return "", true
+		}
+		return filepath.ToSlash(rel), true
 	}
-	rel, err := filepath.Rel(dir, p)
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+	di, err := os.Stat(dir)
+	if err != nil {
+		return "", false
+	}
+	var rest []string
+	for cand := p; ; {
+		if ci, err := os.Stat(cand); err == nil && os.SameFile(di, ci) {
+			slices.Reverse(rest)
+			return strings.Join(rest, "/"), true
+		}
+		parent := filepath.Dir(cand)
+		if parent == cand {
+			return "", false
+		}
+		rest = append(rest, filepath.Base(cand))
+		cand = parent
+	}
+}
+
+// skillDiskID is fileID for a managed path, treating a path under a file
+// (which can't exist) as missing.
+func skillDiskID(file string) (string, error) {
+	id, err := fileID(file)
+	if err != nil && errors.Is(err, syscall.ENOTDIR) {
+		return "", nil
+	}
+	return id, err
+}
+
+// blockedBy says why wanted path dest can't be written, or "": an existing
+// part of its way that is a file and not a path the run drops, or an
+// existing directory at dest holding files the run doesn't drop.
+func blockedBy(root, dest string, dropped map[string]bool) string {
+	parts := strings.Split(dest, "/")
+	for n := 1; n < len(parts); n++ {
+		rel := strings.Join(parts[:n], "/")
+		info, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel)))
+		if err != nil {
+			break
+		}
+		if !info.IsDir() {
+			if dropped[rel] {
+				break // deleted first
+			}
+			return fmt.Sprintf("%s needs %s to be a directory, but it is a file", dest, rel)
+		}
+	}
+	abs := filepath.Join(root, filepath.FromSlash(dest))
+	if info, err := os.Stat(abs); err == nil && info.IsDir() {
+		files, err := filesUnder(abs)
+		if err != nil {
+			return fmt.Sprintf("%s: %v", dest, err)
+		}
+		for _, f := range files {
+			if !dropped[dest+"/"+f] {
+				return fmt.Sprintf("%s is a directory holding %s/%s, which the extension doesn't manage", dest, dest, f)
+			}
+		}
+	}
+	return ""
 }
 
 func samePathFold(a, b string) bool {
@@ -1048,6 +1143,11 @@ func applySkillPath(root string, p *skillPathPlan, l *Ledger, snap *snapshot, re
 			p.renameFrom, p.dest, p.renameFrom, p.dest)
 	}
 	write := func() error {
+		if p.clearDir {
+			if err := pruneEmptyDirs(root, p.dest, true); err != nil {
+				return err
+			}
+		}
 		if err := snap.captureDirs(root, abs); err != nil {
 			return err
 		}

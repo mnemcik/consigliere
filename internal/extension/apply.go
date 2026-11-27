@@ -2,11 +2,13 @@ package extension
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/mnemcik/consigliere/internal/githooks"
 )
@@ -577,7 +579,10 @@ func (s *snapshot) capture(path string) error {
 	s.seen[path] = true
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		info, serr := os.Stat(path)
+		if os.IsNotExist(err) || errors.Is(err, syscall.ENOTDIR) || (serr == nil && info.IsDir()) {
+			// No file there (a directory a skill file replaces counts as
+			// none: its files are captured on their own).
 			s.files = append(s.files, fileSnapshot{path: path, existed: false})
 			return nil
 		}
@@ -611,8 +616,16 @@ func (s *snapshot) captureDirs(root, path string) error {
 // it is only ever called on an already-failing path, so a restore error can't
 // improve the outcome and would only mask the original failure.
 func (s *snapshot) restore() {
-	for _, f := range s.files {
+	// Last captured first: a file written where a captured directory held
+	// files goes before those files are written back.
+	for i := len(s.files) - 1; i >= 0; i-- {
+		f := s.files[i]
 		if f.existed {
+			if info, err := os.Lstat(f.path); err == nil && info.IsDir() {
+				// The run made the file's path a directory; its own files
+				// were restored (removed) above, so it is empty.
+				_ = os.Remove(f.path)
+			}
 			_ = os.MkdirAll(filepath.Dir(f.path), 0o755)
 			_ = writeFileAtomicMode(f.path, f.data, f.mode)
 		} else {
@@ -624,6 +637,10 @@ func (s *snapshot) restore() {
 	dirs := append([]string(nil), s.dirs...)
 	sort.Slice(dirs, func(i, j int) bool { return len(dirs[i]) > len(dirs[j]) })
 	for _, d := range dirs {
-		_ = os.Remove(d)
+		// Only a directory: a file restored above may have the same path
+		// (a managed file the run had replaced with a directory).
+		if info, err := os.Lstat(d); err == nil && info.IsDir() {
+			_ = os.Remove(d)
+		}
 	}
 }

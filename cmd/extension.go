@@ -142,12 +142,13 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	if old, ok := findExtension(cfg, m.Name); ok {
 		prev, prevCertain = previousSource(old), extension.ValidCommit(old.Commit)
 	}
+	targets := cfg.SkillTargets()
 	skillWarnings, err := checkSkills(&skillCheck{root: root, installed: cfg.Extensions,
-		incoming: map[string]*extension.Manifest{m.Name: m}, targets: cfg.SkillTargets()})
+		incoming: map[string]*extension.Manifest{m.Name: m}, targets: targets})
 	if err != nil {
 		return err
 	}
-	run := skillRun{ctx: cmd.Context(), repo: repo}
+	run := skillRun{ctx: cmd.Context(), repo: repo, targets: targets}
 	if err := preflightSkills(root, []preflightItem{{m: m, manifestDir: filepath.Join(dest, path), prev: prev, prevCertain: prevCertain, force: extInstallForce, run: run}}); err != nil {
 		return err
 	}
@@ -197,7 +198,7 @@ func applyOptionsFor(root string, m *extension.Manifest, prevSource string, prev
 	}
 	opts := extension.ApplyOptions{
 		Old: old, Force: force, NotesIndex: notesIndexRel(root),
-		SkillTargets: skillTargetsFor(root), SkillMode: run.mode, Context: run.ctx,
+		SkillTargets: run.targets, SkillMode: run.mode, Context: run.ctx,
 		ExtensionName: m.Name, Repo: run.repo, SkillReport: report,
 	}
 	if old != nil && !old.HasContentIDs() && prevSource != "" {
@@ -522,7 +523,7 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 	for _, r := range todo {
 		manifests[r.m.Name] = r.m
 		items = append(items, preflightItem{m: r.m, manifestDir: r.manifestDir, prev: r.prev, prevCertain: r.prev != "",
-			run: skillRun{ctx: commandContext(cmd), repo: r.e.Repo, mode: extension.SkillsRestore}})
+			run: skillRun{ctx: commandContext(cmd), repo: r.e.Repo, mode: extension.SkillsRestore, targets: targets}})
 	}
 	skillWarnings, err := checkSkills(&skillCheck{root: root, installed: present, incoming: manifests, targets: targets, restore: true})
 	if err != nil {
@@ -737,7 +738,7 @@ func runExtList(cmd *cobra.Command, _ []string) error {
 type listedExtension struct {
 	workspace.ExtensionRef
 	Commands []listedCommand `json:"commands"`
-	Skills   []listedSkill   `json:"skills"`
+	Skills   []listedSkill   `json:"skills,omitempty"`
 	// LedgerError says the extension's ledger can't be read, so its
 	// commands are unknown (and dispatch stops on it).
 	LedgerError string `json:"ledgerError,omitempty"`
@@ -955,15 +956,17 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	manifests := map[string]*extension.Manifest{}
+	skillTargets := cfg.SkillTargets()
 	var items []preflightItem
 	for i := range updates {
 		u := &updates[i]
 		manifests[u.ref.Name] = u.m
+		u.run = skillRun{ctx: cmd.Context(), repo: u.ref.Repo, targets: skillTargets}
 		items = append(items, preflightItem{m: u.m, manifestDir: u.manifestDir, prev: previousSource(&u.ref),
-			prevCertain: extension.ValidCommit(u.ref.Commit), run: skillRun{ctx: cmd.Context(), repo: u.ref.Repo}})
+			prevCertain: extension.ValidCommit(u.ref.Commit), run: u.run})
 	}
 	skillWarnings, err := checkSkills(&skillCheck{root: root, installed: cfg.Extensions, incoming: manifests,
-		targets: cfg.SkillTargets(), update: true})
+		targets: skillTargets, update: true})
 	if err != nil {
 		return err
 	}
@@ -1005,6 +1008,7 @@ type pendingUpdate struct {
 	m           *extension.Manifest
 	manifestDir string
 	commit      string
+	run         skillRun // set when the run's skill checks are made
 }
 
 // resolveUpdate fetches the extension's repo into the store, picks the commit
@@ -1049,8 +1053,7 @@ func resolveUpdate(ctx context.Context, ref *workspace.ExtensionRef) (pendingUpd
 // applyUpdate re-applies the new version's contributions (new manifest first,
 // then reverse what it dropped).
 func applyUpdate(cmd *cobra.Command, root string, u *pendingUpdate) error {
-	res, err := reapply(root, u.manifestDir, u.m, previousSource(&u.ref), extension.ValidCommit(u.ref.Commit), false,
-		skillRun{ctx: cmd.Context(), repo: u.ref.Repo})
+	res, err := reapply(root, u.manifestDir, u.m, previousSource(&u.ref), extension.ValidCommit(u.ref.Commit), false, u.run)
 	if err != nil {
 		return err
 	}

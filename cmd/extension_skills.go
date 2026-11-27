@@ -21,6 +21,10 @@ type skillRun struct {
 	ctx  context.Context
 	repo string
 	mode extension.SkillMode
+	// targets are the skill targets the run checked conflicts with; the
+	// same list is applied, so a .cg.json changed meanwhile can't slip an
+	// unchecked target in.
+	targets []string
 }
 
 // skillTargetsFor returns the workspace's skill targets (.cg.json
@@ -83,7 +87,7 @@ func manifestSkills(m *extension.Manifest, targets []string) extSkills {
 		out.skills[extension.SkillName(s)] = targets
 	}
 	for _, c := range append(append([]extension.CopyContribution(nil), m.Contributes.Notes...), m.Contributes.Templates...) {
-		out.copies = append(out.copies, c.Dest)
+		out.copies = append(out.copies, extension.CleanDest(c.Dest))
 	}
 	return out
 }
@@ -96,7 +100,9 @@ func ledgerSkills(l *extension.Ledger) extSkills {
 	for _, s := range l.Skills {
 		out.skills[s.Name] = append(out.skills[s.Name], s.Targets...)
 	}
-	out.copies = append(append(out.copies, l.Notes...), l.Templates...)
+	for _, d := range append(append([]string(nil), l.Notes...), l.Templates...) {
+		out.copies = append(out.copies, extension.CleanDest(d))
+	}
 	return out
 }
 
@@ -233,21 +239,26 @@ func findRefByName(exts []workspace.ExtensionRef, name string) (*workspace.Exten
 func checkSkillMoves(c *skillCheck, old map[string]extSkills) error {
 	type move struct{ skill, from, to string }
 	var moves []move
+	// Per target: an extension gains a skill for a target its old ledger
+	// doesn't record it for, and another drops it there (its new version no
+	// longer ships the skill).
+	seen := map[move]bool{}
 	for to, m := range c.incoming {
 		for _, s := range m.Contributes.Skills {
 			skill := extension.SkillName(s)
-			if _, had := old[to].skills[skill]; had {
-				continue
-			}
-			for from, fm := range c.incoming {
-				if from == to {
+			for _, t := range c.targets {
+				if slices.Contains(old[to].skills[skill], t) {
 					continue
 				}
-				if _, had := old[from].skills[skill]; !had {
-					continue
-				}
-				if !slices.ContainsFunc(fm.Contributes.Skills, func(x extension.SkillContribution) bool { return extension.SkillName(x) == skill }) {
-					moves = append(moves, move{skill: skill, from: from, to: to})
+				for from, fm := range c.incoming {
+					if from == to || !slices.Contains(old[from].skills[skill], t) {
+						continue
+					}
+					mv := move{skill: skill, from: from, to: to}
+					if !seen[mv] && !slices.ContainsFunc(fm.Contributes.Skills, func(x extension.SkillContribution) bool { return extension.SkillName(x) == skill }) {
+						seen[mv] = true
+						moves = append(moves, mv)
+					}
 				}
 			}
 		}
@@ -294,18 +305,45 @@ func checkSkillMoves(c *skillCheck, old map[string]extSkills) error {
 		}
 	}
 	if len(order) < len(nodes) {
-		var cycle []string
+		// An extension left over is in a cycle when it can reach itself;
+		// the others only wait on one.
+		reaches := func(from, to string) bool {
+			seen := map[string]bool{}
+			stack := append([]string(nil), after[from]...)
+			for len(stack) > 0 {
+				n := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				if n == to {
+					return true
+				}
+				if !seen[n] {
+					seen[n] = true
+					stack = append(stack, after[n]...)
+				}
+			}
+			return false
+		}
+		var cycle, waiting []string
 		for n := range nodes {
-			if !slices.Contains(order, n) {
+			switch {
+			case slices.Contains(order, n):
+			case reaches(n, n):
 				cycle = append(cycle, n)
+			default:
+				waiting = append(waiting, n)
 			}
 		}
 		sort.Strings(cycle)
-		return cgerr.New(cgerr.ExitUsage, "extension skills move between extensions in a cycle, so no extension was applied:\n%s\n"+
-			"No order of updates can apply it (extensions %s). Wait for a release of one of them that doesn't take part in the cycle, "+
-			"or remove one of them with `cg extension remove` (which also drops its notes, templates and pending state from cg's records) "+
-			"and install it again after the others are updated.",
+		sort.Strings(waiting)
+		msg := fmt.Sprintf("extension skills move between extensions in a cycle, so no extension was applied:\n%s\n"+
+			"No order of updates can apply it (in a cycle: %s). Wait for a release of one of them that doesn't take part in the cycle, "+
+			"or remove one extension from each cycle with `cg extension remove` (which also drops its notes, templates and pending state "+
+			"from cg's records) and install it again after the others are updated.",
 			strings.Join(desc, "\n"), strings.Join(cycle, ", "))
+		if len(waiting) > 0 {
+			msg += fmt.Sprintf(" Extensions %s only wait on the cycle; removing them doesn't help.", strings.Join(waiting, ", "))
+		}
+		return cgerr.New(cgerr.ExitUsage, "%s", msg)
 	}
 	var cmds []string
 	for _, n := range order {

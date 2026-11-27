@@ -124,7 +124,7 @@ func pathspecArgs(args, paths []string) []string {
 	}
 	out := append(append([]string(nil), args...), "--")
 	for _, p := range paths {
-		out = append(out, ":(literal,icase)"+p)
+		out = append(out, icaseMagic+p)
 	}
 	return out
 }
@@ -156,18 +156,26 @@ func parseStatusZ(raw []byte) []statusEntry {
 	return out
 }
 
-// batches splits paths into groups whose total length stays within argBudget.
+// icaseMagic is the pathspec prefix pathspecArgs adds where case folds.
+const icaseMagic = ":(literal,icase)"
+
+// batches splits paths into groups whose total length on the command line,
+// as pathspecArgs passes them, stays within argBudget.
 func batches(paths []string) [][]string {
+	extra := 1 // the separating space
+	if foldsCase {
+		extra += len(icaseMagic)
+	}
 	var out [][]string
 	cur := make([]string, 0, len(paths))
 	size := 0
 	for _, p := range paths {
-		if len(cur) > 0 && size+len(p)+1 > argBudget {
+		if len(cur) > 0 && size+len(p)+extra > argBudget {
 			out = append(out, cur)
 			cur, size = make([]string, 0, len(paths)), 0
 		}
 		cur = append(cur, p)
-		size += len(p) + 1
+		size += len(p) + extra
 	}
 	if len(cur) > 0 {
 		out = append(out, cur)
