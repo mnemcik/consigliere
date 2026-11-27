@@ -190,10 +190,52 @@ Workspaces that installed your extension with an older cg get the launcher after
 upgrading cg and running `cg extension update <name>`, which also moves your
 extension to its latest version.
 
-### `templates` — ship workspace templates
+### `templates` — ship workspace files
 
-Each `{ src, dest }` copies a template into the workspace `templates/` tree.
-Same copy semantics as notes, without the INDEX pointer.
+Each `{ src, dest }` copies a file to any workspace path, conventionally under
+`templates/`. Same copy semantics as notes, without the INDEX pointer: the copy
+is the workspace's once installed. Don't ship a skill this way; use `skills`.
+
+### `skills` — ship agent skills (manifest v2)
+
+Each `{ src, executables? }` ships the directory `src`, which holds `SKILL.md` in
+the [Agent Skills](https://agentskills.io/specification) format, as a skill named
+after the directory (1–64 characters of `[a-z0-9-]`, no leading, trailing or
+double hyphen). Every file below `src` is installed; list the ones that must be
+executable, relative to `src`, in `executables`.
+
+```json
+"manifest": 2,
+"contributes": {
+  "skills": [{ "src": "skills/github-digest", "executables": ["gh-repo-watch.py"] }]
+}
+```
+
+cg manages the installed copy: it replaces it on every update, and a workspace
+customises a skill only through `SKILL.local.md` beside your `SKILL.md`. So
+**every skill's `SKILL.md` carries this block, word for word, near its top**
+(cg warns at install when it is missing or reworded, naming your repository):
+
+```markdown
+<!-- cg:skill-local:start=v1 -->
+If a file named `SKILL.local.md` exists in this skill's directory, read it as well: its rules add to this skill's,
+and replace them where the two conflict.
+<!-- cg:skill-local:end=v1 -->
+```
+
+Start from the template
+[`docs/templates/extension-skill/SKILL.md`](docs/templates/extension-skill/SKILL.md):
+copy the folder, then rename the folder and the frontmatter `name` together (they
+must match). Also:
+
+- Refer to your skill's own files relative to the skill directory
+  (`${CLAUDE_SKILL_DIR}` in Claude Code), never by a workspace path: the skill
+  may be installed under `.claude/skills/` or `.agents/skills/`.
+- Don't ship `SKILL.local.md` or symbolic links; cg refuses both.
+- Reviewers: check `allowed-tools` in the frontmatter, which in Claude Code lets
+  the agent run those tools without asking.
+- There is no separate pre-publish check: `cg extension install <path>` on a
+  local checkout runs every check cg makes.
 
 ## Versioning
 
