@@ -45,11 +45,21 @@ var nameRe = regexp.MustCompile(`^[a-z0-9-]+$`)
 
 // Manifest is a parsed cg-extension.json (schema v1 or v2).
 type Manifest struct {
-	Manifest    int           `json:"manifest"`
-	Name        string        `json:"name"`
-	Version     string        `json:"version"`
-	Description string        `json:"description"`
+	Manifest    int    `json:"manifest"`
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Description string `json:"description"`
+	// Requires states what the extension needs to work (v1 and v2).
+	Requires    *Requires     `json:"requires,omitempty"`
 	Contributes Contributions `json:"contributes"`
+}
+
+// Requires is the manifest's optional "requires" object. CG is the lowest cg
+// release the extension works with, in the version pattern (see versionRe); a
+// pointer, so a present empty string is refused rather than read as absent.
+// Keys this cg doesn't know are ignored, as an older cg ignores "requires".
+type Requires struct {
+	CG *string `json:"cg,omitempty"`
 }
 
 // Contributions are the contribution points an extension can declare. Each
@@ -190,8 +200,14 @@ func LoadManifest(dir string) (*Manifest, error) {
 // front so a future manifest fails with a clear message rather than silently
 // losing fields.
 func (m *Manifest) Validate() error {
-	if m.Manifest < 1 || m.Manifest > SchemaVersion {
+	if m.Manifest > SchemaVersion {
+		return fmt.Errorf("unsupported manifest schema version %d (this cg understands 1 to %d): it needs a newer cg. %s", m.Manifest, SchemaVersion, UpdateHint)
+	}
+	if m.Manifest < 1 {
 		return fmt.Errorf("unsupported manifest schema version %d (this cg understands 1 to %d)", m.Manifest, SchemaVersion)
+	}
+	if m.Requires != nil && m.Requires.CG != nil && !versionRe.MatchString(*m.Requires.CG) {
+		return fmt.Errorf("requires.cg: invalid version %q: want MAJOR, MAJOR.MINOR or MAJOR.MINOR.PATCH", *m.Requires.CG)
 	}
 	if len(m.Contributes.Commands) > 0 && m.Manifest < 2 {
 		return fmt.Errorf(`commands need "manifest": 2 (got %d)`, m.Manifest)

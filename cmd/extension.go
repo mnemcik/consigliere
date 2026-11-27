@@ -134,6 +134,9 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := checkRequirements([]*extension.Manifest{m}); err != nil {
+		return err
+	}
 	warnings, err := checkCommands(root, cfg.Extensions, map[string][]extension.CommandContribution{m.Name: m.Contributes.Commands}, false)
 	if err != nil {
 		return err
@@ -513,6 +516,15 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		users[tree]++
 		incoming[m.Name] = m.Contributes.Commands
 	}
+	// #212 S9: an extension this cg is too old for restores none, before
+	// anything is applied; the deferred clean-up removes the fetched trees.
+	ms := make([]*extension.Manifest, len(todo))
+	for i := range todo {
+		ms[i] = todo[i].m
+	}
+	if err := checkRequirements(ms); err != nil {
+		return out, nil, err
+	}
 	// S9: every command cg init restores counts as owned, so a built-in
 	// namespace only warns.
 	warnings, err := checkCommands(root, present, incoming, true)
@@ -590,6 +602,23 @@ func loadValidManifest(dir, want string) (*extension.Manifest, error) {
 		return nil, cgerr.New(cgerr.ExitUsage, "%s in %s names %q, but .cg.json records %q", extension.ManifestFile, dir, m.Name, want)
 	}
 	return m, nil
+}
+
+// checkRequirements refuses the run when this cg is older than any of ms
+// requires (requires.cg), naming each such extension on its own line, so one
+// update of cg fixes the whole run. Callers check before applying anything.
+// --force doesn't skip it: the extension is known not to work on this cg.
+func checkRequirements(ms []*extension.Manifest) error {
+	var lines []string
+	for _, m := range ms {
+		if need, have, unmet := extension.UnmetRequirement(m, Version); unmet {
+			lines = append(lines, extension.RequirementMessage(m.Name, need, have))
+		}
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	return cgerr.New(cgerr.ExitUsage, "%s", strings.Join(lines, "\n"))
 }
 
 // resolveQualified resolves alias to its registry source, fetches that one
@@ -671,6 +700,14 @@ func runExtList(cmd *cobra.Command, _ []string) error {
 	listed := make([]listedExtension, len(exts))
 	for i := range exts {
 		listed[i] = listedExtension{ExtensionRef: exts[i], Commands: []listedCommand{}, Skills: []listedSkill{}}
+		// #212 S13c: read for every extension, with or without a ledger.
+		dir, m, verr := verifiedManifest(&exts[i])
+		if verr == nil {
+			if need, have, unmet := extension.UnmetRequirement(m, Version); unmet {
+				listed[i].RequirementUnmet = extension.RequirementMessage(m.Name, need, have)
+				listed[i].requirementReason = extension.RequirementReason(need, have)
+			}
+		}
 		led, lerr := extension.LoadLedger(root, exts[i].Name)
 		if lerr != nil {
 			listed[i].LedgerError = lerr.Error()
@@ -680,7 +717,6 @@ func runExtList(cmd *cobra.Command, _ []string) error {
 			continue
 		}
 		listed[i].Skills = listSkills(led)
-		dir, m, verr := verifiedManifest(&exts[i])
 		for _, c := range led.Commands {
 			lc := listedCommand{Command: c.Command, Binary: c.Binary, ShadowedByBuiltin: builtinFor(c.Command)}
 			switch {
@@ -732,6 +768,9 @@ func runExtList(cmd *cobra.Command, _ []string) error {
 		if l.LedgerError != "" {
 			_, _ = fmt.Fprintf(out, "  commands: (can't read %s: %s)\n", extension.LedgerPath(root, l.Name), l.LedgerError)
 		}
+		if l.requirementReason != "" {
+			_, _ = fmt.Fprintf(out, "  %s\n", l.requirementReason)
+		}
 	}
 	return nil
 }
@@ -745,6 +784,12 @@ type listedExtension struct {
 	// LedgerError says the extension's ledger can't be read, so its
 	// commands are unknown (and dispatch stops on it).
 	LedgerError string `json:"ledgerError,omitempty"`
+	// RequirementUnmet says this cg is older than the extension's pinned
+	// manifest requires (requires.cg), so its commands and launcher don't
+	// run: the requirement message. Its commands still count as verified.
+	RequirementUnmet string `json:"requirementUnmet,omitempty"`
+	// requirementReason is the text line's form of RequirementUnmet.
+	requirementReason string
 }
 
 // listedCommand is a command an installed extension declares. ShadowedByBuiltin
@@ -953,6 +998,13 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 		}
 		updates[i] = u
 		incoming[u.ref.Name] = u.m.Contributes.Commands
+	}
+	ms := make([]*extension.Manifest, len(updates))
+	for i := range updates {
+		ms[i] = updates[i].m
+	}
+	if err := checkRequirements(ms); err != nil {
+		return err
 	}
 	warnings, err := checkCommands(root, cfg.Extensions, incoming, false)
 	if err != nil {

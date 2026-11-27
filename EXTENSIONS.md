@@ -89,6 +89,11 @@ hook, needs `"manifest": 2`. One without them may stay on `"manifest": 1`. The o
 `subcommands` key is no longer read: move to `commands` and `"manifest": 2`
 (cg 2.0 and later).
 
+If the extension needs a cg release newer than its `manifest` version implies,
+say so with `"requires": { "cg": "2.1" }`: cg 2.0 and later then refuse to
+install it, or run its commands, on an older cg, and tell the user to update
+([details](docs/extensions.md#requiring-a-cg-version)).
+
 ## Contribution points
 
 ### `claude-md-sections` — add rules to CLAUDE.md

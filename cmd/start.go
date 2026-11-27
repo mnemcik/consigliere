@@ -251,6 +251,12 @@ func findLauncher(root string, cfg *workspace.Config) (*launcher, error) {
 			warn("launcher %s is missing; `cg init` restores the recorded version", bin)
 			continue
 		}
+		if need, have, unmet := extension.UnmetRequirement(m, Version); unmet {
+			// #212 S13b. The hint is a sentence; its full stop gives way to
+			// the warning's "; starting the agent without it".
+			warn("%s; %s", extension.RequirementReason(need, have), strings.TrimSuffix(extension.UpdateHint, "."))
+			continue
+		}
 		found = append(found, launcher{ext: e.Name, bin: bin, args: lc.Args})
 	}
 	switch len(found) {
