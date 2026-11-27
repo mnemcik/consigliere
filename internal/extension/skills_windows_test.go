@@ -13,7 +13,7 @@ import (
 // Repo and repo are two directories: one is never inside the other.
 func TestWithinDirCaseSensitiveWindows(t *testing.T) {
 	base := t.TempDir()
-	if out, err := exec.Command("fsutil.exe", "file", "setCaseSensitiveInfo", base, "enable").CombinedOutput(); err != nil { //nolint:gosec // fixed tool, test temp dir
+	if out, err := exec.CommandContext(t.Context(), "fsutil.exe", "file", "setCaseSensitiveInfo", base, "enable").CombinedOutput(); err != nil { //nolint:gosec // fixed tool, test temp dir
 		t.Skipf("can't make a case-sensitive directory here: %v: %s", err, out)
 	}
 	upper, lower := filepath.Join(base, "Repo"), filepath.Join(base, "repo")
