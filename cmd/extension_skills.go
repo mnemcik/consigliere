@@ -246,15 +246,7 @@ func sameTargetIn(root, t string, ts []string) (string, bool) {
 
 // targetAliases is t and every other known target whose skills directory is
 // t's on disk.
-func targetAliases(root, t string) []string {
-	out := []string{t}
-	for _, t2 := range extension.SkillTargetNames() {
-		if t2 != t && sameTargetDir(root, t, t2) {
-			out = append(out, t2)
-		}
-	}
-	return out
-}
+func targetAliases(root, t string) []string { return extension.SkillTargetAliases(root, t) }
 
 // sameTargetDir reports whether the skills directories of targets a and b
 // are the same directory on disk.

@@ -75,6 +75,29 @@ func CheckSkillTargets(targets []string) error {
 	return nil
 }
 
+// SkillTargetAliases is target t and every other known target whose skills
+// directory under root is, on disk, t's (one linking to the other).
+func SkillTargetAliases(root, t string) []string {
+	out := []string{t}
+	dt, ok := SkillTargetDir(t)
+	if !ok {
+		return out
+	}
+	it, err := os.Stat(filepath.Join(root, filepath.FromSlash(dt)))
+	if err != nil {
+		return out
+	}
+	for _, o := range skillTargets {
+		if o.Name == t {
+			continue
+		}
+		if io, err := os.Stat(filepath.Join(root, filepath.FromSlash(o.Dir))); err == nil && os.SameFile(it, io) {
+			out = append(out, o.Name)
+		}
+	}
+	return out
+}
+
 // SkillDir is the workspace-relative directory of skill name under target.
 func SkillDir(target, name string) string {
 	dir, _ := SkillTargetDir(target)
@@ -551,9 +574,12 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 			if _, ok := plan.now[s.name]; !ok {
 				plan.now[s.name] = dir
 			}
-			for c := range shipped {
-				if c == dir || strings.HasPrefix(c, dir+"/") {
-					return nil, fmt.Errorf("%s, which extension %q ships as a note or template, lies inside its skill %q (%s)", c, m.Name, s.name, dir)
+			for _, alias := range SkillTargetAliases(root, t) {
+				adir := SkillDir(alias, s.name)
+				for c := range shipped {
+					if c == adir || strings.HasPrefix(c, adir+"/") {
+						return nil, fmt.Errorf("%s, which extension %q ships as a note or template, lies inside its skill %q (%s)", c, m.Name, s.name, dir)
+					}
 				}
 			}
 			for _, f := range s.files {
@@ -626,11 +652,12 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 			dest = from
 		}
 		_, tracked = oldFiles[dest]
-		tracked = tracked || containsStr(old.Notes, dest) || containsStr(old.Templates, dest)
+		// Old notes and templates may be spelled ./… in the ledger.
+		tracked = tracked || containsDest(old.Notes, dest) || containsDest(old.Templates, dest)
 		if old.HasContentIDs() {
-			return old.Files[dest], tracked
+			return lookupDest(old.Files, dest), tracked
 		}
-		return opts.LegacyBases[dest], tracked
+		return lookupDest(opts.LegacyBases, dest), tracked
 	}
 	var refused, edited, blocked []string
 	// droppedSet holds the dropped paths this run removes from disk; only

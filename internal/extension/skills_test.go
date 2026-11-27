@@ -1173,3 +1173,25 @@ func TestSnapshotKeepsExistingDirectory(t *testing.T) {
 		t.Error("the existing directory was removed")
 	}
 }
+
+// A note spelled ./… inside a skill's directory that the next version ships
+// as a skill file (S40): the base is found, so an unedited note is updated,
+// not refused as unowned.
+func TestSkillNoteDotSlashToSkill(t *testing.T) {
+	clone := skillClone(t, "s", map[string]string{"x.md": "x2"})
+	writeTree(t, clone, map[string]string{"n/x.md": "x1", "n/SKILL.md": skillMD("s")})
+	asNote := &Manifest{Manifest: 2, Name: "demo", Version: "1", Description: "d", Contributes: Contributions{Notes: []CopyContribution{
+		{Src: "n/x.md", Dest: "./.claude/skills/s/x.md"}, {Src: "n/SKILL.md", Dest: "./.claude/skills/s/SKILL.md"}}}}
+	root := t.TempDir()
+	l, _ := mustRunSkills(t, root, clone, asNote, skillRunOpts{})
+	l2, _, err := runSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l})
+	if err != nil {
+		t.Fatalf("the hand-off was refused: %v", err)
+	}
+	if readText(t, filepath.Join(root, ".claude", "skills", "s", "x.md")) != "x2" {
+		t.Error("the unedited note wasn't updated")
+	}
+	if orphan := OrphanLedger(l, l2); orphan != nil && len(orphan.Notes) > 0 {
+		t.Errorf("orphans: %v", orphan.Notes)
+	}
+}

@@ -689,7 +689,8 @@ re-installs them at their recorded commits.
 
 **Refused before anything is applied:** a skill whose directory or files can't
 be read (no `SKILL.md`, frontmatter without `name` equal to the directory name
-or without a `description` of 1–1024 characters, a symbolic link anywhere, an
+or without a `description` of 1–1024 characters, a symbolic link anywhere in the skill (and, in the workspace, a managed skill
+file that is itself a symbolic link, also on remove and `cg init --force`), an
 `executables` entry naming no file, a shipped `SKILL.local.md`); a skill name
 another installed extension ships for a target both install it for; a skill
 named after a framework skill or slash command (`wrap`, `cg-sync`, `cg-init`,
