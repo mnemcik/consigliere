@@ -3,6 +3,7 @@ package extension
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -394,4 +395,167 @@ func TestApplyRollsBackGitignoreOnError(t *testing.T) {
 		t.Fatal("expected Apply to fail on the missing template source")
 	}
 	assertFile(t, path, base)
+}
+
+// filterManifest has two wrappers in three hook entries, with filters.
+func filterManifest() *Manifest {
+	return &Manifest{
+		Manifest: 2, Name: "demo", Version: "1.0.0", Description: "d",
+		Contributes: Contributions{Hooks: []HookContribution{
+			{Event: "PreToolUse", Matcher: "Bash", If: "Bash(gh pr *)", Wrapper: "hooks/guard.sh", Command: "cg-demo guard"},
+			{Event: "PreToolUse", Matcher: "Bash", If: "Bash(gh api *)", Wrapper: "./hooks/guard.sh", Command: "cg-demo guard"},
+			{Event: "SessionStart", Matcher: "compact|clear", Wrapper: "hooks/remind.sh", Command: "cg-demo remind"},
+		}},
+	}
+}
+
+// H11, H13: one copy per wrapper, one registration and ledger entry per hook
+// entry, settings.json saved once.
+func TestApplyHookFilters(t *testing.T) {
+	root := t.TempDir()
+	m := filterManifest()
+	clone := makeClone(t, m)
+	saves := countSaves(t)
+	l, err := ApplyWith(root, clone, m, ApplyOptions{Force: true})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if *saves != 1 {
+		t.Errorf("settings.json saved %d times, want 1", *saves)
+	}
+	guard, remind := ".claude/hooks/demo-guard.sh", ".claude/hooks/demo-remind.sh"
+	wantLedger := []LedgerHook{{"PreToolUse", guard}, {"PreToolUse", guard}, {"SessionStart", remind}}
+	if !reflect.DeepEqual(l.Hooks, wantLedger) {
+		t.Errorf("ledger hooks = %+v, want %+v", l.Hooks, wantLedger)
+	}
+	entries, err := os.ReadDir(filepath.Join(root, ".claude", "hooks"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Errorf("want 2 installed wrappers, got %d", len(entries))
+	}
+	pin := PinnedCommand
+	wantPre := []map[string]any{group("Bash", pin(guard), "Bash(gh pr *)"), group("Bash", pin(guard), "Bash(gh api *)")}
+	if got := groups(t, root, "PreToolUse"); !reflect.DeepEqual(got, wantPre) {
+		t.Errorf("PreToolUse = %v\nwant %v", got, wantPre)
+	}
+	if got := groups(t, root, "SessionStart"); !reflect.DeepEqual(got, []map[string]any{group("compact|clear", pin(remind), "")}) {
+		t.Errorf("SessionStart = %v", got)
+	}
+
+	// H14: remove takes every registration and both wrappers; the repeated
+	// wrapper in the ledger is a no-op the second time.
+	if _, err := Reverse(root, l); err != nil {
+		t.Fatalf("Reverse: %v", err)
+	}
+	if hooks := readSettings(t, root)["hooks"].(map[string]any); len(hooks) != 0 {
+		t.Errorf("hooks left after remove: %v", hooks)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(root, ".claude", "hooks")); len(entries) != 0 {
+		t.Errorf("wrappers left after remove: %v", entries)
+	}
+}
+
+// update applies next over the install recorded in old, as `cg extension
+// update` does: apply, then reverse what the new ledger no longer has.
+func update(t *testing.T, root string, old *Ledger, next *Manifest) *Ledger {
+	t.Helper()
+	l, err := ApplyWith(root, makeClone(t, next), next, ApplyOptions{Old: old, Force: true})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if orphan := OrphanLedger(old, l); orphan != nil {
+		if _, err := Reverse(root, orphan); err != nil {
+			t.Fatalf("reverse orphans: %v", err)
+		}
+	}
+	return l
+}
+
+// H12: an update with a changed filter, and one that drops an entry of a
+// wrapper still in use and the last entry of another wrapper.
+func TestUpdateHookFilters(t *testing.T) {
+	root := t.TempDir()
+	m := filterManifest()
+	l, err := Apply(root, makeClone(t, m), m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, remind := PinnedCommand(".claude/hooks/demo-guard.sh"), ".claude/hooks/demo-remind.sh"
+
+	changed := filterManifest()
+	changed.Contributes.Hooks[0].If = "Bash(gh issue *)"
+	l = update(t, root, l, changed)
+	wantPre := []map[string]any{group("Bash", guard, "Bash(gh issue *)"), group("Bash", guard, "Bash(gh api *)")}
+	if got := groups(t, root, "PreToolUse"); !reflect.DeepEqual(got, wantPre) {
+		t.Errorf("after changed filter, PreToolUse = %v\nwant %v", got, wantPre)
+	}
+
+	dropped := filterManifest()
+	dropped.Contributes.Hooks = dropped.Contributes.Hooks[1:2] // keep only the gh api entry
+	l = update(t, root, l, dropped)
+	if got := groups(t, root, "PreToolUse"); !reflect.DeepEqual(got, []map[string]any{group("Bash", guard, "Bash(gh api *)")}) {
+		t.Errorf("after dropped entries, PreToolUse = %v", got)
+	}
+	if got := groups(t, root, "SessionStart"); len(got) != 0 {
+		t.Errorf("dropped wrapper still registered: %v", got)
+	}
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(remind))); !os.IsNotExist(err) {
+		t.Errorf("dropped wrapper still installed, stat err=%v", err)
+	}
+	if len(l.Hooks) != 1 {
+		t.Errorf("ledger hooks = %+v", l.Hooks)
+	}
+}
+
+// H10, U1: a v1 extension without filters writes the same settings.json as
+// before (one unfiltered group with an empty matcher per entry).
+func TestApplyV1HooksUnchanged(t *testing.T) {
+	root := t.TempDir()
+	m := &Manifest{Manifest: 1, Name: "demo", Version: "1.0.0", Description: "d",
+		Contributes: Contributions{Hooks: []HookContribution{
+			{Event: "SessionStart", Wrapper: "hooks/gate.sh", Command: "cg-demo gate"},
+			{Event: "Stop", Wrapper: "hooks/stop.sh", Command: "cg-demo stop"},
+		}}}
+	if _, err := Apply(root, makeClone(t, m), m); err != nil {
+		t.Fatal(err)
+	}
+	unfiltered := func(rel string) []any {
+		return []any{map[string]any{"matcher": "", "hooks": []any{map[string]any{"type": "command", "command": PinnedCommand(rel)}}}}
+	}
+	want := map[string]any{"hooks": map[string]any{
+		"SessionStart": unfiltered(".claude/hooks/demo-gate.sh"),
+		"Stop":         unfiltered(".claude/hooks/demo-stop.sh"),
+	}}
+	if got := readSettings(t, root); !reflect.DeepEqual(got, want) {
+		t.Errorf("settings = %v\nwant %v", got, want)
+	}
+}
+
+// H13 rollback: two wrappers, the second one's source missing. The apply
+// fails, settings.json is byte-identical and the first wrapper is gone.
+func TestApplyHooksRollBack(t *testing.T) {
+	root := t.TempDir()
+	const seed = "{\n  \"hooks\": {}\n}\n"
+	if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(settingsPath(root), []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := filterManifest()
+	clone := makeClone(t, m)
+	if err := os.Remove(filepath.Join(clone, "hooks", "remind.sh")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(root, clone, m); err == nil {
+		t.Fatal("expected Apply to fail on the missing wrapper")
+	}
+	if got, _ := os.ReadFile(settingsPath(root)); string(got) != seed {
+		t.Errorf("settings.json changed: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".claude", "hooks", "demo-guard.sh")); !os.IsNotExist(err) {
+		t.Errorf("first wrapper left behind, stat err=%v", err)
+	}
 }
