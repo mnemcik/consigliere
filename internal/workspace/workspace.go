@@ -65,6 +65,31 @@ type Config struct {
 	// v1.4 additive block: read-only project sharing. Nil means nothing is
 	// shared. See ShareConfig and docs/share.md.
 	Share *ShareConfig `json:"share,omitempty"`
+
+	// Skills tunes how extension skills are installed. Nil means defaults.
+	Skills *SkillsConfig `json:"skills,omitempty"`
+}
+
+// DefaultSkillTarget is the agent tool extension skills install for when
+// skills.targets is absent.
+const DefaultSkillTarget = "claude"
+
+// SkillsConfig tunes extension skills.
+type SkillsConfig struct {
+	// Targets names the agent tools extension skills are installed for. A
+	// pointer, so an absent key (nil: the default) and an empty list (no
+	// skills installed) stay distinct through Save.
+	Targets *[]string `json:"targets,omitempty"`
+}
+
+// SkillTargets returns the configured skill targets: the list as written, or
+// [DefaultSkillTarget] when the key is absent. Safe on a nil *Config. Names
+// are not checked here (see extension.CheckSkillTargets).
+func (c *Config) SkillTargets() []string {
+	if c == nil || c.Skills == nil || c.Skills.Targets == nil {
+		return []string{DefaultSkillTarget}
+	}
+	return append([]string{}, (*c.Skills.Targets)...)
 }
 
 // ExtensionRef records an installed extension in .cg.json (schema v1.2). The
