@@ -60,16 +60,17 @@ func PathStates(ctx context.Context, dir string, paths []string) (map[string]Pat
 			return nil, err
 		}
 		for _, e := range parseStatusZ(raw) {
-			rel, ok := strings.CutPrefix(e.path, pre)
-			if !ok {
-				continue
-			}
 			state := PathUncommitted
 			if e.ignored {
 				state = PathIgnored
 			}
+			// Entries are relative to the repository root; so is pre+p. A
+			// directory entry (trailing "/") covers every path below it,
+			// including one above dir itself (an ignored directory holding
+			// the whole workspace is reported as just that directory).
 			for _, p := range batch {
-				if samePathspec(p, rel) || (strings.HasSuffix(rel, "/") && hasPathPrefix(p, rel)) {
+				full := pre + p
+				if samePathspec(full, e.path) || (strings.HasSuffix(e.path, "/") && hasPathPrefix(full, e.path)) {
 					if out[p] != PathUncommitted {
 						out[p] = state
 					}

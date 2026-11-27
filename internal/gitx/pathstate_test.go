@@ -160,3 +160,23 @@ func TestPathStatesFoldsCase(t *testing.T) {
 	// doesn't count for it. Both names are valid on Windows.
 	wantStates(t, ctx, dir, map[string]PathState{"SKILL.md": PathUncommitted, "a[b].md": PathCommitted})
 }
+
+// A workspace without its own repository, inside a repository that ignores a
+// directory above it: git reports only that directory, which still covers
+// the workspace's paths.
+func TestPathStatesIgnoredDirectoryAbove(t *testing.T) {
+	for name, c := range map[string]struct{ ignore, ws string }{
+		"the workspace itself": {"ws/", "ws"},
+		"a parent":             {"a/", "a/b"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, dir := initRepo(t)
+			writeFile(t, dir, ".gitignore", c.ignore+"\n")
+			mustRun(t, ctx, dir, "add", ".gitignore")
+			mustRun(t, ctx, dir, "commit", "-m", "ignore")
+			ws := filepath.Join(dir, filepath.FromSlash(c.ws))
+			writeFile(t, ws, ".claude/skills/s/SKILL.md", "edited\n")
+			wantStates(t, ctx, ws, map[string]PathState{".claude/skills/s/SKILL.md": PathIgnored})
+		})
+	}
+}

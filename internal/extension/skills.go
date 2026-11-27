@@ -570,6 +570,9 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 			continue
 		}
 		if w := sameFileAs(root, dest, order); w != "" {
+			// The same file on disk: through a case-only rename, or because
+			// one target directory links to another. Not dropped; its base
+			// carries over.
 			renamed[w] = dest
 			continue
 		}
@@ -620,7 +623,10 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 		if err != nil {
 			return nil, err
 		}
-		p := skillPathPlan{dest: dest, data: w.data, mode: w.mode, next: ContentID(w.data), missing: disk == "", renameFrom: renamed[dest]}
+		p := skillPathPlan{dest: dest, data: w.data, mode: w.mode, next: ContentID(w.data), missing: disk == ""}
+		if from := renamed[dest]; from != "" && strings.EqualFold(from, dest) {
+			p.renameFrom = from // a case-only rename: give the file the new name
+		}
 		b, tracked := base(dest)
 		switch {
 		case disk == p.next:
@@ -704,6 +710,20 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 			return nil, err
 		}
 	}
+	// A directory the run stops installing into that is, on disk, one it
+	// still installs into (a linked target directory) isn't gone.
+	plan.gone = slices.DeleteFunc(plan.gone, func(g skillDir) bool {
+		gi, err := os.Stat(filepath.Join(root, filepath.FromSlash(g.dir)))
+		if err != nil {
+			return false
+		}
+		for d := range installed {
+			if di, err := os.Stat(filepath.Join(root, filepath.FromSlash(d.dir))); err == nil && os.SameFile(gi, di) {
+				return true
+			}
+		}
+		return false
+	})
 	if opts.SkillMode != SkillsRestore {
 		warnSkills(root, sources, targets, old, opts, report)
 	}
@@ -711,15 +731,16 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 }
 
 // sameFileAs returns the path in wanted that names the same file on disk as
-// old, differing only in case, or "". Only a case-insensitive file system
-// gives one; on others the two are different files.
+// old, or "": a case variant on a file system that ignores case, or the
+// same file reached through a target directory that links to another (say
+// .claude/skills -> ../.agents/skills). Deleting old would delete wanted.
 func sameFileAs(root, old string, wanted []string) string {
 	oi, err := os.Stat(filepath.Join(root, filepath.FromSlash(old)))
 	if err != nil {
 		return ""
 	}
 	for _, w := range wanted {
-		if w == old || !strings.EqualFold(w, old) {
+		if w == old {
 			continue
 		}
 		if wi, err := os.Stat(filepath.Join(root, filepath.FromSlash(w))); err == nil && os.SameFile(oi, wi) {
@@ -750,7 +771,11 @@ func validLedgerSkills(l *Ledger) error {
 			clean, err := CleanSubdir(f)
 			ok := err == nil && filepath.ToSlash(clean) == f && !strings.Contains(f, `\`)
 			if ok {
-				ok = slices.ContainsFunc(s.Targets, func(t string) bool { return strings.HasPrefix(f, SkillDir(t, s.Name)+"/") })
+				ok = slices.ContainsFunc(s.Targets, func(t string) bool {
+					dir := SkillDir(t, s.Name) + "/"
+					// The workspace's own file is never cg's to delete.
+					return strings.HasPrefix(f, dir) && !strings.EqualFold(strings.TrimPrefix(f, dir), SkillLocalFile)
+				})
 			}
 			if !ok {
 				return fmt.Errorf("%s records %q for skill %q, which isn't a path inside that skill's directory; %s", ledgerRel(l), f, s.Name, ledgerFix(l))

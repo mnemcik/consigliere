@@ -806,3 +806,52 @@ func TestSkillCaseOnlyRename(t *testing.T) {
 		t.Fatalf("update: %v", err)
 	}
 }
+
+// A target directory that links to the other target (.claude/skills ->
+// ../.agents/skills): changing the targets keeps the skill, since the old
+// path and the new one are the same file.
+func TestSkillLinkedTargetDirectories(t *testing.T) {
+	for name, from := range map[string][]string{"claude to agents": {"claude"}, "both to agents": {"claude", "agents"}} {
+		t.Run(name, func(t *testing.T) {
+			clone := skillClone(t, "s", map[string]string{"a.md": "a"})
+			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, ".agents", "skills"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join("..", ".agents", "skills"), filepath.Join(root, ".claude", "skills")); err != nil {
+				t.Skipf("no symlinks: %v", err)
+			}
+			l, _ := mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{targets: from})
+			l, r := mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l, targets: []string{"agents"}})
+			for _, f := range []string{"SKILL.md", "a.md"} {
+				if !exists(filepath.Join(root, ".agents", "skills", "s", f)) {
+					t.Errorf("%s deleted", f)
+				}
+			}
+			if strings.Contains(joined(r), "left ") {
+				t.Errorf("the skill's own files reported as left behind: %v", r.Notices)
+			}
+			// The next update finds nothing edited.
+			if _, _, err := runSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l, targets: []string{"agents"}}); err != nil {
+				t.Errorf("next update: %v", err)
+			}
+		})
+	}
+}
+
+// A committed ledger can't get the workspace's SKILL.local.md deleted.
+func TestSkillLedgerLocalFileRefused(t *testing.T) {
+	root := t.TempDir()
+	writeTree(t, root, map[string]string{".claude/skills/s/skill.local.md": "mine"})
+	old := &Ledger{Name: "demo", Skills: []LedgerSkill{{Name: "s", Targets: []string{"claude"}, Files: []string{".claude/skills/s/skill.local.md"}}},
+		Files: map[string]string{".claude/skills/s/skill.local.md": ContentID([]byte("mine"))}}
+	if err := RemoveSkills(root, old, &ApplyOptions{}, &SkillReport{}); err == nil {
+		t.Error("remove accepted the ledger")
+	}
+	if !exists(filepath.Join(root, ".claude", "skills", "s", "skill.local.md")) {
+		t.Error("the local file was deleted")
+	}
+}
