@@ -50,8 +50,9 @@ The analysis was pinned to #259 at `decbfc0` and #300 at `021cbd9`. Against `mai
   `MAJOR.MINOR.PATCH`, no leading `v`, no leading zeros, no pre-release or build suffix. Missing parts are `0`:
   `2` is `2.0.0`, `2.1` is `2.1.0`.
 - **Running version:** `cmd.Version`. Its **core** is its `MAJOR.MINOR.PATCH`, after an optional leading `v`,
-  with any pre-release or build suffix dropped: `v2.1.0-4-gabc1234-dirty` and `2.1.0` both have core `2.1.0`. A
-  running version with no such core (`dev`, a bare commit hash, empty) has none.
+  with any pre-release or build suffix dropped: `v2.1.0-4-gabc1234-dirty` and `2.1.0` both have core `2.1.0`. All
+  three parts must be present: a running version without them (`dev`, a bare commit hash even if it is all digits
+  such as `1234567-dirty`, empty) has no core.
 - **Unmet:** a requirement greater than the running version's core. With no core, no requirement is unmet.
 - **Update hint:** `Update cg (cg update upgrade, or brew upgrade --cask cg), then run this again.`
 - **Requirement message:** `extension "<name>" needs cg <requirement> or newer; this is cg <core>. <update hint>`
@@ -77,9 +78,10 @@ The analysis was pinned to #259 at `decbfc0` and #300 at `021cbd9`. Against `mai
   `2.1.0+build`, `02.1`, `2.1.0.0`, `2.x`, surrounding spaces, a control character) THEN validation fails with
   `requires.cg: invalid version "<value>": want MAJOR, MAJOR.MINOR or MAJOR.MINOR.PATCH`, the value quoted with Go's
   `%q` so no control character reaches the terminal.
-- **S3** WHEN `requires` is absent, is `{}`, or has keys other than `cg` THEN the manifest validates; the other
-  keys are ignored ("an older cg ignores a key it doesn't know", decision 2), and with no `cg` there is no
-  requirement.
+- **S3** WHEN `requires` is absent, is `{}`, has keys other than `cg`, or has `"cg": null` THEN the manifest
+  validates; the other keys are ignored ("an older cg ignores a key it doesn't know", decision 2), and with no `cg`
+  (or `null`) there is no requirement. (The registry schema refuses `null` and other keys, X1: stricter there, never
+  looser.)
 - **S4** WHEN `requires` isn't an object, or `requires.cg` isn't a string THEN parsing fails, as for any field of
   the wrong type today (`parsing cg-extension.json: …`).
 
@@ -115,20 +117,26 @@ An installed extension whose pinned manifest (#259's Terms) validates but whose 
   owned and conflict with an incoming extension's, it is not "unverifiable" under #259 S6, and installing or
   updating another extension isn't refused because of it (decision 4).
 - **S13** **is declared but not runnable for dispatch:** WHEN the typed words' longest match in the deciding root
-  (#259 S15) belongs to it THEN dispatch stops as #259 S17 does (same exit code), with the requirement message instead of
-  S17's `cg init` hint; it doesn't fall through to a later root or the `PATH` fallback, and the namespace counts as
-  declared for #259 S16 and S33. A shorter entry of another extension never stands in for it (#259 S15).
+  (#259 S15) belongs to it, and the entry is otherwise verified (#259 S17's checks pass: declared with that binary,
+  binary present) THEN dispatch stops as #259 S17 does (same exit code, same prefix), with the requirement in place
+  of S17's reason and fix: `cg <command>: extension "<name>" (installed in <root>) can't run it: it needs cg
+  <requirement> or newer; this is cg <core>. <update hint>`. It doesn't fall through to a later root or the `PATH`
+  fallback, and the namespace counts as declared for #259 S16 and S33. A shorter entry of another extension never
+  stands in for it (#259 S15). WHEN the entry also fails one of S17's checks THEN S17's message applies (its fix
+  comes first: the requirement is checked again once the tree is repaired).
 - **S13b** WHEN its launcher is the workspace's launcher THEN `cg start` warns
   `cg start: extension <name>: needs cg <requirement> or newer; this is cg <core>; <update hint>; starting the agent
   without it` and starts the agent directly, as for any launcher it can't trust today (`cmd/start.go:235-242`).
 - **S13c** WHEN `cg extension list` runs THEN the extension is shown with its unmet requirement, in text and
-  `--json` ([Q6](#q6)).
+  `--json`, whether or not it has a ledger ([Q6](#q6)).
 
 ### The newer-schema message
 
 - **S14** WHEN a manifest's `manifest` is greater than this cg understands THEN `Validate` fails with
   `unsupported manifest schema version <n> (this cg understands 1 to <max>): it needs a newer cg. <update hint>`
-  (decision 6). A `manifest` below 1 keeps today's message, without the hint.
+  (decision 6). A `manifest` below 1 keeps today's message, without the hint. Where #259's messages wrap this one
+  for an installed tree (`unverifiableExtension`, #259 S17), their own fix text stays; it already offers "upgrade
+  cg" as one of its fixes, so the two agree.
 
 ### Docs
 
@@ -142,14 +150,16 @@ An installed extension whose pinned manifest (#259's Terms) validates but whose 
 
 - **U1** A manifest without `requires.cg` installs, updates, dispatches and launches as today.
 - **U2** Git-hook trust (`TrustedGitHookScripts`) and the legacy base of a pre-content-id ledger (`LegacyBases`)
-  don't check the requirement ([Q5](#q5)).
+  don't check the requirement ([Q5](#q5)): an unmet extension's git hooks keep running on an older cg, as today.
 - **U3** No setting or flag skips the check ([Q8](#q8)); a development build skips it by S6.
 
 ## Cross-repo acceptance (outside this PR)
 
 - **X1** mnemcik/cg-extensions-registry `schema/cg-extension.schema.json`: an optional top-level `requires` object,
-  `additionalProperties: false`, with one optional property `cg`: a string with the version pattern; allowed with
-  `manifest` 1 and 2 (no `if`/`then` ties it to a version). Every manifest on cg-extensions `main` still validates.
+  `additionalProperties: false`, with one optional property `cg`: a string with the version pattern and a guard
+  refusing any whitespace (`"not": {"pattern": "\\s"}`), because JSON Schema validators built on Python `re`
+  (cg-extensions CI) let `$` match before a final newline, so `"2.1.0\n"` would pass CI and fail in cg; allowed
+  with `manifest` 1 and 2 (no `if`/`then` ties it to a version). Every manifest on cg-extensions `main` still validates.
   Merged before any extension sets `requires.cg`; not a hold on the cg release ([Q2](#q2)).
 - **X2** No extension sets `requires.cg` in this rollout, and the registry descriptions keep their "(cg x+)" text
   ([Q3](#q3)).
@@ -168,6 +178,9 @@ Each has a proposed answer; none is decided here.
   registry PR to say `Fixes mnemcik/cg-extensions#NNN`. *Proposed:* an additive registry PR (X1), its own issue in
   mnemcik/cg-extensions that points at this agreement, which covers its content (no separate analysis); it can
   merge any time, before or after cg 2.0.0 (a cg that predates the field ignores it, and no manifest uses it yet).
+  Two details beyond the decided pattern, part of this proposal: `requires` is closed (`additionalProperties:
+  false`, like the rest of the schema), so a later `requires.<tool>` (#308) needs its own schema change; and `cg`
+  carries the whitespace guard of X1 so CI and cg refuse the same values.
 - <a id="q3"></a>**Q3 — no `requires.cg` and no description change in this rollout (decision 9's last part).**
   Decision 9 says extensions set `requires.cg` where they depend on a fix when they move to v2, and drop the
   "(cg x+)" text. Today every stated minimum is at or below 2.0.0 (`bundle-backup` 1.25, `obsidian` 1.26, `tmux`
@@ -183,14 +196,19 @@ Each has a proposed answer; none is decided here.
   no change; dispatch and the launcher call a separate `unmetRequirement(m)` on the manifest they got and refuse
   (S13, S13b). The behaviour is exactly decision 4's; only the shape differs.
 - <a id="q5"></a>**Q5 — which pinned-manifest readers check the requirement.** Decision 4 names the apply paths and
-  `verifiedManifest`. *Proposed:* only the ones that run something from the extension, dispatch (S13) and the
-  launcher (S13b), plus `cg extension list` for display (Q6). Git-hook trust and `LegacyBases` don't (U2): git hooks
-  were approved when the extension was applied, by a cg that met the requirement, and `LegacyBases` reads an old
-  version only for file bases.
+  `verifiedManifest`. *Proposed:* dispatch (S13) and the launcher (S13b), the two that cg itself starts on the
+  user's command, plus `cg extension list` for display (Q6). Git-hook trust and `LegacyBases` don't (U2).
+  *Trade-off:* git-hook trust is computed on each machine from the store tree at the recorded commit, so on an
+  older cg whose store already has that tree (shared with another workspace, or left by a newer binary) the
+  extension's git hooks keep being approved and running, as today. They are scripts git runs, not cg commands; a
+  `cg` command they call is still refused by S13. *Alternative:* hook trust skips an unmet extension, so its hooks
+  stop running (silently, since git hooks have no place to warn) until cg is updated. `LegacyBases` only reads an
+  old version's file contents as merge bases.
 - <a id="q6"></a>**Q6 — `cg extension list` shows an unmet requirement.** Not covered by the analysis. *Proposed:*
   text: `  needs cg <requirement> or newer; this is cg <core>` under the extension; `--json`: a
-  `requirementUnmet` string (the requirement message), omitted when met. Its commands are listed as verified
-  (S12), since `list` reports what dispatch would refuse only through this field.
+  `requirementUnmet` string (the requirement message), omitted when met. It is evaluated for every installed
+  extension whose pinned manifest validates, with or without a ledger. Its commands are listed as verified (S12),
+  since `list` reports what dispatch would refuse only through this field.
 - <a id="q7"></a>**Q7 — several unmet requirements in one run.** Decision 5 names "the extension". *Proposed:*
   install, update and `cg init` load every manifest of the run, then report each unmet requirement (S10), so one cg
   update fixes the run; nothing is applied either way.
