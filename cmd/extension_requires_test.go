@@ -160,6 +160,21 @@ func TestUpdateRefusesUnmetRequirement(t *testing.T) {
 		wantRequirementErr(t, err, out, "3", "beta")
 		assertUnchanged(t, ws, before)
 	})
+	t.Run("a target at its latest version is checked too", func(t *testing.T) {
+		// alpha was installed by a newer cg and has no new version; an
+		// update would re-apply it, so the run is refused, as cg init
+		// refuses to restore it.
+		setVersion(t, "2.1.0")
+		cfgHome, ws := t.TempDir(), newWorkspace(t)
+		installRepo(t, cfgHome, ws, withRequires(commandsManifest("alpha", "1.0.0", "alpha"), "2.1"))
+		betaRepo := installRepo(t, cfgHome, ws, commandsManifest("beta", "1.0.0", "beta"))
+		updateExtRepo(t, betaRepo, commandsManifest("beta", "1.1.0", "beta"), "")
+		Version = oldCG
+		before := snapshotDir(t, ws)
+		out, err := runExtCfg(t, cfgHome, ws, "update")
+		wantRequirementErr(t, err, out, "2.1", "alpha")
+		assertUnchanged(t, ws, before)
+	})
 	t.Run("a neighbour isn't checked", func(t *testing.T) {
 		cfgHome, ws, repos := setup(t)
 		// beta's next version, and the one installed, need a newer cg; alpha,
