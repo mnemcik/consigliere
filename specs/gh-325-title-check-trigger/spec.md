@@ -33,9 +33,10 @@ Not changed (decisions 1, 3, 5): no Actions event policy; branch protection, req
 
 ## Timing
 
-Merged as soon as it is reviewed, independent of the 2.0.0 rollout, by the end of 2026-12-01 UTC at the latest
-(decision 4). If it slips, there is no stopgap: no Actions policy, and other PRs with new heads wait until it merges
-(decision 5).
+Merged as soon as it is reviewed, independent of the 2.0.0 rollout, ideally before the last of #318 / #324 merges,
+and by the end of 2026-12-01 UTC at the latest (decision 4). If it slips, there is no stopgap: no Actions policy,
+other PRs with new heads wait until it merges, and no admin merge past the check unless the owner chooses one for a
+specific PR (decision 5).
 
 ## Acceptance criteria
 
@@ -79,8 +80,8 @@ Merged as soon as it is reviewed, independent of the 2.0.0 rollout, by the end o
   forks too"; read-only is "all the action needs"), and the repository's fork-approval setting for the approval step.
   All three are cited in the PR description. The first fork PR after the merge is the live confirmation; it is a
   follow-up, not part of acceptance, and if it doesn't report, that is a new issue. **Alternative, if the owner
-  prefers a live test:** fork into an organisation the owner controls and open a throwaway PR from it against the fix
-  branch's head; it shows the read-only fork run, but not the approval step (the owner has write access).
+  prefers a live test:** fork into an organisation the owner controls and open a throwaway PR from it with the fix
+  branch as its base (public, since the repository is; closed unmerged afterwards); it shows the read-only fork run, but not the approval step (the owner has write access).
 - **Q2 — how A4 (after 2026-12-02) is shown.** The block can't be switched on before the date, and the brownout
   windows are over. **Proposed:** A4 is shown by A1 (the passing check comes from a run whose event is
   `pull_request`) together with the 2026-11-16 brownout runs in the analysis, where `pull_request` runs were not
@@ -88,3 +89,30 @@ Merged as soon as it is reviewed, independent of the 2.0.0 rollout, by the end o
   `pull_request_target` run with the same check name; the evidence names the `pull_request` run explicitly so the
   two aren't confused. Merged before 2026-12-02, the first PR after the date is the live confirmation; like Q1's, it is a
   follow-up, not part of acceptance, so the item closes at the merge.
+
+## Review
+
+**Review 1** — `spec.md` @ `55b5b9d` (content `a93a952`) · 2026-11-27
+- Reviewers: doc-reviewer (builder check, claim check, missed option, hidden constraints, governing rules)
+- Findings: 0 blocker, 2 should-fix, 3 nit → fixed in `f028332`: Q1 overstated why a live fork test is impossible
+  (an organisation fork is offered as an owner alternative); fork-run approval attributed to the events page instead
+  of the repository's setting; decisions 4 and 5 missing (new Timing section); description edits also start `edited`
+  runs; the restored title is the A7 title. Owner's: none. Rejected: none.
+- Builder questions: 2 → answered in the text: the post-merge live confirmations are follow-ups, not acceptance;
+  Q1's alternative is the fallback for A3.
+- Verified true: `pull_request` runs from the merge ref, fork PRs get a read-only token and no other secrets, no run
+  on a merge conflict, `edited` is opt-in; the action's README statements; the changelog's dates and scope; C2
+  matches the current workflow; nothing beyond the agreed decisions; nothing private.
+- Not verified: that a user account can't fork its own repository (no doc found, treated as likely); actionlint.
+
+**Review 2** (delta) — @ `f028332` (content `711d2b3`) · 2026-11-27
+- Reviewers: doc-reviewer (same lenses, delta scope)
+- Findings: 0 blocker, 0 should-fix, 2 nit → fixed in the next commit (text only, no further round): Timing now
+  carries decision 4's #318 / #324 preference and decision 5's admin-merge clause; Q1's alternative names the fix
+  branch as the base and says the throwaway PR is public and closed unmerged. Regression check: all round-1 findings
+  resolved.
+- Verified true: the organisation-fork alternative works (no `branches:` filter, so a PR into the fix branch runs the
+  fix branch's `pull_request` copy from the merge ref, with no second same-named run).
+- Not verified: the live fork-approval setting (taken from the analysis's recon).
+
+Outcome: clean at round 2.
