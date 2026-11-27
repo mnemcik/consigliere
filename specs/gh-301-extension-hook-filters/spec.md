@@ -48,9 +48,14 @@ two rules lists two entries with the same wrapper (decision 6).
 
 ### Manifest
 
+H5–H7 apply to every manifest version: decision 6 has no version limit, and none of the three needs a new field. No
+manifest on mnemcik/cg-extensions `main` repeats a wrapper or a wrapper's base name (checked 2026-11-27), so none
+is refused by H6 or H7.
+
 - **H1** WHEN a `"manifest": 2` manifest has hook entries with `matcher`, `if`, both or neither THEN it validates.
 - **H2** WHEN a `"manifest": 1` manifest has a hook entry with a filter field set THEN validation fails, naming the
-  entry's index and asking for `"manifest": 2`, as for `commands` (decision 3). A v1 manifest whose hook entries set
+  entry's index and asking for `"manifest": 2` (decision 3), for example `hooks[0]: matcher and if need "manifest": 2
+  (got 1)`. A v1 manifest whose hook entries set
   no filter field still validates.
 - **H3** WHEN a hook entry sets `if` and its `event` is not an `if` event THEN validation fails, naming the entry's
   index, the event and the `if` events (decision 7). `pretooluse` is not `PreToolUse`.
@@ -60,7 +65,8 @@ two rules lists two entries with the same wrapper (decision 6).
   or `if`) THEN the manifest validates (decision 6).
 - **H6** WHEN two entries have the same event, the same matcher, the same `if` (or neither sets it) and the same
   wrapper THEN validation fails as a duplicate, naming both indexes (decision 6). Matchers compare as written,
-  except that an unset matcher and `"*"` count as the same (Q5).
+  except that an unset matcher and `"*"` count as the same (Q5). `command` is not compared: cg never reads it (U3),
+  and the two entries would register the same thing.
 - **H7** WHEN two entries name different wrappers that have the same install path (`hooks/a.sh` and `other/a.sh`)
   THEN validation fails, naming both indexes and the path (decision 6), as `git-hooks` already does for its scripts.
 - **H8** WHEN a hook entry carries a key cg doesn't know (`onFailure`, `timeout`, …) THEN it is ignored, as every
@@ -72,8 +78,10 @@ two rules lists two entries with the same wrapper (decision 6).
   `{"matcher": <matcher, or "" when unset>, "hooks": [{"type": "command", "command": <pinned install path>, "if":
   <if>}]}`, with the `if` key only when `if` is set. Groups follow the manifest's order, after the event's existing
   groups.
-- **H10** WHEN no entry of an extension sets a filter field THEN the settings cg writes are the same as today's, key
-  for key, so an update to a cg with this change shows no difference in `settings.json` for existing extensions.
+- **H10** WHEN no entry of an extension sets a filter field and no two entries name the same wrapper THEN the
+  settings cg writes are the same as today's, key for key, so an update to a cg with this change shows no difference
+  in `settings.json` for existing extensions. (A manifest that repeats a wrapper got only its last entry registered
+  before; now it gets every entry, H11.)
 - **H11** WHEN an extension with one wrapper in N entries is installed THEN the wrapper is copied once to its install
   path, N registrations point at it, and the ledger records one `{event, wrapper}` per entry.
 
@@ -91,7 +99,8 @@ two rules lists two entries with the same wrapper (decision 6).
 
 ### Unchanged
 
-- **U1** v1 manifests without filter fields install, update and are removed as today.
+- **U1** v1 manifests without filter fields that pass H6 and H7 and don't repeat a wrapper install, update and are
+  removed as today.
 - **U2** The ledger format and `cg extension list` are unchanged (analysis, Recommended item 8). The hook count in
   `cg extension list` counts entries.
 - **U3** `command` stays required and unread by cg (analysis, out of scope).
