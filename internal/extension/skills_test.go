@@ -1022,3 +1022,21 @@ func TestWithinDirByLocation(t *testing.T) {
 		t.Error("a different directory differing only in case counts as inside")
 	}
 }
+
+// cg init leaves a dropped, edited file in place, so it can't clear the way
+// for a wanted path: the run refuses with the path, before changing anything.
+func TestSkillRestoreLeftFileBlocks(t *testing.T) {
+	clone := skillClone(t, "s", map[string]string{"x/f.md": "f"})
+	root := t.TempDir()
+	l, _ := mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{})
+	writeTree(t, root, map[string]string{".claude/skills/s/x/f.md": "edited"})
+	if err := os.RemoveAll(filepath.Join(clone, "skills", "s", "x")); err != nil {
+		t.Fatal(err)
+	}
+	writeTree(t, clone, map[string]string{"skills/s/x": "now a file"})
+	_, _, err := runSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l, mode: SkillsRestore})
+	wantErr(t, err, "blocked", ".claude/skills/s/x/f.md")
+	if readText(t, filepath.Join(root, ".claude", "skills", "s", "x", "f.md")) != "edited" {
+		t.Error("the edit was lost")
+	}
+}

@@ -627,10 +627,9 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 		return opts.LegacyBases[dest], tracked
 	}
 	var refused, edited, blocked []string
+	// droppedSet holds the dropped paths this run removes from disk; only
+	// those clear the way for a wanted path (cg init leaves edited ones).
 	droppedSet := make(map[string]bool, len(dropped))
-	for _, d := range dropped {
-		droppedSet[d] = true
-	}
 	// Dropped paths first: deleting them can clear the way for a wanted path
 	// (a managed directory replaced by a file, or the reverse).
 	for _, dest := range dropped {
@@ -650,6 +649,9 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 		default:
 			edited = append(edited, dest)
 			p.op = opDeleteEdited
+		}
+		if p.op != opLeave {
+			droppedSet[dest] = true
 		}
 		plan.paths = append(plan.paths, p)
 	}
