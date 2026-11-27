@@ -790,7 +790,7 @@ func TestSkillCaseOnlyRename(t *testing.T) {
 	if readText(t, filepath.Join(root, ".claude", "skills", "s", "foo.md")) != "foo" {
 		t.Fatal("the renamed file was deleted")
 	}
-	if !strings.Contains(joined(r), `git mv --force ".claude/skills/s/Foo.md" ".claude/skills/s/foo.md"` from the workspace root) {
+	if !strings.Contains(joined(r), "`git mv --force \".claude/skills/s/Foo.md\" \".claude/skills/s/foo.md\"` from the workspace root") {
 		t.Errorf("no git mv hint: %v", r.Notices)
 	}
 	entries, err := os.ReadDir(filepath.Join(root, ".claude", "skills", "s"))
