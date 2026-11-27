@@ -56,11 +56,18 @@ Actions, a commit status posted through the API can't satisfy it; any Actions wo
 **What changes on 2026-12-02.** "Starting December 2, 2026, GitHub Actions will block `pull_request_target` events
 by default in all public repositories, unless an applicable Actions event policy explicitly allows them." Private
 and internal repositories aren't affected (changelog, 2026-11-02). The repository is public and user-owned
-(`gh api repos/mnemcik/consigliere`: `User`, `public`). A disallowed run "will fail with an error" (about Actions
-policies). Either way the required check has no passing run on a new head. The docs page on the default policy words
-the scope more narrowly ("affected repositories that were using the default `pull_request_target` policy before
-general availability"); this repository has no policy of its own (`GET /repos/mnemcik/consigliere/actions/policies`
-→ `{"total_count":0,"policies":[]}`, 2026-11-27), so it is in scope under either wording.
+(`gh api repos/mnemcik/consigliere`: `User`, `public`). The docs page on the default policy words the scope more
+narrowly ("affected repositories that were using the default `pull_request_target` policy before general
+availability"); this repository has no policy of its own (`GET /repos/mnemcik/consigliere/actions/policies` →
+`{"total_count":0,"policies":[]}`, 2026-11-27), so it is in scope under either wording.
+
+**This repository was blocked in the brownout.** GitHub ran enforcement windows on 2026-11-09 and 2026-11-16,
+16:00-18:00 UTC (changelog). On 2026-11-16 between 17:31 and 17:35 UTC, three `PR Title Lint` runs and two `Impact
+Review` runs on `pull_request_target` ended in `startup_failure`, while `CI` on `pull_request` for the same PR passed
+(`gh run list`, runs `43919248466`, `43919515190`, `43919886395`). A blocked run has no jobs
+(`…/runs/43919886395/jobs` → `total_count: 0`), so it creates no `Validate PR title` check run: the required check
+stays expected, it doesn't fail. That PR's head shows `Validate PR title: success` only from another run of the
+workflow. The brownout also shows by experiment that `pull_request` is not affected.
 
 **GitHub's security reason.** "`pull_request_target` runs in the context of the base repository and can access its
 secrets. If a workflow executes untrusted code from a fork, that code could compromise your pipeline or steal
@@ -123,8 +130,9 @@ security docs; the action's README. No existing fix or issue other than #325 and
 
 - **What:** in `pr-title-lint.yml`, replace `pull_request_target` with `pull_request` and keep everything else: the
   activity types (`opened`, `edited`, `reopened`, `synchronize`), `permissions: pull-requests: read`, the job name
-  `Validate PR title` and the action. Update the header comment to say why `pull_request`. No change to branch
-  protection, CONTRIBUTING or any Actions setting. A `ci:` PR, size S.
+  `Validate PR title` and the action. No `branches:` filter, as today (the required check only matters on PRs into
+  `main`, and an unfiltered trigger matches the current behaviour). Update the header comment to say why
+  `pull_request`. No change to branch protection, CONTRIBUTING or any Actions setting. A `ci:` PR, size S.
 - **Why it's safe:** it moves to the event GitHub itself recommends, so GitHub's reason for the block doesn't come
   back: a fork PR's run gets a read-only token and no secrets, and the job checks nothing out.
 - **Trade-off:** today the base branch's copy of the workflow runs, so a PR can't change its own title check. With
@@ -152,7 +160,8 @@ security docs; the action's README. No existing fix or issue other than #325 and
   `evaluate` enforcement needs Enterprise; `active` should not).
 - **Wrong choice when:** the workflow change can merge before 2026-12-02, which it can (below).
 - **Wins instead if:** the workflow change can't merge in time and PRs must keep merging; then it is a stopgap,
-  removed when the change lands. Not needed in practice: the fix PR reports its own check (Hidden constraints).
+  removed when the change lands. Not needed in practice: the fix PR reports its own check (Hidden constraints), so a
+  late fix only makes other PRs wait; and as a stopgap it is best-effort, since creating the policy is unverified.
 
 ### Do nothing
 
@@ -175,7 +184,11 @@ required checks drops the only Conventional-Commits enforcement point that relea
   the fix should be merged by the end of 2026-12-01 UTC. The work: owner's decisions on this analysis; `spec.md`
   (acceptance criteria; plan: none, size S) and the agreement comment; implementation and own review (under an hour);
   CI; the maintainer's impact and correctness review, approval and merge. About one working day of elapsed time
-  once decisions are in, so the decisions are needed by 2026-11-29 to keep two days of buffer.
+  once decisions are in, so the decisions are needed by 2026-11-29 (a Sunday) to keep two days of buffer.
+- **If it is late.** Nothing breaks for the fix itself (above). From 2026-12-02 until it merges, any other PR that
+  gets a new head waits on the expected check; heads that already have a result keep it. The fix merging is the
+  remedy, so no stopgap is planned: the policy is best-effort (unverified), and merging past the check as an admin
+  (admins aren't enforced on `main`) is possible but is a bypass the owner would have to choose per PR. Decision 5.
 - **Release in flight.** No open PR touches `.github/` (#312: `.release-please-manifest.json`, `CHANGELOG.md`; #318
   and #324: Go code, docs, specs), so there is no file overlap and nothing to wait for to implement. The only
   interaction is strict up-to-date branches: whichever merges first leaves the others behind. A `ci:` commit is not
@@ -187,7 +200,9 @@ required checks drops the only Conventional-Commits enforcement point that relea
 - **Reversibility:** a one-line revert of a workflow trigger.
 - **Security:** covered under the recommendation; no secrets, read-only token, nothing checked out.
 - **Who else is affected:** contributors see the same check name and result. Fork contributors already wait for
-  workflow approval. Workspaces are unaffected (`cg sync` ships no workflow). cg-extensions and the registry have
+  workflow approval for CI; with `pull_request` the title check waits too, including the re-run after a title edit,
+  which is a small new approval chore for the maintainer on fork PRs (today the `pull_request_target` copy runs on
+  fork PRs without approval). Workspaces are unaffected (`cg sync` ships no workflow). cg-extensions and the registry have
   nothing to change for this issue.
 - **#255 compatibility:** the recommendation allows no `pull_request_target`, so it matches decision 6, and it
   touches neither `impact-review.yml` nor `impact-review`'s source, so #255's App plan is unaffected.
@@ -200,6 +215,7 @@ required checks drops the only Conventional-Commits enforcement point that relea
 | 2 | Size and documents | S: `spec.md` with acceptance criteria, plan: none | open |
 | 3 | The PR's own copy of the workflow now runs (a PR could edit its own title check) | Accept: no new hole (a same-named job can be added today), covered by the impact review's workflow scrutiny and fork-run approval; no CONTRIBUTING change | open |
 | 4 | When it merges, relative to the 2.0.0 rollout | As soon as it is reviewed, independent of the rollout, ideally before the last of #318 / #324 merges; merged by the end of 2026-12-01 UTC at the latest | open |
+| 5 | If it isn't merged by the end of 2026-12-01 UTC | No stopgap: other PRs with new heads wait until it merges (the fix PR reports its own check); no Actions policy, and no admin merge past the check unless the owner chooses one for a specific PR | open |
 
 ## Review
 
