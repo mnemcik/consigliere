@@ -914,9 +914,14 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 		updates[i] = u
 		incoming[u.ref.Name] = u.m.Contributes.Commands
 	}
-	ms := make([]*extension.Manifest, len(updates))
+	// #212 S8: only a target that moves to a new commit is checked; one
+	// staying where it is (say, its requirement unmet since a pulled
+	// .cg.json) doesn't hold up the others.
+	var ms []*extension.Manifest
 	for i := range updates {
-		ms[i] = updates[i].m
+		if updates[i].commit != updates[i].ref.Commit {
+			ms = append(ms, updates[i].m)
+		}
 	}
 	if err := checkRequirements(ms); err != nil {
 		return err
