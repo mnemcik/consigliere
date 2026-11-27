@@ -124,10 +124,11 @@ Lives at the root of every extension repo. The schema is intentionally minimal;
 the `"manifest"` integer versions the schema itself for forward compatibility.
 It forbids cross-extension dependencies (declare none).
 
-Version 2 adds [`commands`](#extension-commands) and the `matcher` and `if`
-filters on [`hooks`](#contribution-points) entries. A manifest that declares
-commands or sets a filter must say `"manifest": 2`; a version 1 manifest without
-them still installs, so an extension that uses neither needn't change. cg 1.x
+Version 2 adds [`commands`](#extension-commands), [`skills`](#extension-skills)
+and the `matcher` and `if` filters on [`hooks`](#contribution-points) entries. A
+manifest that declares commands or skills, or sets a filter, must say
+`"manifest": 2`; a version 1 manifest without them still installs, so an
+extension that uses none of them needn't change. cg 1.x
 refuses a version 2 manifest with "unsupported manifest schema version".
 Version 1's `subcommands` key is gone: cg ignores it like any unknown key, so
 an extension that still uses it contributes no command until it moves to
@@ -234,11 +235,20 @@ an extension that still uses it contributes no command until it moves to
    supported on Windows yet
    ([#239](https://github.com/mnemcik/consigliere/issues/239)).
 
-5. **`templates`** — `[{ src, dest }]`. Copies template files into the
-   workspace `templates/` tree (same copy semantics as notes, including
-   [Files you change](#files-you-change), without the index rows).
+5. **`templates`** — `[{ src, dest }]`. Copies a file to any workspace path
+   (conventionally under `templates/`), with the same copy semantics as notes,
+   including [Files you change](#files-you-change), without the index rows. A
+   copied template is the user's once installed. It is no longer the way to
+   ship a skill: use `skills`, which cg keeps managed.
 
-6. **`git-hooks`** — `[{ hook, script }]`. Copies the executable `script` to
+6. **`skills`** — `[{ src, executables? }]` (manifest v2). Ships the
+   directory `src` (holding `SKILL.md`, in the
+   [Agent Skills](https://agentskills.io/specification) format) as a skill
+   named after its base name. Every file below `src` is installed; the files
+   `executables` lists, relative to `src`, are installed `0755`, every other one
+   `0644`. See [Extension skills](#extension-skills).
+
+7. **`git-hooks`** — `[{ hook, script }]`. Copies the executable `script` to
    `.cg/git-hooks/<hook>.d/<name>-<base>` in the workspace, where it is
    versioned like any other file. `hook` is a client-side git hook:
    `pre-commit`, `prepare-commit-msg`, `commit-msg`, `post-commit`,
@@ -281,7 +291,7 @@ an extension that still uses it contributes no command until it moves to
      write into a directory that may be versioned or shared.
    - Requires git 2.31 or later (`rev-parse --path-format`).
 
-7. **`gitignore`** — `[{ id, path }]`. Inserts the lines in `path` into the
+8. **`gitignore`** — `[{ id, path }]`. Inserts the lines in `path` into the
    workspace `.gitignore` as an extension-owned block, delimited by
    `# ext:<name>:gitignore:start=<id>` / `# ext:<name>:gitignore:end=<id>`
    (comments, so git ignores the markers). It works like `claude-md-sections`:
@@ -296,7 +306,7 @@ an extension that still uses it contributes no command until it moves to
    block, and it doesn't know about a block a newer cg wrote, so its `remove`
    leaves that block behind.
 
-8. **`launcher`** — `[{ binary, args? }]`, at most one entry. Makes
+9. **`launcher`** — `[{ binary, args? }]`, at most one entry. Makes
    `cg start` (and bare `cg` in a workspace) run `bin/<binary> <args…> --
    <agent argv…> <user args…>` instead of the agent (`session.agent`) directly;
    the binary is expected to exec the agent itself, e.g. inside a terminal
@@ -333,7 +343,7 @@ an extension that still uses it contributes no command until it moves to
 | `cg extension install <repo-url> --path <subdir>` | Install a co-located extension whose manifest lives in `<subdir>` of a monorepo. Direct installs only; registry entries carry their own `path`. See [Co-located extensions](#co-located-extensions-monorepo). |
 | `cg extension list [--json]` | List installed extensions for the current workspace: name, version, source, repo, and the commands each declares. A command whose namespace is a built-in is flagged: it can't run, because the built-in wins. |
 | `cg extension remove <name> [--purge]` | Reverse every contribution recorded in the workspace ledger (delete the `ext:<name>:section` block, copied notes/templates that are still as cg wrote them, hook wrapper + settings entry, git-hook scripts and any dispatcher left with nothing to run, the notes index block), drop the `.cg.json` entry, delete the ledger. The store's trees are shared, so they stay; `--purge` deletes only a legacy name-keyed clone. |
-| `cg extension update [<name>]` | Move a **single-repo** extension to its latest tag (or its default branch when untagged), record the new commit, then re-apply contributions (replace-in-place). A **co-located** (subdir) extension instead tracks the default branch and versions from its manifest — see [Co-located extensions](#co-located-extensions-monorepo). No `<name>` updates all installed extensions. Copied notes and templates you changed are kept: see [Files you change](#files-you-change). Every target's new version is fetched and its [commands checked](#extension-commands), with the extensions not being updated, before any target is applied. |
+| `cg extension update [<name>]` | Move a **single-repo** extension to its latest tag (or its default branch when untagged), record the new commit, then re-apply contributions (replace-in-place). A **co-located** (subdir) extension instead tracks the default branch and versions from its manifest — see [Co-located extensions](#co-located-extensions-monorepo). No `<name>` updates all installed extensions. Copied notes and templates you changed are kept: see [Files you change](#files-you-change). Every target's new version is fetched and its [commands checked](#extension-commands), with the extensions not being updated, before any target is applied; so are its [skills](#extension-skills), including uncommitted edits to managed skill files across all targets. |
 | `cg extension pending [--json]` | List copied files that both you and the extension changed, which update left as yours. |
 | `cg extension diff <name> <file>` | For a pending file, show the extension's change and yours, each against what cg installed, and whether a three-way merge is clean. |
 | `cg extension resolve <name> <file> --merge\|--keep\|--take` | Settle a pending file: merge the extension's change into yours (refused unless the merge is clean), keep yours, or take the extension's. Each makes the extension's version the new baseline. |
@@ -630,6 +640,74 @@ Inside the workspace or one of its worktrees, the current one serves the
 command (rule 2): a session that works in a worktree should run its commands
 from there.
 
+## Extension skills
+
+A skill an extension ships is **managed by cg**, like a hook: cg writes it,
+updates it and removes it, and nobody is expected to edit it in place.
+
+**Where it goes.** `.cg.json` `skills.targets` lists the agent tools skills are
+installed for: `claude` (`.claude/skills/<name>/`) and `agents`
+(`.agents/skills/<name>/`). Absent means `["claude"]`; `[]` installs no skills
+(`cg extension list` shows them as not installed). An unknown target fails
+install, update and `cg init`. Changing the targets takes effect on the next
+`cg extension update`, which installs each skill under the targets now listed
+and deletes its files under the ones no longer listed. cg never writes to the
+user-scope directories (`~/.claude/skills/`, `~/.agents/skills/`); when one
+holds a skill of the same name, install and update warn that the agent tool may
+use that one instead, and `cg extension list` shows it.
+
+**Customising.** A workspace customises a skill through `SKILL.local.md`, a file
+next to `SKILL.md` that the workspace owns. Every skill's `SKILL.md` carries a
+block telling the agent to read it (see `EXTENSIONS.md`); cg never writes or
+deletes `SKILL.local.md`, or any other file in the skill's directory that the
+extension doesn't ship. When cg stops installing a skill into a directory that
+still holds such files, it names each one (and, for a target change, where the
+skill now lives) and leaves it there.
+
+**Edits to managed files.** The ledger records, for each managed file, the
+content id of the version cg last wrote. On update:
+
+- a file still as cg wrote it gets the new version (and mode);
+- a file that already holds the new version is recorded, whatever happened before;
+- a file you changed **and committed** is replaced by the extension's version,
+  with one message: your change is in git history, and additions belong in
+  `SKILL.local.md`;
+- a file you changed and **didn't commit** (staged, unstaged or untracked; also
+  one git ignores, flagged assume-unchanged or skip-worktree, or in a workspace
+  with no commit or no git) stops the run before anything is written, naming
+  each file: commit or discard the change, then run the command again.
+  `cg extension remove` does the same.
+
+`cg init --force` restoring an extension on a fresh clone (plain `cg init` stops
+at an existing `.cg.json`) leaves an edited file as it is and says the next
+`cg extension update` replaces it; it never stops because of one. The exception
+is an edited file in the way of the restored layout (the skill now ships a file
+where the edited file's directory is): the restore stops before writing and names
+it; move it aside and run `cg init --force` again. A restore that stops removes
+the trees it fetched for extensions it didn't apply, so running it again
+re-installs them at their recorded commits.
+
+**Refused before anything is applied:** a skill whose directory or files can't
+be read (no `SKILL.md`, frontmatter without `name` equal to the directory name
+or without a `description` of 1–1024 characters, a symbolic link anywhere in the skill (and, in the workspace, a managed skill
+file that is itself a symbolic link, also on remove and `cg init --force`), an
+`executables` entry naming no file, a shipped `SKILL.local.md`); a skill name
+another installed extension ships for a target both install it for; a skill
+named after a framework skill or slash command (`wrap`, `cg-sync`, `cg-init`,
+`match-project`) for the `claude` target, unless the extension already ships it
+there (then a warning, as for a command a later cg made a built-in, and
+`cg init` only warns); a note or template inside a skill's directory; an
+existing file cg has no record of that differs from the extension's (install
+`--force` overwrites it); and a path that resolves, through a symbolic link,
+outside the workspace. A skill moving from one extension to another in one
+`cg extension update` is refused with the order of updates that applies it,
+droppers first; a cycle of moves can't be applied by any order, and the message
+names the ways out.
+
+A skill whose `SKILL.md` lacks the local-file block, rewords it or uses a
+version cg doesn't know installs with a warning naming the extension's
+repository, at the first install and at an update that changes `SKILL.md`.
+
 ## `.cg.json` v1.2 additions
 
 Additive and optional; absence = no extensions. Existing fields unchanged.
@@ -637,6 +715,7 @@ Additive and optional; absence = no extensions. Existing fields unchanged.
 ```jsonc
 {
   // … existing type / version / indexes / v1.1 blocks …
+  "skills": { "targets": ["claude"] },            // agent tools extension skills install for; absent = ["claude"]
   "registries": {                                 // v1.3: named registries (alias → source)
     "cg": "https://raw.githubusercontent.com/mnemcik/cg-extensions-registry/main/index.json"
   },
@@ -669,6 +748,8 @@ diff. Not user-edited.
   "hooks": [{ "event": "SessionStart", "wrapper": ".claude/hooks/credentials-gate.sh" }],
   "templates": ["templates/credential-request.md"],
   "commands": [{ "command": "secret get", "binary": "cg-1password" }],
+  // one entry per skill: its targets and every managed file (bases in "files")
+  "skills": [{ "name": "github-digest", "targets": ["claude"], "files": [".claude/skills/github-digest/SKILL.md"] }],
   "indexRows": [{ "file": "notes/INDEX.md", "marker": "ext:1password:index" }],
   "gitHooks": [".cg/git-hooks/post-commit.d/1password-check.sh"],
   "gitignore": ["1password-cache"],

@@ -1,10 +1,14 @@
 package extension
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/mnemcik/consigliere/internal/githooks"
 )
@@ -52,17 +56,35 @@ type ApplyOptions struct {
 	// NotesIndex is the workspace-relative notes index the notes' rows go in
 	// (see indexrows.go). Empty writes no rows.
 	NotesIndex string
+
+	// SkillTargets are the agent tools skills are installed for (.cg.json
+	// skills.targets); nil means the default.
+	SkillTargets []string
+	// SkillMode says how edited managed skill files are treated.
+	SkillMode SkillMode
+	// Context bounds the git calls that tell committed skill files apart.
+	Context context.Context
+	// ExtensionName and Repo name the extension in skill warnings.
+	ExtensionName string
+	Repo          string
+	// SkillReport, when set, receives what the run tells the user about
+	// skills.
+	SkillReport *SkillReport
 }
 
 func (o *ApplyOptions) base(dest string) fileBase {
 	if o.Old == nil {
 		return fileBase{}
 	}
-	b := fileBase{tracked: containsStr(o.Old.Notes, dest) || containsStr(o.Old.Templates, dest)}
-	if o.Old.Files != nil {
-		b.id = o.Old.Files[dest]
+	// A destination the old version shipped as a skill file is cg's too: its
+	// base is in Files (S41).
+	// Destinations compare in their clean form: "./x" and "x" are one file.
+	_, skill := oldSkillFiles(o.Old)[CleanDest(dest)]
+	b := fileBase{tracked: containsDest(o.Old.Notes, dest) || containsDest(o.Old.Templates, dest) || skill}
+	if o.Old.HasContentIDs() {
+		b.id = lookupDest(o.Old.Files, dest)
 	} else {
-		b.id, b.uncertain = o.LegacyBases[dest], !o.LegacyCertain
+		b.id, b.uncertain = lookupDest(o.LegacyBases, dest), !o.LegacyCertain
 	}
 	return b
 }
@@ -118,12 +140,24 @@ func planCopies(root, cloneDir string, m *Manifest, opts *ApplyOptions) ([]copyP
 // such a file is left in place, and recorded as pending when the extension
 // changed it too. It refuses, before writing anything, when an unrecorded file
 // that differs from the extension's version is in the way, unless opts.Force.
+//
+//nolint:gocritic // by value on purpose: ApplyWith fills in its own copy
 func ApplyWith(root, cloneDir string, m *Manifest, opts ApplyOptions) (*Ledger, error) {
 	plans, err := planCopies(root, cloneDir, m, &opts)
 	if err != nil {
 		return nil, err
 	}
+	if opts.ExtensionName == "" {
+		opts.ExtensionName = m.Name
+	}
+	skills, err := planSkills(root, cloneDir, m, &opts, opts.SkillReport)
+	if err != nil {
+		return nil, err
+	}
 	snap := newSnapshot()
+	if err := captureSkills(root, skills, snap); err != nil {
+		return nil, err
+	}
 	capture := func(rel string) error {
 		return snap.capture(filepath.Join(root, filepath.FromSlash(rel)))
 	}
@@ -169,6 +203,15 @@ func ApplyWith(root, cloneDir string, m *Manifest, opts ApplyOptions) (*Ledger, 
 	if err := applyAll(root, cloneDir, m, l, plans, opts.NotesIndex); err != nil {
 		snap.restore() // workspace returns to its pre-apply state
 		return nil, err
+	}
+	if len(skills.paths) > 0 || len(skills.skills) > 0 || len(skills.gone) > 0 {
+		if l.Files == nil {
+			l.Files = map[string]string{}
+		}
+		if err := applySkills(root, skills, l, snap, opts.SkillReport); err != nil {
+			snap.restore()
+			return nil, err
+		}
 	}
 	return l, nil
 }
@@ -330,14 +373,18 @@ func OrphanLedger(old, next *Ledger) *Ledger {
 			orphan.ClaudeMDSections = append(orphan.ClaudeMDSections, id)
 		}
 	}
-	// A destination that moved between notes and templates is still shipped.
+	// A destination that moved between notes, templates and skills is still
+	// shipped (S40). Skill files themselves are deleted by the skill plan.
+	// Compared in their clean form ("./x" is "x"); the orphan keeps the old
+	// spelling, the key of its base in Files.
+	nextSkills := oldSkillFiles(next)
 	for _, p := range old.Notes {
-		if !containsStr(next.Notes, p) && !containsStr(next.Templates, p) {
+		if _, skill := nextSkills[CleanDest(p)]; !containsDest(next.Notes, p) && !containsDest(next.Templates, p) && !skill {
 			orphan.Notes = append(orphan.Notes, p)
 		}
 	}
 	for _, p := range old.Templates {
-		if !containsStr(next.Notes, p) && !containsStr(next.Templates, p) {
+		if _, skill := nextSkills[CleanDest(p)]; !containsDest(next.Notes, p) && !containsDest(next.Templates, p) && !skill {
 			orphan.Templates = append(orphan.Templates, p)
 		}
 	}
@@ -369,6 +416,32 @@ func OrphanLedger(old, next *Ledger) *Ledger {
 		return nil
 	}
 	return orphan
+}
+
+// containsDest reports whether s holds dest, comparing clean forms.
+func containsDest(s []string, dest string) bool {
+	want := CleanDest(dest)
+	for _, v := range s {
+		if CleanDest(v) == want {
+			return true
+		}
+	}
+	return false
+}
+
+// lookupDest returns m's value for dest, or for a key that is the same
+// destination spelled another way.
+func lookupDest(m map[string]string, dest string) string {
+	if v, ok := m[dest]; ok {
+		return v
+	}
+	want := CleanDest(dest)
+	for k, v := range m {
+		if CleanDest(k) == want {
+			return v
+		}
+	}
+	return ""
 }
 
 func containsStr(s []string, want string) bool {
@@ -519,6 +592,10 @@ func removeIfPresent(path string) error {
 type snapshot struct {
 	files []fileSnapshot
 	seen  map[string]bool
+	// touched are the paths the run changed, for ifTouched entries.
+	touched map[string]bool
+	// dirs are directories the run created, removed again on restore.
+	dirs []string
 }
 
 type fileSnapshot struct {
@@ -526,10 +603,16 @@ type fileSnapshot struct {
 	existed bool
 	data    []byte
 	mode    os.FileMode
+	// wasDir says a directory stood at path: restore removes a file the run
+	// wrote there, but never the directory.
+	wasDir bool
+	// ifTouched restores the file only when the run changed it (managed
+	// skill files): one the run didn't reach keeps whatever is there now.
+	ifTouched bool
 }
 
 func newSnapshot() *snapshot {
-	return &snapshot{seen: map[string]bool{}}
+	return &snapshot{seen: map[string]bool{}, touched: map[string]bool{}}
 }
 
 // capture records the current state of path (each path once).
@@ -540,8 +623,11 @@ func (s *snapshot) capture(path string) error {
 	s.seen[path] = true
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			s.files = append(s.files, fileSnapshot{path: path, existed: false})
+		info, serr := os.Stat(path)
+		if os.IsNotExist(err) || errors.Is(err, syscall.ENOTDIR) || (serr == nil && info.IsDir()) {
+			// No file there (a directory a skill file replaces counts as
+			// none: its files are captured on their own).
+			s.files = append(s.files, fileSnapshot{path: path, existed: false, wasDir: serr == nil && info.IsDir()})
 			return nil
 		}
 		return err
@@ -554,16 +640,87 @@ func (s *snapshot) capture(path string) error {
 	return nil
 }
 
+// captureIfTouched is capture for a path restored only if the run changes it
+// (see touch).
+func (s *snapshot) captureIfTouched(path string) error {
+	n := len(s.files)
+	if err := s.capture(path); err != nil {
+		return err
+	}
+	for i := n; i < len(s.files); i++ {
+		s.files[i].ifTouched = true
+	}
+	return nil
+}
+
+// touch records that the run is about to change path.
+func (s *snapshot) touch(path string) {
+	if s.touched != nil {
+		s.touched[path] = true
+	}
+}
+
+// captureDirs records the directories between root and path's parent that
+// don't exist yet, so restore can remove them again.
+func (s *snapshot) captureDirs(root, path string) error {
+	var missing []string
+	for dir := filepath.Dir(path); dir != root && len(dir) > len(root); dir = filepath.Dir(dir) {
+		if _, err := os.Lstat(dir); err == nil {
+			break
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		missing = append(missing, dir)
+	}
+	s.dirs = append(s.dirs, missing...) // deepest first within each call
+	return nil
+}
+
 // restore returns every captured file to its recorded state. It is best-effort:
 // it is only ever called on an already-failing path, so a restore error can't
 // improve the outcome and would only mask the original failure.
 func (s *snapshot) restore() {
-	for _, f := range s.files {
+	// Last captured first: a file written where a captured directory held
+	// files goes before those files are written back.
+	for i := len(s.files) - 1; i >= 0; i-- {
+		f := s.files[i]
+		if f.ifTouched && !s.touched[f.path] {
+			continue
+		}
 		if f.existed {
+			if info, err := os.Lstat(f.path); err == nil && info.IsDir() {
+				// The run made the file's path a directory; its files were
+				// restored (removed) above. Remove the directories it created
+				// under it, deepest first, then the directory itself.
+				var under []string
+				for _, d := range s.dirs {
+					if d == f.path || strings.HasPrefix(d, f.path+string(filepath.Separator)) {
+						under = append(under, d)
+					}
+				}
+				sort.Slice(under, func(i, j int) bool { return len(under[i]) > len(under[j]) })
+				for _, d := range under {
+					_ = os.Remove(d)
+				}
+				_ = os.Remove(f.path)
+			}
 			_ = os.MkdirAll(filepath.Dir(f.path), 0o755)
 			_ = writeFileAtomicMode(f.path, f.data, f.mode)
-		} else {
-			_ = os.Remove(f.path)
+		} else if info, err := os.Lstat(f.path); err == nil && !info.IsDir() {
+			_ = os.Remove(f.path) // a file the run wrote; a directory is never removed here
+		} else if err == nil && info.IsDir() && !f.wasDir {
+			_ = os.Remove(f.path) // an empty directory the run left where nothing was (removed only if empty)
+		}
+	}
+	// Created directories, deepest first; one still holding a file restored
+	// above (or anything else) stays.
+	dirs := append([]string(nil), s.dirs...)
+	sort.Slice(dirs, func(i, j int) bool { return len(dirs[i]) > len(dirs[j]) })
+	for _, d := range dirs {
+		// Only a directory: a file restored above may have the same path
+		// (a managed file the run had replaced with a directory).
+		if info, err := os.Lstat(d); err == nil && info.IsDir() {
+			_ = os.Remove(d)
 		}
 	}
 }

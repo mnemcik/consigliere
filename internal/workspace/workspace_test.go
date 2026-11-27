@@ -250,3 +250,43 @@ func TestSaveReportsSymlinkLoop(t *testing.T) {
 		t.Errorf(".cg.json is no longer the symlink (err %v)", err)
 	}
 }
+
+// S15: an absent skills.targets means the default; [] stays [] through Save.
+func TestSkillTargetsRoundTrip(t *testing.T) {
+	for name, c := range map[string]struct {
+		json string
+		want []string
+	}{
+		"absent":      {`{"type":"consigliere","version":"1"}`, []string{"claude"}},
+		"empty block": {`{"type":"consigliere","version":"1","skills":{}}`, []string{"claude"}},
+		"empty list":  {`{"type":"consigliere","version":"1","skills":{"targets":[]}}`, []string{}},
+		"both":        {`{"type":"consigliere","version":"1","skills":{"targets":["claude","agents"]}}`, []string{"claude", "agents"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeConfig(t, dir, c.json)
+			for round := 0; round < 2; round++ {
+				cfg, err := Detect(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got := cfg.SkillTargets()
+				if len(got) != len(c.want) {
+					t.Fatalf("round %d: got %v, want %v", round, got, c.want)
+				}
+				for i := range got {
+					if got[i] != c.want[i] {
+						t.Fatalf("round %d: got %v, want %v", round, got, c.want)
+					}
+				}
+				if err := cfg.Save(dir); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+	var nilCfg *Config
+	if got := nilCfg.SkillTargets(); len(got) != 1 || got[0] != "claude" {
+		t.Errorf("nil config: %v", got)
+	}
+}
