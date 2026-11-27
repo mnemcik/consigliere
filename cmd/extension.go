@@ -138,12 +138,21 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	printCommandWarnings(cmd.ErrOrStderr(), warnings)
 	prev, prevCertain := "", false
 	if old, ok := findExtension(cfg, m.Name); ok {
 		prev, prevCertain = previousSource(old), extension.ValidCommit(old.Commit)
 	}
-	res, err := reapply(root, filepath.Join(dest, path), m, prev, prevCertain, extInstallForce)
+	skillWarnings, err := checkSkills(&skillCheck{root: root, installed: cfg.Extensions,
+		incoming: map[string]*extension.Manifest{m.Name: m}, targets: cfg.SkillTargets()})
+	if err != nil {
+		return err
+	}
+	run := skillRun{ctx: cmd.Context(), repo: repo}
+	if err := preflightSkills(root, []preflightItem{{m: m, manifestDir: filepath.Join(dest, path), prev: prev, prevCertain: prevCertain, force: extInstallForce, run: run}}); err != nil {
+		return err
+	}
+	printCommandWarnings(cmd.ErrOrStderr(), append(warnings, skillWarnings...))
+	res, err := reapply(root, filepath.Join(dest, path), m, prev, prevCertain, extInstallForce, run)
 	if err != nil {
 		return err
 	}
@@ -162,19 +171,40 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	printInstallSummary(cmd, m, dest, source, regAlias, repo, path)
-	printFileOutcomes(cmd.OutOrStdout(), m.Name, res)
+	printFileOutcomes(cmd.OutOrStdout(), m.Name, &res)
+	printSkillReport(cmd.OutOrStdout(), cmd.ErrOrStderr(), &res.Skills)
 	printGitHookWarnings(cmd.ErrOrStderr(), ensureGitHooks(cmd.Context(), root))
 	return nil
 }
 
 // reapplyResult is what reapply left for the user: copied files it kept
-// because the user changed them.
+// because the user changed them, and what it says about skills.
 type reapplyResult struct {
 	Pending []extension.PendingFile // both sides changed; awaiting `resolve`
 	Kept    []string                // dropped by the new version but edited, so not deleted
 	// KeptUnknown says cg had no record of what it wrote for the kept files,
 	// so it can't tell whether they were edited.
 	KeptUnknown bool
+	Skills      extension.SkillReport
+}
+
+// applyOptionsFor builds the options reapply applies m with. report may be
+// nil.
+func applyOptionsFor(root string, m *extension.Manifest, prevSource string, prevCertain, force bool, run skillRun, report *extension.SkillReport) (extension.ApplyOptions, error) {
+	old, err := extension.LoadLedger(root, m.Name)
+	if err != nil {
+		return extension.ApplyOptions{}, fmt.Errorf("reading ledger for %q: %w", m.Name, err)
+	}
+	opts := extension.ApplyOptions{
+		Old: old, Force: force, NotesIndex: notesIndexRel(root),
+		SkillTargets: skillTargetsFor(root), SkillMode: run.mode, Context: run.ctx,
+		ExtensionName: m.Name, Repo: run.repo, SkillReport: report,
+	}
+	if old != nil && old.Files == nil && prevSource != "" {
+		opts.LegacyBases = extension.LegacyBases(prevSource)
+		opts.LegacyCertain = prevCertain
+	}
+	return opts, nil
 }
 
 // reapply applies m's contributions into the workspace and persists the ledger,
@@ -186,21 +216,17 @@ type reapplyResult struct {
 // being replaced, used as the base for a ledger that predates recorded file
 // blobs, and prevCertain says it is exactly the commit that was installed;
 // force overwrites unrecorded files in the way.
-func reapply(root, manifestDir string, m *extension.Manifest, prevSource string, prevCertain, force bool) (reapplyResult, error) {
+func reapply(root, manifestDir string, m *extension.Manifest, prevSource string, prevCertain, force bool, run skillRun) (reapplyResult, error) {
 	var res reapplyResult
-	old, err := extension.LoadLedger(root, m.Name)
+	opts, err := applyOptionsFor(root, m, prevSource, prevCertain, force, run, &res.Skills)
 	if err != nil {
-		return res, fmt.Errorf("reading ledger for %q: %w", m.Name, err)
+		return res, err
 	}
+	old := opts.Old
 	// A broken block in the old index would fail its reversal after the new
 	// files are written; refuse while nothing has changed.
 	if err := extension.CheckIndexRows(root, old); err != nil {
 		return res, cgerr.New(cgerr.ExitUsage, "notes index for %q: %v", m.Name, err)
-	}
-	opts := extension.ApplyOptions{Old: old, Force: force, NotesIndex: notesIndexRel(root)}
-	if old != nil && old.Files == nil && prevSource != "" {
-		opts.LegacyBases = extension.LegacyBases(prevSource)
-		opts.LegacyCertain = prevCertain
 	}
 	ledger, err := extension.ApplyWith(root, manifestDir, m, opts)
 	if err != nil {
@@ -254,7 +280,7 @@ func previousSource(ref *workspace.ExtensionRef) string {
 }
 
 // printFileOutcomes tells the user which copied files reapply left alone.
-func printFileOutcomes(w io.Writer, name string, res reapplyResult) {
+func printFileOutcomes(w io.Writer, name string, res *reapplyResult) {
 	for _, p := range res.Pending {
 		why := "the extension changed it too"
 		if p.Base == "" || p.UncertainBase {
@@ -337,6 +363,14 @@ func commandContext(cmd *cobra.Command) context.Context {
 	return context.Background()
 }
 
+// commandOut returns cmd's output writer, or os.Stdout when cmd is nil.
+func commandOut(cmd *cobra.Command) io.Writer {
+	if cmd != nil {
+		return cmd.OutOrStdout()
+	}
+	return os.Stdout
+}
+
 // commandErr returns cmd's error writer, or os.Stderr when cmd is nil.
 func commandErr(cmd *cobra.Command) io.Writer {
 	if cmd != nil {
@@ -412,6 +446,22 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		todo    []restore
 		present []workspace.ExtensionRef
 	)
+	// S36b: the skill checks that need no fetched tree run before the first
+	// fetch, so after fixing what they report a plain cg init runs again.
+	targets := skillTargetsFor(root)
+	for i := range out {
+		e := &out[i]
+		if !missing[extension.SourceRoot(e)] {
+			continue
+		}
+		led, lerr := extension.LoadLedger(root, e.Name)
+		if lerr != nil {
+			return out, nil, unreadableLedgerError(root, e.Name, lerr)
+		}
+		if err := extension.CheckSkillPaths(root, targets, led); err != nil {
+			return out, nil, cgerr.New(cgerr.ExitUsage, "extension %q: %v", e.Name, err)
+		}
+	}
 	incoming := map[string][]extension.CommandContribution{}
 	for i := range out {
 		e := &out[i]
@@ -465,12 +515,30 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 	if err != nil {
 		return out, nil, err
 	}
-	printCommandWarnings(commandErr(cmd), warnings)
-	var done []string
+	// S23: skill names over the whole set, then each extension's own skill
+	// checks, before the first is applied. Reserved names only warn (S20c).
+	manifests := map[string]*extension.Manifest{}
+	var items []preflightItem
 	for _, r := range todo {
-		if _, err := reapply(root, r.manifestDir, r.m, r.prev, r.prev != "", false); err != nil {
+		manifests[r.m.Name] = r.m
+		items = append(items, preflightItem{m: r.m, manifestDir: r.manifestDir, prev: r.prev, prevCertain: r.prev != "",
+			run: skillRun{ctx: commandContext(cmd), repo: r.e.Repo, mode: extension.SkillsRestore}})
+	}
+	skillWarnings, err := checkSkills(&skillCheck{root: root, installed: present, incoming: manifests, targets: targets, restore: true})
+	if err != nil {
+		return out, nil, err
+	}
+	if err := preflightSkills(root, items); err != nil {
+		return out, nil, err
+	}
+	printCommandWarnings(commandErr(cmd), append(warnings, skillWarnings...))
+	var done []string
+	for i, r := range todo {
+		res, err := reapply(root, r.manifestDir, r.m, r.prev, r.prev != "", false, items[i].run)
+		if err != nil {
 			return out, done, err
 		}
+		printSkillReport(commandOut(cmd), commandErr(cmd), &res.Skills)
 		applied[r.tree]++
 		r.e.Commit = r.commit
 		done = append(done, fmt.Sprintf("extension %q v%s (re-installed at %s)", r.m.Name, r.m.Version, r.commit[:12]))
@@ -598,7 +666,7 @@ func runExtList(cmd *cobra.Command, _ []string) error {
 	out := cmd.OutOrStdout()
 	listed := make([]listedExtension, len(exts))
 	for i := range exts {
-		listed[i] = listedExtension{ExtensionRef: exts[i], Commands: []listedCommand{}}
+		listed[i] = listedExtension{ExtensionRef: exts[i], Commands: []listedCommand{}, Skills: []listedSkill{}}
 		led, lerr := extension.LoadLedger(root, exts[i].Name)
 		if lerr != nil {
 			listed[i].LedgerError = lerr.Error()
@@ -607,6 +675,7 @@ func runExtList(cmd *cobra.Command, _ []string) error {
 		if led == nil {
 			continue
 		}
+		listed[i].Skills = listSkills(led)
 		dir, m, verr := verifiedManifest(&exts[i])
 		for _, c := range led.Commands {
 			lc := listedCommand{Command: c.Command, Binary: c.Binary, ShadowedByBuiltin: builtinFor(c.Command)}
@@ -653,6 +722,9 @@ func runExtList(cmd *cobra.Command, _ []string) error {
 			}
 			_, _ = fmt.Fprintf(out, "  commands: %s\n", strings.Join(cs, ", "))
 		}
+		if len(l.Skills) > 0 {
+			_, _ = fmt.Fprintf(out, "  skills: %s\n", formatSkills(l.Skills))
+		}
 		if l.LedgerError != "" {
 			_, _ = fmt.Fprintf(out, "  commands: (can't read %s: %s)\n", extension.LedgerPath(root, l.Name), l.LedgerError)
 		}
@@ -665,6 +737,7 @@ func runExtList(cmd *cobra.Command, _ []string) error {
 type listedExtension struct {
 	workspace.ExtensionRef
 	Commands []listedCommand `json:"commands"`
+	Skills   []listedSkill   `json:"skills"`
 	// LedgerError says the extension's ledger can't be read, so its
 	// commands are unknown (and dispatch stops on it).
 	LedgerError string `json:"ledgerError,omitempty"`
@@ -764,6 +837,7 @@ func printInstallSummary(cmd *cobra.Command, m *extension.Manifest, dest, source
 	add(len(c.Commands), "command(s)")
 	add(len(c.Launcher), "launcher")
 	add(len(c.Templates), "template(s)")
+	add(len(c.Skills), "skill(s)")
 	if len(declared) == 0 {
 		_, _ = fmt.Fprintln(out, "  no contributions")
 		return
@@ -795,6 +869,13 @@ func runExtRemove(cmd *cobra.Command, args []string) error {
 				ledger.Files = extension.LegacyBases(previousSource(ref))
 			}
 		}
+		// Skill files first: an uncommitted edit stops the remove before
+		// anything is deleted (S35).
+		var skills extension.SkillReport
+		if err := extension.RemoveSkills(root, ledger, &extension.ApplyOptions{Context: cmd.Context(), ExtensionName: name}, &skills); err != nil {
+			return cgerr.New(cgerr.ExitUsage, "removing skills of %q: %v", name, err)
+		}
+		printSkillReport(cmd.OutOrStdout(), cmd.ErrOrStderr(), &skills)
 		kept, rerr := extension.Reverse(root, ledger)
 		if rerr != nil {
 			return fmt.Errorf("reversing contributions for %q: %w", name, rerr)
@@ -873,13 +954,29 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	printCommandWarnings(cmd.ErrOrStderr(), warnings)
+	manifests := map[string]*extension.Manifest{}
+	var items []preflightItem
+	for i := range updates {
+		u := &updates[i]
+		manifests[u.ref.Name] = u.m
+		items = append(items, preflightItem{m: u.m, manifestDir: u.manifestDir, prev: previousSource(&u.ref),
+			prevCertain: extension.ValidCommit(u.ref.Commit), run: skillRun{ctx: cmd.Context(), repo: u.ref.Repo}})
+	}
+	skillWarnings, err := checkSkills(&skillCheck{root: root, installed: cfg.Extensions, incoming: manifests,
+		targets: cfg.SkillTargets(), update: true})
+	if err != nil {
+		return err
+	}
+	if err := preflightSkills(root, items); err != nil {
+		return err
+	}
+	printCommandWarnings(cmd.ErrOrStderr(), append(warnings, skillWarnings...))
 
 	out := cmd.OutOrStdout()
 	for i := range updates {
 		u := &updates[i]
 		old := u.ref.Version
-		if err := applyUpdate(out, root, u); err != nil {
+		if err := applyUpdate(cmd, root, u); err != nil {
 			return err
 		}
 		ref := u.ref
@@ -951,12 +1048,14 @@ func resolveUpdate(ctx context.Context, ref *workspace.ExtensionRef) (pendingUpd
 
 // applyUpdate re-applies the new version's contributions (new manifest first,
 // then reverse what it dropped).
-func applyUpdate(out io.Writer, root string, u *pendingUpdate) error {
-	res, err := reapply(root, u.manifestDir, u.m, previousSource(&u.ref), extension.ValidCommit(u.ref.Commit), false)
+func applyUpdate(cmd *cobra.Command, root string, u *pendingUpdate) error {
+	res, err := reapply(root, u.manifestDir, u.m, previousSource(&u.ref), extension.ValidCommit(u.ref.Commit), false,
+		skillRun{ctx: cmd.Context(), repo: u.ref.Repo})
 	if err != nil {
 		return err
 	}
-	printFileOutcomes(out, u.ref.Name, res)
+	printFileOutcomes(cmd.OutOrStdout(), u.ref.Name, &res)
+	printSkillReport(cmd.OutOrStdout(), cmd.ErrOrStderr(), &res.Skills)
 	return nil
 }
 
