@@ -746,10 +746,15 @@ func TestInitRestoreWithoutSkillsLinkedClaude(t *testing.T) {
 	}
 	installRepo(t, cfgHome, ws, testManifest)
 	removeTree(t, ws, "demo")
-	if out, err := runInitForce(t, cfgHome, ws); err != nil && strings.Contains(err.Error(), "outside the workspace") {
-		t.Fatalf("cg init refused an extension without skills: %v\n%s", err, out)
+	cfg, _ := workspace.Detect(ws)
+	tree := extension.SourceRoot(findRef(cfg.Extensions, "demo"))
+	if out, err := runInitForce(t, cfgHome, ws); err != nil {
+		t.Fatalf("cg init failed: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(tree); err != nil {
+		t.Errorf("demo's tree wasn't restored: %v", err)
 	}
 	if led, err := extension.LoadLedger(ws, "demo"); err != nil || led == nil {
-		t.Errorf("demo not restored: %v", err)
+		t.Errorf("demo's ledger: %v", err)
 	}
 }
