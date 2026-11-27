@@ -959,7 +959,7 @@ func applySkillPath(root string, p *skillPathPlan, l *Ledger, snap *snapshot, re
 		if err := os.Rename(filepath.Join(root, filepath.FromSlash(p.renameFrom)), abs); err != nil {
 			return fmt.Errorf("renaming %s to %s: %w", p.renameFrom, p.dest, err)
 		}
-		report.notice("renamed %s to %s (the extension changed only its case); git may keep the old spelling, so run `git mv --force %s %s` before you commit",
+		report.notice("renamed %s to %s (the extension changed only its case); git may keep the old spelling, so run `git mv --force \"%s\" \"%s\"` from the workspace root before you commit",
 			p.renameFrom, p.dest, p.renameFrom, p.dest)
 	}
 	write := func() error {
