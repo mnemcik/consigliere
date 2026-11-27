@@ -1059,8 +1059,8 @@ func relWithin(dir, p string) (string, bool) {
 
 // isLink reports whether the file at path is itself a symbolic link (its
 // directories may be reached through one; that is checked elsewhere).
-func isLink(path string) bool {
-	info, err := os.Lstat(path)
+func isLink(file string) bool {
+	info, err := os.Lstat(file)
 	return err == nil && info.Mode()&fs.ModeSymlink != 0
 }
 
