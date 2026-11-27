@@ -139,3 +139,17 @@ func TestBatches(t *testing.T) {
 		t.Errorf("batches hold %d paths, want %d", n, len(long))
 	}
 }
+
+// Where git folds case (core.ignorecase), a change git reports under the
+// index's spelling still counts for the managed path's spelling.
+func TestPathStatesFoldsCase(t *testing.T) {
+	if !foldsCase {
+		t.Skip("paths are case-sensitive on this platform")
+	}
+	ctx, dir := initRepo(t)
+	writeFile(t, dir, "skill.md", "v1\n")
+	mustRun(t, ctx, dir, "add", "-A")
+	mustRun(t, ctx, dir, "commit", "-m", "a")
+	writeFile(t, dir, "skill.md", "v2\n")
+	wantStates(t, ctx, dir, map[string]PathState{"SKILL.md": PathUncommitted})
+}

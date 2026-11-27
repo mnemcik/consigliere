@@ -200,7 +200,7 @@ func applyOptionsFor(root string, m *extension.Manifest, prevSource string, prev
 		SkillTargets: skillTargetsFor(root), SkillMode: run.mode, Context: run.ctx,
 		ExtensionName: m.Name, Repo: run.repo, SkillReport: report,
 	}
-	if old != nil && old.Files == nil && prevSource != "" {
+	if old != nil && !old.HasContentIDs() && prevSource != "" {
 		opts.LegacyBases = extension.LegacyBases(prevSource)
 		opts.LegacyCertain = prevCertain
 	}
@@ -232,7 +232,7 @@ func reapply(root, manifestDir string, m *extension.Manifest, prevSource string,
 	if err != nil {
 		return res, cgerr.New(cgerr.ExitUsage, "applying contributions for %q: %v", m.Name, err)
 	}
-	if old != nil && old.Files == nil {
+	if old != nil && !old.HasContentIDs() {
 		// The base for reversing dropped files too. Set only after applying:
 		// ApplyWith must see that the old ledger had no recorded files.
 		old.Files = opts.LegacyBases
@@ -864,7 +864,7 @@ func runExtRemove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("reading ledger for %q: %w", name, err)
 	}
 	if ledger != nil {
-		if ledger.Files == nil {
+		if !ledger.HasContentIDs() {
 			if ref, ok := findExtension(cfg, name); ok {
 				ledger.Files = extension.LegacyBases(previousSource(ref))
 			}

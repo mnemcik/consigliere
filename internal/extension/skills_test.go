@@ -699,3 +699,95 @@ func TestSkillUserScopeWarning(t *testing.T) {
 		t.Errorf("warnings: %v", r.Warnings)
 	}
 }
+
+// S16b for ledger data: a committed ledger whose skill name or file climbs
+// out of the skill's directory is refused before anything is written,
+// deleted or pruned (update and remove alike).
+func TestSkillLedgerPathsRefused(t *testing.T) {
+	clone := skillClone(t, "s", nil)
+	for name, bad := range map[string]LedgerSkill{
+		"name climbs":       {Name: "x/../../..", Targets: []string{"claude"}, Files: []string{".claude/skills/x/../../../f"}},
+		"file climbs":       {Name: "s", Targets: []string{"claude"}, Files: []string{".claude/skills/s/../../../f"}},
+		"file elsewhere":    {Name: "s", Targets: []string{"claude"}, Files: []string{"notes/f.md"}},
+		"unknown target":    {Name: "s", Targets: []string{"nope"}, Files: nil},
+		"backslash in file": {Name: "s", Targets: []string{"claude"}, Files: []string{`.claude/skills/s/..\..\f`}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			parent := t.TempDir()
+			root := filepath.Join(parent, "ws")
+			writeTree(t, parent, map[string]string{"f": "x", "ws/.keep": "", "empty/.gitkeep": ""})
+			if err := os.Remove(filepath.Join(parent, "empty", ".gitkeep")); err != nil {
+				t.Fatal(err)
+			}
+			old := &Ledger{Name: "demo", Skills: []LedgerSkill{bad}, Files: map[string]string{}}
+			for _, f := range bad.Files {
+				old.Files[f] = ContentID([]byte("x"))
+			}
+			if _, _, err := runSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: old}); err == nil {
+				t.Error("update accepted the ledger")
+			}
+			if err := RemoveSkills(root, old, &ApplyOptions{}, &SkillReport{}); err == nil {
+				t.Error("remove accepted the ledger")
+			}
+			if err := CheckSkillPaths(root, []string{"claude"}, old); err == nil {
+				t.Error("cg init's check accepted the ledger")
+			}
+			if !exists(filepath.Join(parent, "f")) || !exists(filepath.Join(parent, "empty")) {
+				t.Error("cg touched the workspace's parent directory")
+			}
+		})
+	}
+}
+
+// A link above src (the extension's skills/ directory) that leaves the
+// extension is refused.
+func TestReadSkillRefusesLinkAboveSrc(t *testing.T) {
+	outside := t.TempDir()
+	writeTree(t, outside, map[string]string{"s/SKILL.md": skillMD("s")})
+	clone := t.TempDir()
+	symlink(t, outside, filepath.Join(clone, "skills"))
+	_, _, err := runSkills(t, t.TempDir(), clone, oneSkill("s"), skillRunOpts{})
+	wantErr(t, err, "outside the extension")
+}
+
+// S18: a ledger of an extension that ships only skills, saved with
+// targets [] (no file, so no Files in the file), still counts as having
+// content ids after it is read back.
+func TestSkillsOnlyLedgerHasContentIDs(t *testing.T) {
+	root := t.TempDir()
+	l, _ := mustRunSkills(t, root, skillClone(t, "s", nil), oneSkill("s"), skillRunOpts{targets: []string{}})
+	if err := l.Save(root); err != nil {
+		t.Fatal(err)
+	}
+	back, err := LoadLedger(root, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !back.HasContentIDs() {
+		t.Errorf("read back as a ledger from before content ids: %+v", back)
+	}
+}
+
+// A rename that only changes a file's case, on a file system that ignores
+// case, keeps the file (it is the same file on disk).
+func TestSkillCaseOnlyRename(t *testing.T) {
+	clone := skillClone(t, "s", map[string]string{"Foo.md": "foo"})
+	root := t.TempDir()
+	l, _ := mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{})
+	if _, err := os.Stat(filepath.Join(root, ".claude", "skills", "s", "foo.md")); err != nil {
+		t.Skip("case-sensitive file system: the two names are different files")
+	}
+	if err := os.Remove(filepath.Join(clone, "skills", "s", "Foo.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeTree(t, clone, map[string]string{"skills/s/foo.md": "foo"})
+	l, _ = mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l})
+	if readText(t, filepath.Join(root, ".claude", "skills", "s", "foo.md")) != "foo" {
+		t.Fatal("the renamed file was deleted")
+	}
+	// And with new content: updated, not refused as unowned.
+	writeTree(t, clone, map[string]string{"skills/s/foo.md": "foo2"})
+	if _, _, err := runSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+}

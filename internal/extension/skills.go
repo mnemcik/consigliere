@@ -240,6 +240,15 @@ func readSkill(manifestDir string, sc SkillContribution) (*skillSource, error) {
 	case !info.IsDir():
 		return nil, fmt.Errorf("skill %q: src %q is not a directory in the extension", name, sc.Src)
 	}
+	// A link above src (skills/ itself, say) would copy files from outside
+	// the extension.
+	realDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, fmt.Errorf("skill %q: %w", name, err)
+	}
+	if realTop, terr := filepath.EvalSymlinks(manifestDir); terr != nil || !withinDir(realTop, realDir) {
+		return nil, fmt.Errorf("skill %q: src %q resolves through a symbolic link outside the extension; skills can't contain symbolic links", name, sc.Src)
+	}
 	s := &skillSource{name: name}
 	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, werr error) error {
 		if werr != nil {
@@ -496,6 +505,9 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 	if err := CheckSkillTargets(targets); err != nil {
 		return nil, err
 	}
+	if err := validLedgerSkills(old); err != nil {
+		return nil, err
+	}
 	var sources []*skillSource
 	shipped := map[string]bool{} // note and template destinations of m
 	if m != nil {
@@ -545,19 +557,25 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 		plan.skills = append(plan.skills, ls)
 	}
 	oldFiles := oldSkillFiles(old)
+	// renamed maps a wanted path to the old path it is the same file as on
+	// a case-insensitive file system (a rename that only changes case): the
+	// old path isn't dropped, and its base is the wanted path's.
+	renamed := map[string]string{}
 	var dropped []string
 	for dest := range oldFiles {
-		if _, ok := wanted[dest]; !ok && !shipped[dest] {
-			dropped = append(dropped, dest)
+		if _, ok := wanted[dest]; ok || shipped[dest] {
+			continue
 		}
+		if w := sameFileAs(root, dest, order); w != "" {
+			renamed[w] = dest
+			continue
+		}
+		dropped = append(dropped, dest)
 	}
 	sort.Strings(dropped)
 	if old != nil {
 		for _, s := range old.Skills {
 			for _, t := range s.Targets {
-				if _, ok := SkillTargetDir(t); !ok {
-					continue // a hand-edited ledger; its files are still in Files
-				}
 				d := skillDir{dir: SkillDir(t, s.Name), name: s.Name}
 				if !installed[d] && !slices.ContainsFunc(plan.gone, func(g skillDir) bool { return g == d }) {
 					plan.gone = append(plan.gone, d)
@@ -580,9 +598,12 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 		if old == nil {
 			return "", false
 		}
+		if from, ok := renamed[dest]; ok {
+			dest = from
+		}
 		_, tracked = oldFiles[dest]
 		tracked = tracked || containsStr(old.Notes, dest) || containsStr(old.Templates, dest)
-		if old.Files != nil {
+		if old.HasContentIDs() {
 			return old.Files[dest], tracked
 		}
 		return opts.LegacyBases[dest], tracked
@@ -686,6 +707,55 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 	return plan, nil
 }
 
+// sameFileAs returns the path in wanted that names the same file on disk as
+// old, differing only in case, or "". Only a case-insensitive file system
+// gives one; on others the two are different files.
+func sameFileAs(root, old string, wanted []string) string {
+	oi, err := os.Stat(filepath.Join(root, filepath.FromSlash(old)))
+	if err != nil {
+		return ""
+	}
+	for _, w := range wanted {
+		if w == old || !strings.EqualFold(w, old) {
+			continue
+		}
+		if wi, err := os.Stat(filepath.Join(root, filepath.FromSlash(w))); err == nil && os.SameFile(oi, wi) {
+			return w
+		}
+	}
+	return ""
+}
+
+// validLedgerSkills refuses a ledger whose skills cg can't act on safely: the
+// ledger is committed in the workspace, so a skill name, target or file path
+// in it is checked before cg writes, deletes or prunes anything from it.
+func validLedgerSkills(l *Ledger) error {
+	if l == nil {
+		return nil
+	}
+	for _, s := range l.Skills {
+		if !ValidSkillName(s.Name) {
+			return fmt.Errorf("the ledger of extension %q records a skill named %q, which isn't a valid skill name; run `cg init --force` or restore the ledger from git", l.Name, s.Name)
+		}
+		for _, t := range s.Targets {
+			if _, ok := SkillTargetDir(t); !ok {
+				return fmt.Errorf("the ledger of extension %q records skill %q for target %q, which cg doesn't know", l.Name, s.Name, t)
+			}
+		}
+		for _, f := range s.Files {
+			clean, err := CleanSubdir(f)
+			ok := err == nil && filepath.ToSlash(clean) == f && !strings.Contains(f, `\`)
+			if ok {
+				ok = slices.ContainsFunc(s.Targets, func(t string) bool { return strings.HasPrefix(f, SkillDir(t, s.Name)+"/") })
+			}
+			if !ok {
+				return fmt.Errorf("the ledger of extension %q records %q for skill %q, which isn't a path inside that skill's directory", l.Name, f, s.Name)
+			}
+		}
+	}
+	return nil
+}
+
 // skillDirOf returns the <target dir>/<name> part of managed path p.
 func skillDirOf(p string) string {
 	for _, t := range skillTargets {
@@ -769,6 +839,9 @@ func checkInsideWorkspace(root, rootReal, rel string) error {
 	cur := root
 	existing := root
 	for _, part := range strings.Split(rel, "/") {
+		if part == "" || part == "." || part == ".." || strings.Contains(part, `\`) {
+			return fmt.Errorf("%s is not a plain path inside the workspace", rel)
+		}
 		next := filepath.Join(cur, part)
 		info, err := os.Lstat(next)
 		if err != nil {
@@ -1033,14 +1106,14 @@ func CheckSkillPaths(root string, targets []string, l *Ledger) error {
 			return err
 		}
 	}
+	if err := validLedgerSkills(l); err != nil {
+		return err
+	}
 	if l == nil {
 		return nil
 	}
 	for _, s := range l.Skills {
 		for _, t := range s.Targets {
-			if _, ok := SkillTargetDir(t); !ok {
-				continue
-			}
 			if err := checkInsideWorkspace(root, rootReal, SkillDir(t, s.Name)); err != nil {
 				return err
 			}

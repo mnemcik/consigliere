@@ -3,6 +3,8 @@ package gitx
 import (
 	"bytes"
 	"context"
+	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -68,7 +70,7 @@ func PathStates(ctx context.Context, dir string, paths []string) (map[string]Pat
 				state = PathIgnored
 			}
 			for _, p := range batch {
-				if p == rel || (strings.HasSuffix(rel, "/") && strings.HasPrefix(p, rel)) {
+				if samePathspec(p, rel) || (strings.HasSuffix(rel, "/") && hasPathPrefix(p, rel)) {
 					if out[p] != PathUncommitted {
 						out[p] = state
 					}
@@ -85,13 +87,32 @@ func PathStates(ctx context.Context, dir string, paths []string) (map[string]Pat
 			}
 			tag, p := rec[0], string(rec[2:])
 			if (tag >= 'a' && tag <= 'z') || tag == 'S' {
-				if _, want := out[p]; want {
-					out[p] = PathUncommitted
+				for _, q := range batch {
+					if samePathspec(q, p) {
+						out[q] = PathUncommitted
+					}
 				}
 			}
 		}
 	}
 	return out, nil
+}
+
+// foldsCase says paths compare without regard to case here, as git does
+// with core.ignorecase on the usual macOS and Windows file systems. Folding
+// where it isn't needed only makes more paths count as changed, the safe side.
+var foldsCase = runtime.GOOS == "darwin" || filepathFoldsOnWindows()
+
+// filepathFoldsOnWindows reports whether this is Windows, whose file systems
+// ignore case.
+func filepathFoldsOnWindows() bool { return filepath.Separator == '\\' }
+
+func samePathspec(a, b string) bool {
+	return a == b || (foldsCase && strings.EqualFold(a, b))
+}
+
+func hasPathPrefix(p, prefix string) bool {
+	return strings.HasPrefix(p, prefix) || (foldsCase && len(p) >= len(prefix) && strings.EqualFold(p[:len(prefix)], prefix))
 }
 
 // statusEntry is one path git status -z reports.

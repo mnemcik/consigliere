@@ -78,7 +78,7 @@ func (o *ApplyOptions) base(dest string) fileBase {
 	// base is in Files (S41).
 	_, skill := oldSkillFiles(o.Old)[dest]
 	b := fileBase{tracked: containsStr(o.Old.Notes, dest) || containsStr(o.Old.Templates, dest) || skill}
-	if o.Old.Files != nil {
+	if o.Old.HasContentIDs() {
 		b.id = o.Old.Files[dest]
 	} else {
 		b.id, b.uncertain = o.LegacyBases[dest], !o.LegacyCertain

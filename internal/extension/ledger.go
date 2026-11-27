@@ -53,6 +53,14 @@ type Ledger struct {
 	Pending []PendingFile `json:"pending,omitempty"`
 }
 
+// HasContentIDs reports whether the ledger records the content ids of the
+// files cg wrote (Files). A ledger with skills always does, even when no
+// file was written (skills.targets []), which leaves Files empty and so
+// absent from the file.
+func (l *Ledger) HasContentIDs() bool {
+	return l.Files != nil || len(l.Skills) > 0
+}
+
 // LedgerSkill records one installed skill.
 type LedgerSkill struct {
 	Name    string   `json:"name"`
