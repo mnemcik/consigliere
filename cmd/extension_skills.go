@@ -353,10 +353,10 @@ func checkSkillMoves(c *skillCheck, old map[string]extSkills) error {
 			cycles = append(cycles, "  "+strings.Join(group, ", "))
 		}
 		msg := fmt.Sprintf("extension skills move between extensions in a cycle, so no extension was applied:\n%s\n"+
-			"No order of updates can apply it. Every cycle must be broken, one extension each:\n%s\n"+
-			"For each cycle, wait for a release of one of its extensions that doesn't take part in it, or remove one of them with "+
-			"`cg extension remove` (which also drops its notes, templates and pending state from cg's records) and install it again "+
-			"after the others are updated.",
+			"No order of updates can apply it. Each group below holds one or more cycles; every one of them must be broken:\n%s\n"+
+			"In each group, wait for a release of one of its extensions that no longer takes part in a cycle, or remove one of them with "+
+			"`cg extension remove` (which also drops its notes, templates and pending state from cg's records), then run "+
+			"`cg extension update` again; repeat until no cycle is left, and install the removed extensions again after the others are updated.",
 			strings.Join(desc, "\n"), strings.Join(cycles, "\n"))
 		if len(waiting) > 0 {
 			msg += fmt.Sprintf(" Extensions %s only wait on the cycle; removing them doesn't help.", strings.Join(waiting, ", "))

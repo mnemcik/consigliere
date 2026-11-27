@@ -580,7 +580,7 @@ func TestSkillMoveCycleMembers(t *testing.T) {
 	releaseExtRepo(t, b, skillsManifest("bb", "2", "s1"))
 	releaseExtRepo(t, c, skillsManifest("cc", "2", "s3"))
 	out, err := runExtCfg(t, cfgHome, ws, "update")
-	wantConflict(t, err, out, "one extension each:\n  aa, bb\n", "Extensions cc only wait on the cycle")
+	wantConflict(t, err, out, "must be broken:\n  aa, bb\n", "Extensions cc only wait on the cycle")
 }
 
 // S24 with a destination spelled ./…: still inside another extension's skill.
@@ -622,5 +622,23 @@ func TestSkillMoveTwoCycles(t *testing.T) {
 		releaseExtRepo(t, repos[n], skillsManifest(n, "2", skill))
 	}
 	out, err := runExtCfg(t, cfgHome, ws, "update")
-	wantConflict(t, err, out, "Every cycle must be broken", "\n  aa, bb\n  cc, dd\n", "For each cycle")
+	wantConflict(t, err, out, "every one of them must be broken", "\n  aa, bb\n  cc, dd\n", "repeat until no cycle is left")
+}
+
+// S38 with overlapping cycles (aa <-> bb and bb <-> cc): one group, and the
+// advice doesn't promise that removing a single extension is enough.
+func TestSkillMoveOverlappingCycles(t *testing.T) {
+	requireGit(t)
+	cfgHome, ws := t.TempDir(), newWorkspace(t)
+	a := installRepo(t, cfgHome, ws, skillsManifest("aa", "1", "s1"))
+	b := installRepo(t, cfgHome, ws, skillsManifest("bb", "1", "s2", "s3"))
+	c := installRepo(t, cfgHome, ws, skillsManifest("cc", "1", "s4"))
+	releaseExtRepo(t, a, skillsManifest("aa", "2", "s2"))
+	releaseExtRepo(t, b, skillsManifest("bb", "2", "s1", "s4"))
+	releaseExtRepo(t, c, skillsManifest("cc", "2", "s3"))
+	out, err := runExtCfg(t, cfgHome, ws, "update")
+	wantConflict(t, err, out, "one or more cycles", "\n  aa, bb, cc\n", "repeat until no cycle is left")
+	if strings.Contains(err.Error(), "one extension each") {
+		t.Errorf("the advice promises one removal is enough: %v", err)
+	}
 }
