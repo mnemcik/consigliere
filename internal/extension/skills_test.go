@@ -785,9 +785,13 @@ func TestSkillCaseOnlyRename(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeTree(t, clone, map[string]string{"skills/s/foo.md": "foo"})
-	l, _ = mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l})
+	var r *SkillReport
+	l, r = mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l})
 	if readText(t, filepath.Join(root, ".claude", "skills", "s", "foo.md")) != "foo" {
 		t.Fatal("the renamed file was deleted")
+	}
+	if !strings.Contains(joined(r), "git mv --force .claude/skills/s/Foo.md .claude/skills/s/foo.md") {
+		t.Errorf("no git mv hint: %v", r.Notices)
 	}
 	entries, err := os.ReadDir(filepath.Join(root, ".claude", "skills", "s"))
 	if err != nil {
