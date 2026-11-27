@@ -336,11 +336,15 @@ func captureStderr(t *testing.T, fn func()) string {
 	}
 	old := os.Stderr
 	os.Stderr = f
-	defer func() { os.Stderr = old }()
-	fn()
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
+	func() {
+		// Closed even when fn fails the test, so Windows can remove the
+		// temp dir.
+		defer func() {
+			os.Stderr = old
+			_ = f.Close()
+		}()
+		fn()
+	}()
 	b, err := os.ReadFile(f.Name())
 	if err != nil {
 		t.Fatal(err)
