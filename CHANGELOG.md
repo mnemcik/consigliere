@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.0](https://github.com/mnemcik/consigliere/compare/v1.32.1...v2.0.0) (2026-11-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* extensions contribute skills that cg manages ([#318](https://github.com/mnemcik/consigliere/issues/318))
+* extension manifests declare commands as `contributes.commands` (manifest v2); the `subcommands` form is no longer read. Update cg on every machine that shares the workspace first (cg 1.x can't restore manifest v2 versions), then run `cg extension update` once the extensions' v2 versions are published (one run updates every installed extension, including `tmux` for the workspace variable in tmux sessions). An update run before that fetches the old manifests, which then contribute no commands. Extension authors move `subcommands` to `commands` and set `"manifest": 2`.
+
+### Features
+
+* extension commands declared in manifests; sessions carry their workspace ([#303](https://github.com/mnemcik/consigliere/issues/303)) ([10d241c](https://github.com/mnemcik/consigliere/commit/10d241c622219ab653074bf63a297c997bba5e36))
+* extensions contribute skills that cg manages ([#318](https://github.com/mnemcik/consigliere/issues/318)) ([6780c88](https://github.com/mnemcik/consigliere/commit/6780c8883f12c111f0b4656bf3fe206ef709cc57))
+* extensions state the cg version they need (requires.cg) ([#324](https://github.com/mnemcik/consigliere/issues/324)) ([fff9f43](https://github.com/mnemcik/consigliere/commit/fff9f437a74d1a3d21f8bc860abca683e937f9c3))
+* matcher and if filters on extension hooks (manifest v2) ([#323](https://github.com/mnemcik/consigliere/issues/323)) ([5c4aa50](https://github.com/mnemcik/consigliere/commit/5c4aa504c01398df6de0ff2217b221d39a4cb6d4))
+
 ## [1.32.1](https://github.com/mnemcik/consigliere/compare/v1.32.0...v1.32.1) (2026-11-16)
 
 
