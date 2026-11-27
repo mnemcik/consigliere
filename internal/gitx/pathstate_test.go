@@ -141,15 +141,21 @@ func TestBatches(t *testing.T) {
 }
 
 // Where git folds case (core.ignorecase), a change git reports under the
-// index's spelling still counts for the managed path's spelling.
+// index's spelling still counts for the managed path's spelling. Folding is
+// forced on, so this runs on every platform.
 func TestPathStatesFoldsCase(t *testing.T) {
-	if !foldsCase {
-		t.Skip("paths are case-sensitive on this platform")
-	}
 	ctx, dir := initRepo(t)
+	saved := foldsCase
+	foldsCase = true
+	t.Cleanup(func() { foldsCase = saved })
+	mustRun(t, ctx, dir, "config", "core.ignorecase", "true")
 	writeFile(t, dir, "skill.md", "v1\n")
+	writeFile(t, dir, "a*b.md", "x\n")
+	writeFile(t, dir, "aXb.md", "y\n")
 	mustRun(t, ctx, dir, "add", "-A")
 	mustRun(t, ctx, dir, "commit", "-m", "a")
 	writeFile(t, dir, "skill.md", "v2\n")
-	wantStates(t, ctx, dir, map[string]PathState{"SKILL.md": PathUncommitted})
+	writeFile(t, dir, "aXb.md", "y2\n")
+	// a*b.md is literal: aXb.md's change doesn't count for it.
+	wantStates(t, ctx, dir, map[string]PathState{"SKILL.md": PathUncommitted, "a*b.md": PathCommitted})
 }

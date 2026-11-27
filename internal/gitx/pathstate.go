@@ -55,8 +55,7 @@ func PathStates(ctx context.Context, dir string, paths []string) (map[string]Pat
 		out[p] = PathCommitted
 	}
 	for _, batch := range batches(paths) {
-		args := append([]string{"--literal-pathspecs", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching", "--"}, batch...)
-		raw, err := RunCleanRaw(ctx, dir, args...)
+		raw, err := RunCleanRaw(ctx, dir, pathspecArgs([]string{"status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching"}, batch)...)
 		if err != nil {
 			return nil, err
 		}
@@ -77,7 +76,7 @@ func PathStates(ctx context.Context, dir string, paths []string) (map[string]Pat
 				}
 			}
 		}
-		ls, err := RunCleanRaw(ctx, dir, append([]string{"--literal-pathspecs", "ls-files", "-v", "-z", "--"}, batch...)...)
+		ls, err := RunCleanRaw(ctx, dir, pathspecArgs([]string{"ls-files", "-v", "-z"}, batch)...)
 		if err != nil {
 			return nil, err
 		}
@@ -113,6 +112,20 @@ func samePathspec(a, b string) bool {
 
 func hasPathPrefix(p, prefix string) bool {
 	return strings.HasPrefix(p, prefix) || (foldsCase && len(p) >= len(prefix) && strings.EqualFold(p[:len(prefix)], prefix))
+}
+
+// pathspecArgs is args followed by paths as literal pathspecs (no glob or
+// magic). Where case folds, each is also case-insensitive, so a change git
+// records under the index's spelling (core.ignorecase) still matches.
+func pathspecArgs(args, paths []string) []string {
+	if !foldsCase {
+		return append(append(append([]string{"--literal-pathspecs"}, args...), "--"), paths...)
+	}
+	out := append(append([]string(nil), args...), "--")
+	for _, p := range paths {
+		out = append(out, ":(literal,icase)"+p)
+	}
+	return out
 }
 
 // statusEntry is one path git status -z reports.
