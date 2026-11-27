@@ -747,6 +747,10 @@ type commandEntry struct {
 	// root, not the subdirectory of a co-located extension): what cg init
 	// checks before restoring.
 	tree string
+	// requirement says the entry is otherwise verified but its extension
+	// needs a newer cg (requires.cg): unverified then holds the reason, and
+	// the fix is updating cg.
+	requirement bool
 }
 
 // namespaceEntries returns the ledger command entries of the workspace at root
@@ -803,6 +807,13 @@ func namespaceEntries(root, ns string) ([]commandEntry, error) {
 					entry.mismatch = true
 				case !verifiedCommand(dir, m, c):
 					entry.unverified = "its binary " + entry.bin + " is missing"
+				default:
+					// #212 S13: checked only once the entry is otherwise
+					// verified, so a damaged tree's fix comes first.
+					if need, have, unmet := extension.UnmetRequirement(m, Version); unmet {
+						entry.unverified = "it " + extension.RequirementReason(need, have)
+						entry.requirement = true
+					}
 				}
 			}
 			out = append(out, entry)
@@ -873,6 +884,11 @@ func dispatchIn(root string, typed []string) (run *externalRun, decided bool, er
 		return nil, true, cgerr.New(cgerr.ExitUsage,
 			"unknown command \"cg %s\": the extensions installed in %s declare these commands in %q:\n%s",
 			strings.Join(typed, " "), root, ns, strings.Join(cmds, "\n"))
+	}
+	if best.requirement {
+		return nil, true, cgerr.New(cgerr.ExitUsage,
+			"cg %s: extension %q (installed in %s) can't run it: %s. %s",
+			best.ext.Command, best.name, root, best.unverified, extension.UpdateHint)
 	}
 	if best.unverified != "" {
 		// A damaged tree (manifest unreadable, binary missing): cg init
