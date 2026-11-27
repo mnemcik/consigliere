@@ -564,12 +564,20 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 	// a case-insensitive file system (a rename that only changes case): the
 	// old path isn't dropped, and its base is the wanted path's.
 	renamed := map[string]string{}
+	var wantedInfo []pathInfo
+	if old != nil && len(old.Skills) > 0 {
+		for _, w := range order {
+			if fi, err := os.Stat(filepath.Join(root, filepath.FromSlash(w))); err == nil {
+				wantedInfo = append(wantedInfo, pathInfo{path: w, info: fi})
+			}
+		}
+	}
 	var dropped []string
 	for dest := range oldFiles {
 		if _, ok := wanted[dest]; ok || shipped[dest] {
 			continue
 		}
-		if w := sameFileAs(root, dest, order); w != "" {
+		if w := sameFileAs(root, dest, wantedInfo); w != "" {
 			// The same file on disk: through a case-only rename, or because
 			// one target directory links to another. Not dropped; its base
 			// carries over.
@@ -680,13 +688,28 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 		if ctx == nil {
 			ctx = context.Background()
 		}
-		states, err := gitx.PathStates(ctx, root, edited)
+		// git sees a file by its real path: one reached through a symbolic
+		// link (a target directory linking elsewhere in the workspace)
+		// shows no status under the link's spelling.
+		real := make(map[string]string, len(edited))
+		var query []string
+		for _, dest := range edited {
+			if r, ok := realRel(root, rootReal, dest); ok {
+				real[dest] = r
+				query = append(query, r)
+			}
+		}
+		states, err := gitx.PathStates(ctx, rootReal, query)
 		if err != nil {
 			return nil, fmt.Errorf("checking which skill files are committed: %w", err)
 		}
 		stop := &SkillEditError{}
 		for _, dest := range edited {
-			switch states[dest] {
+			state := gitx.PathUncommitted // not resolvable: never counted as committed
+			if r, ok := real[dest]; ok {
+				state = states[r]
+			}
+			switch state {
 			case gitx.PathCommitted:
 			case gitx.PathIgnored:
 				stop.Paths = append(stop.Paths, dest)
@@ -697,12 +720,6 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 		}
 		if len(stop.Paths) > 0 {
 			return nil, stop
-		}
-	}
-	for _, d := range dropped {
-		dir := skillDirOf(d)
-		if !slices.ContainsFunc(plan.gone, func(g skillDir) bool { return g.dir == dir }) && !slices.Contains(plan.dirs, dir) {
-			plan.dirs = append(plan.dirs, dir)
 		}
 	}
 	for _, d := range plan.gone {
@@ -724,6 +741,12 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 		}
 		return false
 	})
+	for _, d := range dropped {
+		dir := skillDirOf(d)
+		if !slices.ContainsFunc(plan.gone, func(g skillDir) bool { return g.dir == dir }) && !slices.Contains(plan.dirs, dir) {
+			plan.dirs = append(plan.dirs, dir)
+		}
+	}
 	if opts.SkillMode != SkillsRestore {
 		warnSkills(root, sources, targets, old, opts, report)
 	}
@@ -734,20 +757,57 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 // old, or "": a case variant on a file system that ignores case, or the
 // same file reached through a target directory that links to another (say
 // .claude/skills -> ../.agents/skills). Deleting old would delete wanted.
-func sameFileAs(root, old string, wanted []string) string {
+func sameFileAs(root, old string, wanted []pathInfo) string {
 	oi, err := os.Stat(filepath.Join(root, filepath.FromSlash(old)))
 	if err != nil {
 		return ""
 	}
 	for _, w := range wanted {
-		if w == old {
-			continue
-		}
-		if wi, err := os.Stat(filepath.Join(root, filepath.FromSlash(w))); err == nil && os.SameFile(oi, wi) {
-			return w
+		if w.path != old && os.SameFile(oi, w.info) {
+			return w.path
 		}
 	}
 	return ""
+}
+
+// pathInfo is a workspace-relative path and what os.Stat returned for it.
+type pathInfo struct {
+	path string
+	info os.FileInfo
+}
+
+// realRel returns managed path rel as git sees it: the real path of its
+// longest existing part, relative to rootReal, followed by the rest, in
+// slash form. It reports false when that real path leaves the workspace or
+// can't be resolved.
+func realRel(root, rootReal, rel string) (string, bool) {
+	parts := strings.Split(rel, "/")
+	n := 0
+	for n < len(parts) {
+		if _, err := os.Lstat(filepath.Join(root, filepath.FromSlash(strings.Join(parts[:n+1], "/")))); err != nil {
+			break
+		}
+		n++
+	}
+	resolved, err := filepath.EvalSymlinks(filepath.Join(root, filepath.FromSlash(strings.Join(parts[:n], "/"))))
+	if err != nil {
+		return "", false
+	}
+	r, err := filepath.Rel(rootReal, resolved)
+	if err != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	out := filepath.ToSlash(r)
+	if out == "." {
+		out = ""
+	}
+	if rest := strings.Join(parts[n:], "/"); rest != "" {
+		if out != "" {
+			out += "/"
+		}
+		out += rest
+	}
+	return out, out != ""
 }
 
 // validLedgerSkills refuses a ledger whose skills cg can't act on safely: the

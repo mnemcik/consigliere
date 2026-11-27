@@ -855,3 +855,66 @@ func TestSkillLedgerLocalFileRefused(t *testing.T) {
 		t.Error("the local file was deleted")
 	}
 }
+
+// linkedWorkspace is a git workspace where .claude/skills links to
+// ../.agents/skills.
+func linkedWorkspace(t *testing.T) string {
+	t.Helper()
+	root := gitWorkspace(t)
+	if err := os.MkdirAll(filepath.Join(root, ".agents", "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("..", ".agents", "skills"), filepath.Join(root, ".claude", "skills")); err != nil {
+		t.Skipf("no symlinks: %v", err)
+	}
+	return root
+}
+
+// From [agents] to [claude] through the link: git is asked about the real
+// path, so an uncommitted edit stops the run and a committed one is replaced.
+func TestSkillLinkedTargetsEditState(t *testing.T) {
+	clone := skillClone(t, "s", map[string]string{"a.md": "a1"})
+	root := linkedWorkspace(t)
+	l, _ := mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{targets: []string{"agents"}})
+	commitAll(t, root)
+	edited := filepath.Join(root, ".agents", "skills", "s", "a.md")
+	if err := os.WriteFile(edited, []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := runSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l, targets: []string{"claude"}})
+	var stop *SkillEditError
+	if !errors.As(err, &stop) {
+		t.Fatalf("uncommitted edit through the link didn't stop the run: %v", err)
+	}
+	if readText(t, edited) != "mine" {
+		t.Fatal("the edit was overwritten")
+	}
+	commitAll(t, root)
+	if _, _, err := runSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l, targets: []string{"claude"}}); err != nil {
+		t.Fatalf("committed edit: %v", err)
+	}
+	if readText(t, edited) != "a1" {
+		t.Error("the committed edit wasn't replaced")
+	}
+}
+
+// A file the new version drops, in a directory the run keeps through the
+// link: its emptied subdirectory is pruned.
+func TestSkillLinkedTargetsPruneDropped(t *testing.T) {
+	clone := skillClone(t, "s", map[string]string{"sub/x.md": "x"})
+	root := linkedWorkspace(t)
+	l, _ := mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{targets: []string{"claude"}})
+	if err := os.RemoveAll(filepath.Join(clone, "skills", "s", "sub")); err != nil {
+		t.Fatal(err)
+	}
+	mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l, targets: []string{"agents"}})
+	if exists(filepath.Join(root, ".agents", "skills", "s", "sub")) {
+		t.Error("the emptied subdirectory was left behind")
+	}
+	if !exists(filepath.Join(root, ".agents", "skills", "s", "SKILL.md")) {
+		t.Error("SKILL.md deleted")
+	}
+}
