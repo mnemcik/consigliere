@@ -134,6 +134,9 @@ func runExtInstall(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := checkRequirements([]*extension.Manifest{m}); err != nil {
+		return err
+	}
 	warnings, err := checkCommands(root, cfg.Extensions, map[string][]extension.CommandContribution{m.Name: m.Contributes.Commands}, false)
 	if err != nil {
 		return err
@@ -459,6 +462,15 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 		users[tree]++
 		incoming[m.Name] = m.Contributes.Commands
 	}
+	// #212 S9: an extension this cg is too old for restores none, before
+	// anything is applied; the deferred clean-up removes the fetched trees.
+	ms := make([]*extension.Manifest, len(todo))
+	for i := range todo {
+		ms[i] = todo[i].m
+	}
+	if err := checkRequirements(ms); err != nil {
+		return out, nil, err
+	}
 	// S9: every command cg init restores counts as owned, so a built-in
 	// namespace only warns.
 	warnings, err := checkCommands(root, present, incoming, true)
@@ -518,6 +530,23 @@ func loadValidManifest(dir, want string) (*extension.Manifest, error) {
 		return nil, cgerr.New(cgerr.ExitUsage, "%s in %s names %q, but .cg.json records %q", extension.ManifestFile, dir, m.Name, want)
 	}
 	return m, nil
+}
+
+// checkRequirements refuses the run when this cg is older than any of ms
+// requires (requires.cg), naming each such extension on its own line, so one
+// update of cg fixes the whole run. Callers check before applying anything.
+// --force doesn't skip it: the extension is known not to work on this cg.
+func checkRequirements(ms []*extension.Manifest) error {
+	var lines []string
+	for _, m := range ms {
+		if need, have, unmet := extension.UnmetRequirement(m, Version); unmet {
+			lines = append(lines, extension.RequirementMessage(m.Name, need, have))
+		}
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	return cgerr.New(cgerr.ExitUsage, "%s", strings.Join(lines, "\n"))
 }
 
 // resolveQualified resolves alias to its registry source, fetches that one
@@ -868,6 +897,13 @@ func runExtUpdate(cmd *cobra.Command, args []string) error {
 		}
 		updates[i] = u
 		incoming[u.ref.Name] = u.m.Contributes.Commands
+	}
+	ms := make([]*extension.Manifest, len(updates))
+	for i := range updates {
+		ms[i] = updates[i].m
+	}
+	if err := checkRequirements(ms); err != nil {
+		return err
 	}
 	warnings, err := checkCommands(root, cfg.Extensions, incoming, false)
 	if err != nil {
