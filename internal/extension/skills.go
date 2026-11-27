@@ -691,11 +691,11 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 		// git sees a file by its real path: one reached through a symbolic
 		// link (a target directory linking elsewhere in the workspace)
 		// shows no status under the link's spelling.
-		real := make(map[string]string, len(edited))
+		realPath := make(map[string]string, len(edited))
 		var query []string
 		for _, dest := range edited {
 			if r, ok := realRel(root, rootReal, dest); ok {
-				real[dest] = r
+				realPath[dest] = r
 				query = append(query, r)
 			}
 		}
@@ -706,7 +706,7 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 		stop := &SkillEditError{}
 		for _, dest := range edited {
 			state := gitx.PathUncommitted // not resolvable: never counted as committed
-			if r, ok := real[dest]; ok {
+			if r, ok := realPath[dest]; ok {
 				state = states[r]
 			}
 			switch state {
