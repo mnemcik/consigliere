@@ -84,9 +84,10 @@ Declare only what your extension actually provides. A pure-rules extension might
 only set `claude-md-sections` and `notes`; a tool extension might only set
 `commands`.
 
-A manifest that declares `commands` needs `"manifest": 2`. One without
-`commands` may stay on `"manifest": 1`. The old `subcommands` key is no longer
-read: move to `commands` and `"manifest": 2` (cg 2.0 and later).
+A manifest that declares `commands`, or sets `matcher` or `if` on a hook, needs
+`"manifest": 2`. One without them may stay on `"manifest": 1`. The old
+`subcommands` key is no longer read: move to `commands` and `"manifest": 2`
+(cg 2.0 and later).
 
 ## Contribution points
 
@@ -131,6 +132,29 @@ missing, matching framework hook style:
 command -v cg-foo >/dev/null 2>&1 || exit 0
 exec cg-foo gate "$@"
 ```
+
+To run a hook only for some tool calls, add Claude Code's `matcher` and `if`
+to the entry (needs `"manifest": 2`). cg writes them into `settings.json` as
+they are; see the [hooks reference](https://code.claude.com/docs/en/hooks) for
+what they match. `if` holds one permission rule and works only on the tool
+events (`PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`,
+`PermissionDenied`, `PreSkillShellCommand`). For two rules, list two entries
+with the same wrapper; it is installed once:
+
+```json
+"hooks": [
+  { "event": "PreToolUse",   "matcher": "Bash", "if": "Bash(gh pr *)",
+    "wrapper": "hooks/pr-guard.sh", "command": "cg-pr guard" },
+  { "event": "PreToolUse",   "matcher": "Bash", "if": "Bash(gh api *)",
+    "wrapper": "hooks/pr-guard.sh", "command": "cg-pr guard" },
+  { "event": "SessionStart", "matcher": "compact|clear",
+    "wrapper": "hooks/pr-reminder.sh", "command": "cg-pr remind" }
+]
+```
+
+cg refuses two entries that are the same in event, matcher, `if` and wrapper,
+and two different wrappers with the same file name. It writes no other handler
+field, such as `timeout`.
 
 ### `commands` — ship `cg foo …` commands
 

@@ -265,12 +265,8 @@ func applyAll(root, cloneDir string, m *Manifest, l *Ledger, plans []copyPlan, n
 	if row != nil {
 		l.IndexRows = append(l.IndexRows, *row)
 	}
-	for _, h := range m.Contributes.Hooks {
-		wrapperRel, e := applyHook(root, cloneDir, m.Name, h)
-		if e != nil {
-			return e
-		}
-		l.Hooks = append(l.Hooks, LedgerHook{Event: h.Event, Wrapper: wrapperRel})
+	if e := applyHooks(root, cloneDir, m, l); e != nil {
+		return e
 	}
 	for _, g := range m.Contributes.GitHooks {
 		dest := gitHookDestRel(m.Name, g)
@@ -512,22 +508,33 @@ func reverseGitignore(root string, l *Ledger) error {
 	return writeFileAtomic(path, []byte(text), 0o644)
 }
 
-// applyHook copies the wrapper into .claude/hooks/ (executable) and registers it
-// for its event in settings.json. It returns the workspace-relative wrapper path.
-// The installed filename is prefixed with the extension name so wrappers from
-// different extensions can't collide at the same path.
-func applyHook(root, cloneDir, name string, h HookContribution) (string, error) {
-	destRel := hookDestRel(name, h.Wrapper)
-	destAbs := filepath.Join(root, filepath.FromSlash(destRel))
-	if err := copyExecutable(filepath.Join(cloneDir, filepath.FromSlash(h.Wrapper)), destAbs); err != nil {
-		return "", fmt.Errorf("hook %q: %w", h.Wrapper, err)
+// applyHooks copies each distinct wrapper once into .claude/hooks/
+// (executable), registers every hook entry in settings.json in one write, and
+// records one ledger entry per hook entry. The installed filename is prefixed
+// with the extension name so wrappers from different extensions can't collide
+// at the same path. A failure is undone by ApplyWith's snapshot, which covers
+// settings.json and every wrapper's install path.
+func applyHooks(root, cloneDir string, m *Manifest, l *Ledger) error {
+	regs := make([]hookReg, 0, len(m.Contributes.Hooks))
+	copied := map[string]bool{}
+	for _, h := range m.Contributes.Hooks {
+		destRel := hookDestRel(m.Name, h.Wrapper)
+		if !copied[destRel] {
+			destAbs := filepath.Join(root, filepath.FromSlash(destRel))
+			if err := copyExecutable(filepath.Join(cloneDir, filepath.FromSlash(h.Wrapper)), destAbs); err != nil {
+				return fmt.Errorf("hook %q: %w", h.Wrapper, err)
+			}
+			copied[destRel] = true
+		}
+		regs = append(regs, hookReg{Event: h.Event, Matcher: h.Matcher, If: h.If, CommandRel: destRel})
 	}
-	if err := registerHook(root, h.Event, destRel); err != nil {
-		// Don't leave an unregistered wrapper the ledger won't know about.
-		_ = os.Remove(destAbs)
-		return "", err
+	if err := registerHooks(root, regs); err != nil {
+		return err
 	}
-	return destRel, nil
+	for _, r := range regs {
+		l.Hooks = append(l.Hooks, LedgerHook{Event: r.Event, Wrapper: r.CommandRel})
+	}
+	return nil
 }
 
 // copyExecutable copies a hook or git-hook script, executable.

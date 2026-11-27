@@ -43,10 +43,24 @@ func PinnedCommand(path string) string {
 	return claudeProjectDirPrefix + filepath.ToSlash(path)
 }
 
-// registerHook appends a command hook for event, pointing at commandRel. It is
-// idempotent: any prior registration of the same command (in any event) is
-// removed first, so re-applying an extension can't accumulate duplicate hooks.
-func registerHook(root, event, commandRel string) error {
+// hookReg is one registration: a matcher group for Event whose one handler runs
+// CommandRel, filtered by Matcher and If (unset when empty).
+type hookReg struct {
+	Event      string
+	Matcher    string
+	If         string
+	CommandRel string
+}
+
+// registerHooks writes one matcher group per registration, in order, after
+// each event's existing groups, and saves settings.json once. It is
+// idempotent: every prior registration of each command (in any event) is
+// removed first, so re-applying an extension can't accumulate duplicate hooks,
+// and a changed or dropped filter doesn't linger.
+func registerHooks(root string, regs []hookReg) error {
+	if len(regs) == 0 {
+		return nil
+	}
 	settings, err := loadSettings(settingsPath(root))
 	if err != nil {
 		return err
@@ -56,15 +70,25 @@ func registerHook(root, event, commandRel string) error {
 		hooks = map[string]any{}
 		settings["hooks"] = hooks
 	}
-	removeHookCommand(hooks, commandRel)
-	entry := map[string]any{
-		"matcher": "",
-		"hooks": []any{
-			map[string]any{"type": "command", "command": PinnedCommand(commandRel)},
-		},
+	removed := map[string]bool{}
+	for _, r := range regs {
+		if !removed[r.CommandRel] {
+			removeHookCommand(hooks, r.CommandRel)
+			removed[r.CommandRel] = true
+		}
 	}
-	existing, _ := hooks[event].([]any)
-	hooks[event] = append(existing, entry)
+	for _, r := range regs {
+		handler := map[string]any{"type": "command", "command": PinnedCommand(r.CommandRel)}
+		if r.If != "" {
+			handler["if"] = r.If
+		}
+		entry := map[string]any{
+			"matcher": r.Matcher,
+			"hooks":   []any{handler},
+		}
+		existing, _ := hooks[r.Event].([]any)
+		hooks[r.Event] = append(existing, entry)
+	}
 	return saveSettings(settingsPath(root), settings)
 }
 
@@ -184,7 +208,11 @@ func loadSettings(path string) (map[string]any, error) {
 	return m, nil
 }
 
-func saveSettings(path string, settings map[string]any) error {
+// saveSettings writes settings.json. It is a variable so tests can count the
+// writes.
+var saveSettings = writeSettings
+
+func writeSettings(path string, settings map[string]any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // workspace dir
 		return err
 	}
