@@ -134,12 +134,13 @@ is refused by H6 or H7.
   opens; its own PR, merged before the 2.0.0 release PR. *Alternative:* start now and let whichever lands second
   rebase, as #300's plan says for #301.
 - **Q2 — the registry schema change.** The analysis puts it "alongside #259's X1 change" (Recommended item 7); X1
-  merged as mnemcik/cg-extensions-registry#25 without it. **Proposed:** a separate additive registry PR (X1 above),
-  opened by this issue's author after the agreement and merged before any extension uses the fields; not a hold on
-  the release, since every field is optional and a manifest using one too early fails cg-extensions CI. Its
-  description points to this issue as registry#25 pointed to #259, with no separate cg-extensions issue (the
-  registry README asks for `Fixes mnemcik/cg-extensions#NNN`; #25 is the precedent for a schema change that a
-  consigliere issue decides). *Alternative:* file a cg-extensions issue for it first.
+  merged as mnemcik/cg-extensions-registry#25 without it. **Agreed (changed from the proposal):** a separate additive
+  registry PR (X1 above), opened by this issue's author after the agreement and merged before any extension uses
+  the fields; not a hold on the release, since every field is optional and a manifest using one too early fails
+  cg-extensions CI. It starts from its own mnemcik/cg-extensions issue that points to this issue's agreement, and the
+  registry PR says `Fixes mnemcik/cg-extensions#NNN`, as the registry's README requires (the same for #212 and
+  #300). *Proposed before the agreement, not taken:* no separate cg-extensions issue, the PR pointing to this issue
+  as registry#25 pointed to #259.
 - **Q3 — a sixth `if` event.** Decision 7 refuses `if` outside "the five tool events". Claude Code's hooks reference
   (read 2026-11-27) now lists six: `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`,
   `PermissionDenied` and `PreSkillShellCommand`. **Proposed:** accept the six, following decision 8 (Claude Code's
