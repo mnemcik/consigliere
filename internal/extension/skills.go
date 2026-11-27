@@ -79,23 +79,49 @@ func CheckSkillTargets(targets []string) error {
 // directory under root is, on disk, t's (one linking to the other).
 func SkillTargetAliases(root, t string) []string {
 	out := []string{t}
-	dt, ok := SkillTargetDir(t)
-	if !ok {
-		return out
-	}
-	it, err := os.Stat(filepath.Join(root, filepath.FromSlash(dt)))
-	if err != nil {
-		return out
-	}
 	for _, o := range skillTargets {
-		if o.Name == t {
-			continue
-		}
-		if io, err := os.Stat(filepath.Join(root, filepath.FromSlash(o.Dir))); err == nil && os.SameFile(it, io) {
+		if o.Name != t && SameSkillTargetDir(root, t, o.Name) {
 			out = append(out, o.Name)
 		}
 	}
 	return out
+}
+
+// SameSkillTargetDir reports whether targets a and b put skills in the same
+// place on disk. A missing directory counts by where it would be created:
+// the real path of its longest existing part, plus the rest (so
+// .claude -> .agents makes .claude/skills and .agents/skills one place even
+// before skills/ exists).
+func SameSkillTargetDir(root, a, b string) bool {
+	if a == b {
+		return true
+	}
+	da, ok1 := SkillTargetDir(a)
+	db, ok2 := SkillTargetDir(b)
+	if !ok1 || !ok2 {
+		return false
+	}
+	ra, okA := resolvedLocation(root, da)
+	rb, okB := resolvedLocation(root, db)
+	return okA && okB && ra == rb
+}
+
+// resolvedLocation is rel's location: the real path of its longest existing
+// part, joined with the parts below it that don't exist yet.
+func resolvedLocation(root, rel string) (string, bool) {
+	parts := strings.Split(rel, "/")
+	n := 0
+	for n < len(parts) {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(strings.Join(parts[:n+1], "/")))); err != nil {
+			break
+		}
+		n++
+	}
+	existing, err := filepath.EvalSymlinks(filepath.Join(root, filepath.FromSlash(strings.Join(parts[:n], "/"))))
+	if err != nil {
+		return "", false
+	}
+	return filepath.Join(append([]string{existing}, parts[n:]...)...), true
 }
 
 // SkillDir is the workspace-relative directory of skill name under target.
@@ -1192,10 +1218,17 @@ func applySkills(root string, plan *skillPlan, l *Ledger, snap *snapshot, report
 // applySkillPath carries out one managed path's decision.
 func applySkillPath(root string, p *skillPathPlan, l *Ledger, snap *snapshot, report *SkillReport) error {
 	abs := filepath.Join(root, filepath.FromSlash(p.dest))
+	if p.op == opReplace {
+		// The user's file may have changed since the plan judged it
+		// committed (an editor saving): stop before touching or renaming
+		// anything, so the rollback leaves that change alone.
+		if now, err := skillDiskID(abs); err != nil || now != p.seen {
+			return fmt.Errorf("%s changed while cg was running; run the command again", p.dest)
+		}
+	}
 	switch p.op {
-	case opWrite, opMode, opDelete, opDeleteEdited:
+	case opWrite, opMode, opDelete, opDeleteEdited, opReplace:
 		snap.touch(abs)
-	case opReplace: // touched after its re-check, below
 	case opAdopt, opKeep, opForget, opLeave:
 	}
 	if p.renameFrom != "" {
@@ -1237,13 +1270,7 @@ func applySkillPath(root string, p *skillPathPlan, l *Ledger, snap *snapshot, re
 	switch p.op {
 	case opWrite:
 		return write()
-	case opReplace:
-		// The user's file may have changed since the plan judged it
-		// committed (an editor saving): stop rather than replace that.
-		if now, err := skillDiskID(abs); err != nil || now != p.seen {
-			return fmt.Errorf("%s changed while cg was running; run the command again", p.dest)
-		}
-		snap.touch(abs)
+	case opReplace: // re-checked above, before anything was touched
 		if err := write(); err != nil {
 			return err
 		}

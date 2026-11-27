@@ -1195,3 +1195,51 @@ func TestSkillNoteDotSlashToSkill(t *testing.T) {
 		t.Errorf("orphans: %v", orphan.Notes)
 	}
 }
+
+// Skill -> template with a ./ destination and changed template content: the
+// file is the old skill file, so it is updated, not refused as unowned.
+func TestSkillToTemplateDotSlash(t *testing.T) {
+	clone := skillClone(t, "s", map[string]string{"x.md": "x1"})
+	root := t.TempDir()
+	l, _ := mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{})
+	writeTree(t, clone, map[string]string{"tpl/x.md": "x2"})
+	asTemplate := &Manifest{Manifest: 2, Name: "demo", Version: "2", Description: "d", Contributes: Contributions{Templates: []CopyContribution{
+		{Src: "tpl/x.md", Dest: "./.claude/skills/s/x.md"}}}}
+	l2, _, err := runSkills(t, root, clone, asTemplate, skillRunOpts{old: l})
+	if err != nil {
+		t.Fatalf("refused: %v", err)
+	}
+	if readText(t, filepath.Join(root, ".claude", "skills", "s", "x.md")) != "x2" || len(l2.Pending) != 0 {
+		t.Errorf("not updated (pending %v)", l2.Pending)
+	}
+}
+
+// A case-only rename whose file changes after the plan: the re-check stops
+// the run before the rename, and the rollback leaves the change alone.
+func TestSkillCaseRenameRecheck(t *testing.T) {
+	clone := skillClone(t, "s", map[string]string{"0.md": "z1", "Foo.md": "f1"})
+	root := gitWorkspace(t)
+	l, _ := mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{})
+	if _, err := os.Stat(filepath.Join(root, ".claude", "skills", "s", "foo.md")); err != nil {
+		t.Skip("case-sensitive file system: the two names are different files")
+	}
+	foo := filepath.Join(root, ".claude", "skills", "s", "Foo.md")
+	writeTree(t, root, map[string]string{".claude/skills/s/Foo.md": "mine"})
+	commitAll(t, root)
+	if err := os.Remove(filepath.Join(clone, "skills", "s", "Foo.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeTree(t, clone, map[string]string{"skills/s/foo.md": "f2", "skills/s/0.md": "z2"})
+	skillWriteHook = func(dest string) error {
+		if strings.HasSuffix(dest, "0.md") {
+			return os.WriteFile(foo, []byte("saved meanwhile"), 0o644) //nolint:gosec // test temp dir
+		}
+		return nil
+	}
+	t.Cleanup(func() { skillWriteHook = nil })
+	_, _, err := runSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l})
+	wantErr(t, err, "changed while cg was running")
+	if readText(t, foo) != "saved meanwhile" {
+		t.Error("the change made during the run was overwritten")
+	}
+}

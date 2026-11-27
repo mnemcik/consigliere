@@ -709,3 +709,28 @@ func TestSkillConflictThroughLinkedTargets(t *testing.T) {
 		t.Error("alpha's skill file changed")
 	}
 }
+
+// Linked targets before the shared skills directory exists: .claude links to
+// .agents, and no skills/ is there yet; they are still one place.
+func TestSkillConflictThroughLinkedParentMissingDir(t *testing.T) {
+	requireGit(t)
+	cfgHome, ws := t.TempDir(), newWorkspace(t)
+	if err := os.MkdirAll(filepath.Join(ws, ".agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(".agents", filepath.Join(ws, ".claude")); err != nil {
+		t.Skipf("no symlinks: %v", err)
+	}
+	setTargets(t, ws, "claude")
+	installRepo(t, cfgHome, ws, skillsManifest("alpha", "1", "digest"))
+	// The shared skills directory goes away; alpha's ledger still records digest.
+	if err := os.RemoveAll(filepath.Join(ws, ".agents", "skills")); err != nil {
+		t.Fatal(err)
+	}
+	setTargets(t, ws, "agents")
+	out, err := runExtCfg(t, cfgHome, ws, "install", makeExtRepo(t, skillsManifest("beta", "1", "digest")))
+	wantConflict(t, err, out, `skill "digest" of extension "beta" is already shipped by extension "alpha"`)
+	if led, _ := extension.LoadLedger(ws, "beta"); led != nil {
+		t.Error("beta has a ledger")
+	}
+}

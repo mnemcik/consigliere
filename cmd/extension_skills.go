@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"os"
 	"path"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -249,17 +247,8 @@ func sameTargetIn(root, t string, ts []string) (string, bool) {
 func targetAliases(root, t string) []string { return extension.SkillTargetAliases(root, t) }
 
 // sameTargetDir reports whether the skills directories of targets a and b
-// are the same directory on disk.
-func sameTargetDir(root, a, b string) bool {
-	da, ok1 := extension.SkillTargetDir(a)
-	db, ok2 := extension.SkillTargetDir(b)
-	if !ok1 || !ok2 {
-		return false
-	}
-	ia, err1 := os.Stat(filepath.Join(root, filepath.FromSlash(da)))
-	ib, err2 := os.Stat(filepath.Join(root, filepath.FromSlash(db)))
-	return err1 == nil && err2 == nil && os.SameFile(ia, ib)
-}
+// are the same place on disk (also when they don't exist yet).
+func sameTargetDir(root, a, b string) bool { return extension.SameSkillTargetDir(root, a, b) }
 
 func findRefByName(exts []workspace.ExtensionRef, name string) (*workspace.ExtensionRef, bool) {
 	for i := range exts {
