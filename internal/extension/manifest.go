@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -23,8 +24,8 @@ import (
 
 const (
 	// SchemaVersion is the newest cg-extension.json manifest schema version
-	// this build understands. Version 2 adds commands and the matcher and if
-	// filters on hook entries; a version 1 manifest that uses none of them is
+	// this build understands. Version 2 adds commands, skills and the matcher
+	// and if filters on hook entries; a version 1 manifest that uses none of them is
 	// still accepted, so extensions that don't need them don't have to change.
 	SchemaVersion = 2
 
@@ -75,6 +76,9 @@ type Contributions struct {
 	Gitignore []SectionContribution `json:"gitignore,omitempty"`
 	// Launcher wraps the agent command `cg start` runs (at most one entry).
 	Launcher []LauncherContribution `json:"launcher,omitempty"`
+	// Skills are agent skills cg installs and manages (manifest v2); see
+	// skills.go.
+	Skills []SkillContribution `json:"skills,omitempty"`
 }
 
 // SectionContribution inserts the body of Path into the workspace CLAUDE.md as
@@ -156,6 +160,15 @@ type CommandContribution struct {
 	Binary  string `json:"binary"`
 }
 
+// SkillContribution ships the directory Src (extension-relative, holding
+// SKILL.md) as an agent skill named after its base name. Every file below Src
+// is installed; Executables lists the ones, relative to Src, installed
+// executable.
+type SkillContribution struct {
+	Src         string   `json:"src"`
+	Executables []string `json:"executables,omitempty"`
+}
+
 // LauncherContribution makes `cg start` (and bare `cg`) run the extension's
 // bin/<Binary> with Args, then "--", then the agent command and the user's
 // arguments, instead of the agent directly. The binary is expected to exec the
@@ -198,6 +211,9 @@ func (m *Manifest) Validate() error {
 	}
 	if len(m.Contributes.Commands) > 0 && m.Manifest < 2 {
 		return fmt.Errorf(`commands need "manifest": 2 (got %d)`, m.Manifest)
+	}
+	if len(m.Contributes.Skills) > 0 && m.Manifest < 2 {
+		return fmt.Errorf(`skills need "manifest": 2 (got %d)`, m.Manifest)
 	}
 	if !nameRe.MatchString(m.Name) {
 		return fmt.Errorf("invalid name %q: must match %s", m.Name, nameRe.String())
@@ -280,6 +296,9 @@ func (m *Manifest) Validate() error {
 		if c.Index != "" {
 			return fmt.Errorf("templates[%d]: index is only for notes", i)
 		}
+	}
+	if err := validateSkills(m.Contributes.Skills); err != nil {
+		return err
 	}
 	gitHookDests := map[string]int{}
 	for i, g := range m.Contributes.GitHooks {
@@ -374,6 +393,54 @@ func copyPathsInside(c CopyContribution) error {
 func insideDir(field, p, base string) error {
 	if clean, err := CleanSubdir(p); err != nil || clean == "" {
 		return fmt.Errorf("%s %q must be a relative path inside the %s", field, p, base)
+	}
+	return nil
+}
+
+// skillNameRule is the Agent Skills name rule (https://agentskills.io/specification).
+const skillNameRule = "1-64 characters of [a-z0-9-], no leading or trailing hyphen, no \"--\""
+
+// ValidSkillName reports whether name follows the Agent Skills name rule.
+func ValidSkillName(name string) bool {
+	return len(name) >= 1 && len(name) <= 64 && nameRe.MatchString(name) &&
+		!strings.HasPrefix(name, "-") && !strings.HasSuffix(name, "-") && !strings.Contains(name, "--")
+}
+
+// SkillName is the name of the skill a contribution ships: the base name of
+// its src. Call it on a validated contribution.
+func SkillName(s SkillContribution) string {
+	if clean, err := CleanSubdir(s.Src); err == nil && clean != "" {
+		return path.Base(filepath.ToSlash(clean)) // "skills/demo/." is demo
+	}
+	return path.Base(strings.TrimRight(strings.ReplaceAll(s.Src, `\`, "/"), "/"))
+}
+
+func validateSkills(skills []SkillContribution) error {
+	names := map[string]int{}
+	for i, s := range skills {
+		if clean, err := CleanSubdir(s.Src); err != nil || clean == "" {
+			return fmt.Errorf("skills[%d]: src %q must be a relative path inside the extension", i, s.Src)
+		}
+		name := SkillName(s)
+		if !ValidSkillName(name) {
+			return fmt.Errorf("skills[%d]: skill name %q (the base name of src) must be %s", i, name, skillNameRule)
+		}
+		if j, dup := names[name]; dup {
+			return fmt.Errorf("skills[%d]: skill %q is already declared by skills[%d]", i, name, j)
+		}
+		names[name] = i
+		seen := map[string]bool{}
+		for j, e := range s.Executables {
+			clean, err := CleanSubdir(e)
+			if err != nil || clean == "" {
+				return fmt.Errorf("skills[%d]: executables[%d] %q must be a relative path inside the skill", i, j, e)
+			}
+			key := filepath.ToSlash(clean)
+			if seen[key] {
+				return fmt.Errorf("skills[%d]: executables[%d] %q is listed twice", i, j, e)
+			}
+			seen[key] = true
+		}
 	}
 	return nil
 }

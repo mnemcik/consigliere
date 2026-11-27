@@ -152,7 +152,7 @@ func writeReferencedStubs(t *testing.T, dir, manifest string) {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil { //nolint:gosec // fixture paths from the test's own manifest, in a temp dir
 			t.Fatal(err)
 		}
 	}
@@ -170,6 +170,14 @@ func writeReferencedStubs(t *testing.T, dir, manifest string) {
 	}
 	for _, g := range m.Contributes.GitHooks {
 		write(g.Script, "#!/bin/sh\nexit 0\n")
+	}
+	for _, sk := range m.Contributes.Skills {
+		name := extension.SkillName(sk)
+		write(sk.Src+"/SKILL.md", "---\nname: "+name+"\ndescription: test skill\n---\n\n"+
+			extension.SkillLocalBlockMarkdown(extension.SkillLocalBlocks[len(extension.SkillLocalBlocks)-1])+"\n\n# "+name+"\n")
+		for _, e := range sk.Executables {
+			write(sk.Src+"/"+e, "#!/bin/sh\nexit 0\n")
+		}
 	}
 	for _, c := range m.Contributes.Commands {
 		p := filepath.Join(dir, "bin", c.Binary)
