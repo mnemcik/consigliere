@@ -699,8 +699,8 @@ func TestSkillConflictThroughLinkedTargets(t *testing.T) {
 	out, err := runExtCfg(t, cfgHome, ws, "install", makeExtRepo(t, skillsManifest("beta", "1", "digest")))
 	wantConflict(t, err, out, `skill "digest" of extension "beta" is already shipped by extension "alpha"`, "same as target")
 	// (snapshotDir can't walk the linked directory.) Nothing was applied:
-	if led, _ := extension.LoadLedger(ws, "beta"); led != nil {
-		t.Error("beta has a ledger")
+	if led, lerr := extension.LoadLedger(ws, "beta"); lerr != nil || led != nil {
+		t.Errorf("beta has a ledger (%v)", lerr)
 	}
 	if cfg, _ := workspace.Detect(ws); findRef(cfg.Extensions, "beta") != nil {
 		t.Error("beta was recorded in .cg.json")
@@ -730,7 +730,26 @@ func TestSkillConflictThroughLinkedParentMissingDir(t *testing.T) {
 	setTargets(t, ws, "agents")
 	out, err := runExtCfg(t, cfgHome, ws, "install", makeExtRepo(t, skillsManifest("beta", "1", "digest")))
 	wantConflict(t, err, out, `skill "digest" of extension "beta" is already shipped by extension "alpha"`)
-	if led, _ := extension.LoadLedger(ws, "beta"); led != nil {
-		t.Error("beta has a ledger")
+	if led, lerr := extension.LoadLedger(ws, "beta"); lerr != nil || led != nil {
+		t.Errorf("beta has a ledger (%v)", lerr)
+	}
+}
+
+// cg init restores an extension without skills in a workspace whose .claude
+// links outside it: with no skill to restore there is no managed path.
+func TestInitRestoreWithoutSkillsLinkedClaude(t *testing.T) {
+	requireGit(t)
+	cfgHome, ws := t.TempDir(), newWorkspace(t)
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(ws, ".claude")); err != nil {
+		t.Skipf("no symlinks: %v", err)
+	}
+	installRepo(t, cfgHome, ws, testManifest)
+	removeTree(t, ws, "demo")
+	if out, err := runInitForce(t, cfgHome, ws); err != nil && strings.Contains(err.Error(), "outside the workspace") {
+		t.Fatalf("cg init refused an extension without skills: %v\n%s", err, out)
+	}
+	if led, err := extension.LoadLedger(ws, "demo"); err != nil || led == nil {
+		t.Errorf("demo not restored: %v", err)
 	}
 }

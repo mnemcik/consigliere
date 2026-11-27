@@ -1402,10 +1402,20 @@ func RemoveSkills(root string, l *Ledger, opts *ApplyOptions, report *SkillRepor
 }
 
 // CheckSkillPaths runs, without a fetched tree, the skill checks `cg init`
-// runs before fetching (S36b): unknown targets, and S16b on each target
-// directory and on the skill directories ledger l records.
+// runs before fetching (S36b): unknown targets, and, when ledger l records
+// skills, S16b on each target directory and on the skill directories it
+// records.
 func CheckSkillPaths(root string, targets []string, l *Ledger) error {
 	if err := CheckSkillTargets(targets); err != nil {
+		return err
+	}
+	if l == nil || len(l.Skills) == 0 {
+		// No skill to restore: no managed path, so nothing for S16b to
+		// check (a .claude linking outside the workspace stays usable for
+		// extensions without skills, as at install).
+		return nil
+	}
+	if err := validLedgerSkills(l); err != nil {
 		return err
 	}
 	rootReal, err := filepath.EvalSymlinks(root)
@@ -1417,9 +1427,6 @@ func CheckSkillPaths(root string, targets []string, l *Ledger) error {
 		if err := checkInsideWorkspace(root, rootReal, dir); err != nil {
 			return err
 		}
-	}
-	if err := validLedgerSkills(l); err != nil {
-		return err
 	}
 	if l == nil {
 		return nil
