@@ -109,7 +109,7 @@ func SameSkillTargetDir(root, a, b string) bool {
 
 // existingPart returns what os.Stat reports for rel's longest existing part,
 // and the parts of rel below it.
-func existingPart(root, rel string) (os.FileInfo, []string, bool) {
+func existingPart(root, rel string) (info os.FileInfo, rest []string, ok bool) {
 	parts := strings.Split(rel, "/")
 	info, err := os.Stat(root)
 	if err != nil {
