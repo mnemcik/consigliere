@@ -3,7 +3,7 @@ title: "Analysis — the required 'Validate PR title' check stops on 2026-12-02 
 created: 2026-11-27
 item: "https://github.com/mnemcik/consigliere/issues/325"
 size: full
-verdict: pending review
+verdict: needs clarification (owner decisions 1-5)
 ---
 
 # Analysis — the required 'Validate PR title' check stops on 2026-12-02 (#325)
@@ -29,8 +29,8 @@ verdict: pending review
 ## Question
 
 The required check `Validate PR title` comes from a workflow that runs only on `pull_request_target`. From 2026-12-02
-GitHub blocks that event by default in public repositories, so the check stops reporting and no PR into `main` can
-merge, the 2.0.0 release PR included. It affects everyone who opens or merges a PR in this repository.
+GitHub blocks that event by default in public repositories, so the check stops reporting and no PR that gets a new
+head after that date can merge, the 2.0.0 release PR included. It affects everyone who opens or merges a PR in this repository.
 
 This is a **"how"** item: the problem is real and dated (below). The question is how to keep the check running
 without undoing the security change, how long that takes, and in what order against the 2.0.0 release.
@@ -62,12 +62,24 @@ availability"); this repository has no policy of its own (`GET /repos/mnemcik/co
 `{"total_count":0,"policies":[]}`, 2026-11-27), so it is in scope under either wording.
 
 **This repository was blocked in the brownout.** GitHub ran enforcement windows on 2026-11-09 and 2026-11-16,
-16:00-18:00 UTC (changelog). On 2026-11-16 between 17:31 and 17:35 UTC, three `PR Title Lint` runs and two `Impact
-Review` runs on `pull_request_target` ended in `startup_failure`, while `CI` on `pull_request` for the same PR passed
-(`gh run list`, runs `43919248466`, `43919515190`, `43919886395`). A blocked run has no jobs
-(`…/runs/43919886395/jobs` → `total_count: 0`), so it creates no `Validate PR title` check run: the required check
-stays expected, it doesn't fail. That PR's head shows `Validate PR title: success` only from another run of the
-workflow. The brownout also shows by experiment that `pull_request` is not affected.
+16:00-18:00 UTC, in which blocked attempts "create failed runs with an error annotation; the workflows won't execute"
+(changelog). On 2026-11-16, for one PR's two heads (`gh run list`):
+
+| Time (UTC) | Workflow | Event | Run | Result |
+|---|---|---|---|---|
+| 17:31:22 | PR Title Lint | `pull_request_target` | `43919248466` | `startup_failure` |
+| 17:31:23 | Impact Review | `pull_request_target` | `43919251251` | `startup_failure` |
+| 17:31:26 | CI | `pull_request` | `43919258287` | success |
+| 17:32:55 | PR Title Lint | `pull_request_target` | `43919515190` | `startup_failure` |
+| 17:35:00 | PR Title Lint | `pull_request_target` | `43919886395` | `startup_failure` |
+| 17:35:00 | Impact Review | `pull_request_target` | `43919883743` | `startup_failure` |
+| 17:35:01 | CI | `pull_request` | `43919889230` | success |
+| 18:03:39 | PR Title Lint | `pull_request_target` | `43924834468` | success (after the window) |
+
+A blocked run has no jobs (`…/runs/43919886395/jobs` → `total_count: 0`): the run fails, but the check never
+appears, so the required `Validate PR title` stays expected rather than failing. That head's `success` came from the
+18:03 run after the window. The brownout also shows by experiment that `pull_request` is not affected. That
+enforcement from 2026-12-02 behaves like the brownout is an **assumption (high)**.
 
 **GitHub's security reason.** "`pull_request_target` runs in the context of the base repository and can access its
 secrets. If a workflow executes untrusted code from a fork, that code could compromise your pipeline or steal
@@ -219,11 +231,38 @@ required checks drops the only Conventional-Commits enforcement point that relea
 
 ## Review
 
-pending
+**Review 1** — `specs/gh-325-title-check-trigger/analysis.md` @ `92dbc41` (content `5f10237`) · 2026-11-27
+- Reviewers: doc-reviewer (builder check, claim check, missed option, hidden constraints, governing rules)
+- Tests: not applicable (analysis)
+- Findings: 0 blocker, 2 should-fix, 2 nit → fixed in `8e68231`: no firm plan if the fix is late (new "If it is
+  late" constraint and decision 5; policy stopgap marked best-effort; admin bypass named); brownout evidence unused
+  (brownout runs checked, how a blocked run appears stated); fork title-check runs now need approval (stated); no
+  `branches:` filter (stated). Owner's: none. Rejected: none.
+- Builder questions: 2, both answered by the fixes above.
+- Verified true: workflow lines and permissions; App token for release PRs; changelog quotes, scope and dates; the
+  action's README statements; `pull_request` runs from the merge ref, no run on a merge conflict, read-only fork
+  token; the fix PR reports its own check; release ordering vs `CONTRIBUTING.md` (bot-PR update from `main`); no
+  conflict with #255's decision 6; size S with plan: none; no private data.
+- Not verified: `gh` outputs (consistent and plausible only); the about-policies and REST policies pages; whether
+  release-please regenerates its PR after a `ci:` commit (from CONTRIBUTING, not its source).
+
+**Review 2** (delta) — @ `8e68231` (content `2733ef8`) · 2026-11-27
+- Reviewers: doc-reviewer (same lenses, delta scope)
+- Findings: 0 blocker, 0 should-fix, 3 nit → fixed in the next commit (text only, no further round): Question
+  wording vs "heads that already have a result keep it"; brownout run IDs labelled (table) with the passing run after
+  the window; run fails but the check never appears. Regression check: all four round-1 findings fixed.
+- Builder questions: none.
+- Verified true: brownout windows and the run times inside the second; blocked runs consistent with
+  `startup_failure` and 0 jobs; 2026-11-29 is a Sunday; no contradiction with unchanged text.
+- Not verified: `gh` outputs; that enforcement from 2026-12-02 behaves like the brownout (tagged assumption); that
+  `pull_request_target` runs on fork PRs without approval today.
+
+Outcome: clean at round 2.
 
 ## Verdict
 
-pending review
+needs clarification: the recommendation is ready and reviewed, but decisions 1-5 are the owner's, and they are
+time-bound: needed by 2026-11-29 for the fix to merge by the end of 2026-12-01 UTC.
 
 ## Q→A log
 
