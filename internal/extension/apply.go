@@ -78,12 +78,13 @@ func (o *ApplyOptions) base(dest string) fileBase {
 	}
 	// A destination the old version shipped as a skill file is cg's too: its
 	// base is in Files (S41).
-	_, skill := oldSkillFiles(o.Old)[dest]
-	b := fileBase{tracked: containsStr(o.Old.Notes, dest) || containsStr(o.Old.Templates, dest) || skill}
+	// Destinations compare in their clean form: "./x" and "x" are one file.
+	_, skill := oldSkillFiles(o.Old)[CleanDest(dest)]
+	b := fileBase{tracked: containsDest(o.Old.Notes, dest) || containsDest(o.Old.Templates, dest) || skill}
 	if o.Old.HasContentIDs() {
-		b.id = o.Old.Files[dest]
+		b.id = lookupDest(o.Old.Files, dest)
 	} else {
-		b.id, b.uncertain = o.LegacyBases[dest], !o.LegacyCertain
+		b.id, b.uncertain = lookupDest(o.LegacyBases, dest), !o.LegacyCertain
 	}
 	return b
 }
@@ -374,14 +375,16 @@ func OrphanLedger(old, next *Ledger) *Ledger {
 	}
 	// A destination that moved between notes, templates and skills is still
 	// shipped (S40). Skill files themselves are deleted by the skill plan.
+	// Compared in their clean form ("./x" is "x"); the orphan keeps the old
+	// spelling, the key of its base in Files.
 	nextSkills := oldSkillFiles(next)
 	for _, p := range old.Notes {
-		if _, skill := nextSkills[p]; !containsStr(next.Notes, p) && !containsStr(next.Templates, p) && !skill {
+		if _, skill := nextSkills[CleanDest(p)]; !containsDest(next.Notes, p) && !containsDest(next.Templates, p) && !skill {
 			orphan.Notes = append(orphan.Notes, p)
 		}
 	}
 	for _, p := range old.Templates {
-		if _, skill := nextSkills[p]; !containsStr(next.Notes, p) && !containsStr(next.Templates, p) && !skill {
+		if _, skill := nextSkills[CleanDest(p)]; !containsDest(next.Notes, p) && !containsDest(next.Templates, p) && !skill {
 			orphan.Templates = append(orphan.Templates, p)
 		}
 	}
@@ -413,6 +416,32 @@ func OrphanLedger(old, next *Ledger) *Ledger {
 		return nil
 	}
 	return orphan
+}
+
+// containsDest reports whether s holds dest, comparing clean forms.
+func containsDest(s []string, dest string) bool {
+	want := CleanDest(dest)
+	for _, v := range s {
+		if CleanDest(v) == want {
+			return true
+		}
+	}
+	return false
+}
+
+// lookupDest returns m's value for dest, or for a key that is the same
+// destination spelled another way.
+func lookupDest(m map[string]string, dest string) string {
+	if v, ok := m[dest]; ok {
+		return v
+	}
+	want := CleanDest(dest)
+	for k, v := range m {
+		if CleanDest(k) == want {
+			return v
+		}
+	}
+	return ""
 }
 
 func containsStr(s []string, want string) bool {
@@ -563,6 +592,8 @@ func removeIfPresent(path string) error {
 type snapshot struct {
 	files []fileSnapshot
 	seen  map[string]bool
+	// touched are the paths the run changed, for ifTouched entries.
+	touched map[string]bool
 	// dirs are directories the run created, removed again on restore.
 	dirs []string
 }
@@ -572,10 +603,16 @@ type fileSnapshot struct {
 	existed bool
 	data    []byte
 	mode    os.FileMode
+	// wasDir says a directory stood at path: restore removes a file the run
+	// wrote there, but never the directory.
+	wasDir bool
+	// ifTouched restores the file only when the run changed it (managed
+	// skill files): one the run didn't reach keeps whatever is there now.
+	ifTouched bool
 }
 
 func newSnapshot() *snapshot {
-	return &snapshot{seen: map[string]bool{}}
+	return &snapshot{seen: map[string]bool{}, touched: map[string]bool{}}
 }
 
 // capture records the current state of path (each path once).
@@ -590,7 +627,7 @@ func (s *snapshot) capture(path string) error {
 		if os.IsNotExist(err) || errors.Is(err, syscall.ENOTDIR) || (serr == nil && info.IsDir()) {
 			// No file there (a directory a skill file replaces counts as
 			// none: its files are captured on their own).
-			s.files = append(s.files, fileSnapshot{path: path, existed: false})
+			s.files = append(s.files, fileSnapshot{path: path, existed: false, wasDir: serr == nil && info.IsDir()})
 			return nil
 		}
 		return err
@@ -601,6 +638,26 @@ func (s *snapshot) capture(path string) error {
 	}
 	s.files = append(s.files, fileSnapshot{path: path, existed: true, data: data, mode: info.Mode().Perm()})
 	return nil
+}
+
+// captureIfTouched is capture for a path restored only if the run changes it
+// (see touch).
+func (s *snapshot) captureIfTouched(path string) error {
+	n := len(s.files)
+	if err := s.capture(path); err != nil {
+		return err
+	}
+	for i := n; i < len(s.files); i++ {
+		s.files[i].ifTouched = true
+	}
+	return nil
+}
+
+// touch records that the run is about to change path.
+func (s *snapshot) touch(path string) {
+	if s.touched != nil {
+		s.touched[path] = true
+	}
 }
 
 // captureDirs records the directories between root and path's parent that
@@ -627,6 +684,9 @@ func (s *snapshot) restore() {
 	// files goes before those files are written back.
 	for i := len(s.files) - 1; i >= 0; i-- {
 		f := s.files[i]
+		if f.ifTouched && !s.touched[f.path] {
+			continue
+		}
 		if f.existed {
 			if info, err := os.Lstat(f.path); err == nil && info.IsDir() {
 				// The run made the file's path a directory; its files were
@@ -646,8 +706,10 @@ func (s *snapshot) restore() {
 			}
 			_ = os.MkdirAll(filepath.Dir(f.path), 0o755)
 			_ = writeFileAtomicMode(f.path, f.data, f.mode)
-		} else {
-			_ = os.Remove(f.path)
+		} else if info, err := os.Lstat(f.path); err == nil && !info.IsDir() {
+			_ = os.Remove(f.path) // a file the run wrote; a directory is never removed here
+		} else if err == nil && info.IsDir() && !f.wasDir {
+			_ = os.Remove(f.path) // an empty directory the run left where nothing was (removed only if empty)
 		}
 	}
 	// Created directories, deepest first; one still holding a file restored

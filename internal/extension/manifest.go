@@ -393,6 +393,9 @@ func ValidSkillName(name string) bool {
 // SkillName is the name of the skill a contribution ships: the base name of
 // its src. Call it on a validated contribution.
 func SkillName(s SkillContribution) string {
+	if clean, err := CleanSubdir(s.Src); err == nil && clean != "" {
+		return path.Base(filepath.ToSlash(clean)) // "skills/demo/." is demo
+	}
 	return path.Base(strings.TrimRight(strings.ReplaceAll(s.Src, `\`, "/"), "/"))
 }
 

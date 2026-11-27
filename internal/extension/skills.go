@@ -271,6 +271,9 @@ func readSkill(manifestDir string, sc SkillContribution) (*skillSource, error) {
 		case !d.Type().IsRegular():
 			return fmt.Errorf("skill %q: %s is not a regular file", name, rel)
 		}
+		if clean, cerr := CleanSubdir(rel); cerr != nil || filepath.ToSlash(clean) != rel || strings.Contains(rel, `\`) {
+			return fmt.Errorf("skill %q: file name %q can't be recorded as given (leading or trailing spaces, or a backslash); rename it", name, rel)
+		}
 		if !strings.Contains(rel, "/") && strings.EqualFold(rel, SkillLocalFile) {
 			return fmt.Errorf("skill %q ships %s, a name that belongs to the workspace: rename it", name, rel)
 		}
@@ -438,6 +441,9 @@ type skillPathPlan struct {
 	// clearDir says dest is now a directory, every file in it dropped: it is
 	// removed (once emptied) before the file is written.
 	clearDir bool
+	// seen is the content id the plan found on disk ("" when absent); a
+	// replace checks it again right before writing.
+	seen string
 }
 
 // skillPlan is every decision for an extension's skills, made before anything
@@ -633,6 +639,10 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 	// Dropped paths first: deleting them can clear the way for a wanted path
 	// (a managed directory replaced by a file, or the reverse).
 	for _, dest := range dropped {
+		if isLink(filepath.Join(root, filepath.FromSlash(dest))) {
+			blocked = append(blocked, fmt.Sprintf("%s is a symbolic link, and cg manages only regular files there", dest))
+			continue
+		}
 		disk, err := skillDiskID(filepath.Join(root, filepath.FromSlash(dest)))
 		if err != nil {
 			return nil, err
@@ -658,6 +668,10 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 	for _, dest := range order {
 		w := wanted[dest]
 		abs := filepath.Join(root, filepath.FromSlash(dest))
+		if isLink(abs) {
+			blocked = append(blocked, fmt.Sprintf("%s is a symbolic link, and cg manages only regular files there", dest))
+			continue
+		}
 		if why := blockedBy(root, dest, droppedSet); why != "" {
 			blocked = append(blocked, why)
 			continue
@@ -673,6 +687,7 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 			}
 		}
 		p.missing = disk == ""
+		p.seen = disk
 		if from := renamed[dest]; from != "" && strings.EqualFold(from, dest) {
 			p.renameFrom = from // a case-only rename: give the file the new name
 		}
@@ -1042,6 +1057,13 @@ func relWithin(dir, p string) (string, bool) {
 	}
 }
 
+// isLink reports whether the file at path is itself a symbolic link (its
+// directories may be reached through one; that is checked elsewhere).
+func isLink(path string) bool {
+	info, err := os.Lstat(path)
+	return err == nil && info.Mode()&fs.ModeSymlink != 0
+}
+
 // skillDiskID is fileID for a managed path, treating a path under a file
 // (which can't exist) as missing.
 func skillDiskID(file string) (string, error) {
@@ -1143,7 +1165,15 @@ func applySkills(root string, plan *skillPlan, l *Ledger, snap *snapshot, report
 // applySkillPath carries out one managed path's decision.
 func applySkillPath(root string, p *skillPathPlan, l *Ledger, snap *snapshot, report *SkillReport) error {
 	abs := filepath.Join(root, filepath.FromSlash(p.dest))
+	switch p.op {
+	case opWrite, opMode, opDelete, opDeleteEdited:
+		snap.touch(abs)
+	case opReplace: // touched after its re-check, below
+	case opAdopt, opKeep, opForget, opLeave:
+	}
 	if p.renameFrom != "" {
+		snap.touch(abs)
+		snap.touch(filepath.Join(root, filepath.FromSlash(p.renameFrom)))
 		// The same file on disk under another case: give it the new name.
 		if err := os.Rename(filepath.Join(root, filepath.FromSlash(p.renameFrom)), abs); err != nil {
 			return fmt.Errorf("renaming %s to %s: %w", p.renameFrom, p.dest, err)
@@ -1181,6 +1211,12 @@ func applySkillPath(root string, p *skillPathPlan, l *Ledger, snap *snapshot, re
 	case opWrite:
 		return write()
 	case opReplace:
+		// The user's file may have changed since the plan judged it
+		// committed (an editor saving): stop rather than replace that.
+		if now, err := skillDiskID(abs); err != nil || now != p.seen {
+			return fmt.Errorf("%s changed while cg was running; run the command again", p.dest)
+		}
+		snap.touch(abs)
 		if err := write(); err != nil {
 			return err
 		}
@@ -1220,11 +1256,11 @@ func captureSkills(root string, plan *skillPlan, snap *snapshot) error {
 	}
 	for _, p := range plan.paths {
 		if p.renameFrom != "" {
-			if err := snap.capture(filepath.Join(root, filepath.FromSlash(p.renameFrom))); err != nil {
+			if err := snap.captureIfTouched(filepath.Join(root, filepath.FromSlash(p.renameFrom))); err != nil {
 				return err
 			}
 		}
-		if err := snap.capture(filepath.Join(root, filepath.FromSlash(p.dest))); err != nil {
+		if err := snap.captureIfTouched(filepath.Join(root, filepath.FromSlash(p.dest))); err != nil {
 			return err
 		}
 	}

@@ -678,9 +678,14 @@ content id of the version cg last wrote. On update:
   each file: commit or discard the change, then run the command again.
   `cg extension remove` does the same.
 
-`cg init` restoring an extension on a fresh clone leaves an edited file as it
-is and says the next `cg extension update` replaces it; it never stops because
-of one.
+`cg init --force` restoring an extension on a fresh clone (plain `cg init` stops
+at an existing `.cg.json`) leaves an edited file as it is and says the next
+`cg extension update` replaces it; it never stops because of one. The exception
+is an edited file in the way of the restored layout (the skill now ships a file
+where the edited file's directory is): the restore stops before writing and names
+it; move it aside and run `cg init --force` again. A restore that stops removes
+the trees it fetched for extensions it didn't apply, so running it again
+re-installs them at their recorded commits.
 
 **Refused before anything is applied:** a skill whose directory or files can't
 be read (no `SKILL.md`, frontmatter without `name` equal to the directory name

@@ -449,7 +449,10 @@ func reinstallMissingExtensions(cmd *cobra.Command, root string, exts []workspac
 	)
 	// S36b: the skill checks that need no fetched tree run before the first
 	// fetch, so after fixing what they report a plain cg init runs again.
-	targets := skillTargetsFor(root)
+	targets, terr := skillTargetsFor(root)
+	if terr != nil {
+		return out, nil, cgerr.New(cgerr.ExitUsage, "%v", terr)
+	}
 	for i := range out {
 		e := &out[i]
 		if !missing[extension.SourceRoot(e)] {

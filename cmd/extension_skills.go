@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -28,13 +30,14 @@ type skillRun struct {
 }
 
 // skillTargetsFor returns the workspace's skill targets (.cg.json
-// skills.targets, or the default).
-func skillTargetsFor(root string) []string {
+// skills.targets, or the default when the key is absent). A .cg.json that
+// can't be read is an error, never the default.
+func skillTargetsFor(root string) ([]string, error) {
 	cfg, err := workspace.Detect(root)
 	if err != nil {
-		cfg = nil
+		return nil, fmt.Errorf("reading skills.targets: %w", err)
 	}
-	return cfg.SkillTargets()
+	return cfg.SkillTargets(), nil
 }
 
 // reservedSkillNames are the names of the framework's skills and slash
@@ -179,8 +182,13 @@ func checkSkills(c *skillCheck) ([]string, error) {
 					continue // reported from other's side
 				}
 				for _, t := range targets {
-					if slices.Contains(final[other].skills[skill], t) {
+					// Another target whose directory is the same one on disk
+					// (a linked target directory) is the same place.
+					if t2, ok := sameTargetIn(c.root, t, final[other].skills[skill]); ok {
 						line := fmt.Sprintf("skill %q of extension %q is already shipped by extension %q, for target %s", skill, name, other, t)
+						if t2 != t {
+							line += fmt.Sprintf(" (whose directory is the same as target %s's)", t2)
+						}
 						if _, incoming := c.incoming[other]; c.update && !incoming {
 							line += fmt.Sprintf("; if a newer version of %q drops the skill, update it first", other)
 						}
@@ -203,9 +211,11 @@ func checkSkills(c *skillCheck) ([]string, error) {
 				}
 				for skill, targets := range final[other].skills {
 					for _, t := range targets {
-						dir := extension.SkillDir(t, skill)
-						if dest == dir || strings.HasPrefix(dest, dir+"/") {
-							lines = append(lines, fmt.Sprintf("%s, a note or template of extension %q, lies inside skill %q of extension %q (%s)", dest, name, skill, other, dir))
+						for _, alias := range targetAliases(c.root, t) {
+							dir := extension.SkillDir(alias, skill)
+							if dest == dir || strings.HasPrefix(dest, dir+"/") {
+								lines = append(lines, fmt.Sprintf("%s, a note or template of extension %q, lies inside skill %q of extension %q (%s)", dest, name, skill, other, extension.SkillDir(t, skill)))
+							}
 						}
 					}
 				}
@@ -221,6 +231,42 @@ func checkSkills(c *skillCheck) ([]string, error) {
 		lines[i] = "  " + lines[i]
 	}
 	return nil, cgerr.New(cgerr.ExitUsage, "extension skills conflict, so no extension was applied:\n%s", strings.Join(lines, "\n"))
+}
+
+// sameTargetIn returns the first target in ts that is t, or whose skills
+// directory is, on disk, t's (one target directory linking to the other).
+func sameTargetIn(root, t string, ts []string) (string, bool) {
+	for _, t2 := range ts {
+		if t2 == t || sameTargetDir(root, t, t2) {
+			return t2, true
+		}
+	}
+	return "", false
+}
+
+// targetAliases is t and every other known target whose skills directory is
+// t's on disk.
+func targetAliases(root, t string) []string {
+	out := []string{t}
+	for _, t2 := range extension.SkillTargetNames() {
+		if t2 != t && sameTargetDir(root, t, t2) {
+			out = append(out, t2)
+		}
+	}
+	return out
+}
+
+// sameTargetDir reports whether the skills directories of targets a and b
+// are the same directory on disk.
+func sameTargetDir(root, a, b string) bool {
+	da, ok1 := extension.SkillTargetDir(a)
+	db, ok2 := extension.SkillTargetDir(b)
+	if !ok1 || !ok2 {
+		return false
+	}
+	ia, err1 := os.Stat(filepath.Join(root, filepath.FromSlash(da)))
+	ib, err2 := os.Stat(filepath.Join(root, filepath.FromSlash(db)))
+	return err1 == nil && err2 == nil && os.SameFile(ia, ib)
 }
 
 func findRefByName(exts []workspace.ExtensionRef, name string) (*workspace.ExtensionRef, bool) {
@@ -247,15 +293,36 @@ func checkSkillMoves(c *skillCheck, old map[string]extSkills) error {
 		for _, s := range m.Contributes.Skills {
 			skill := extension.SkillName(s)
 			for _, t := range c.targets {
-				if slices.Contains(old[to].skills[skill], t) {
+				if _, had := sameTargetIn(c.root, t, old[to].skills[skill]); had {
 					continue
 				}
 				for from, fm := range c.incoming {
-					if from == to || !slices.Contains(old[from].skills[skill], t) {
+					if from == to {
 						continue
 					}
 					mv := move{skill: skill, from: from, to: to}
-					if !seen[mv] && !slices.ContainsFunc(fm.Contributes.Skills, func(x extension.SkillContribution) bool { return extension.SkillName(x) == skill }) {
+					if seen[mv] {
+						continue
+					}
+					// The other extension shipped the skill there, and its new
+					// version doesn't.
+					_, had := sameTargetIn(c.root, t, old[from].skills[skill])
+					drops := had && !slices.ContainsFunc(fm.Contributes.Skills, func(x extension.SkillContribution) bool { return extension.SkillName(x) == skill })
+					// Or it shipped files inside the skill's directory as notes
+					// or templates, which its new version drops: the gainer
+					// would adopt them and the dropper's cleanup delete them.
+					if !drops {
+						newCopies := manifestSkills(fm, c.targets).copies
+						for _, alias := range targetAliases(c.root, t) {
+							dir := extension.SkillDir(alias, skill)
+							for _, d := range old[from].copies {
+								if (d == dir || strings.HasPrefix(d, dir+"/")) && !slices.Contains(newCopies, d) {
+									drops = true
+								}
+							}
+						}
+					}
+					if drops {
 						seen[mv] = true
 						moves = append(moves, mv)
 					}
