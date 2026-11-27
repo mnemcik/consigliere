@@ -150,12 +150,13 @@ func TestPathStatesFoldsCase(t *testing.T) {
 	t.Cleanup(func() { foldsCase = saved })
 	mustRun(t, ctx, dir, "config", "core.ignorecase", "true")
 	writeFile(t, dir, "skill.md", "v1\n")
-	writeFile(t, dir, "a*b.md", "x\n")
-	writeFile(t, dir, "aXb.md", "y\n")
+	writeFile(t, dir, "a[b].md", "x\n")
+	writeFile(t, dir, "ab.md", "y\n")
 	mustRun(t, ctx, dir, "add", "-A")
 	mustRun(t, ctx, dir, "commit", "-m", "a")
 	writeFile(t, dir, "skill.md", "v2\n")
-	writeFile(t, dir, "aXb.md", "y2\n")
-	// a*b.md is literal: aXb.md's change doesn't count for it.
-	wantStates(t, ctx, dir, map[string]PathState{"SKILL.md": PathUncommitted, "a*b.md": PathCommitted})
+	writeFile(t, dir, "ab.md", "y2\n")
+	// a[b].md is literal (as a glob it would match ab.md): ab.md's change
+	// doesn't count for it. Both names are valid on Windows.
+	wantStates(t, ctx, dir, map[string]PathState{"SKILL.md": PathUncommitted, "a[b].md": PathCommitted})
 }
