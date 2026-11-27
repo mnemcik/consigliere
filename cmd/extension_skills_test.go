@@ -67,6 +67,9 @@ func setTargets(t *testing.T, ws string, targets ...string) {
 // S13, S18: an installed skill lands under .claude/skills and is listed.
 func TestInstallSkill(t *testing.T) {
 	requireGit(t)
+	home := t.TempDir() // no user-scope skill of the same name (S26)
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	cfgHome, ws := t.TempDir(), newWorkspace(t)
 	repo := makeExtRepo(t, skillsManifest("alpha", "1.0.0", "digest"))
 	out, err := runExtCfg(t, cfgHome, ws, "install", repo)
@@ -266,8 +269,12 @@ func TestSkillMoveWithUncommittedEdit(t *testing.T) {
 			t.Fatalf("%v: %v\n%s", args, err, out)
 		}
 	}
-	if b, _ := os.ReadFile(md); strings.Contains(string(b), "edited") {
-		t.Error("the new owner's version wasn't written")
+	b, err := os.ReadFile(md) //nolint:gosec // test temp dir
+	if err != nil {
+		t.Fatalf("the new owner's SKILL.md is missing: %v", err)
+	}
+	if want := readRepoFile(t, beta, "skills/digest/SKILL.md"); string(b) != want {
+		t.Errorf("SKILL.md isn't beta's version:\n%s", b)
 	}
 }
 
@@ -381,8 +388,16 @@ func TestInitRestoresSkills(t *testing.T) {
 	})
 	t.Run("stops before fetching on a symlinked target dir", func(t *testing.T) {
 		cfgHome, ws := t.TempDir(), newWorkspace(t)
-		installRepo(t, cfgHome, ws, skillsManifest("alpha", "1.0.0", "digest"))
-		removeTree(t, ws, "alpha")
+		repo := installRepo(t, cfgHome, ws, skillsManifest("alpha", "1.0.0", "digest"))
+		// No tree, no mirror and no source: a fetch would fail with its own
+		// error, so the containment error proves the check ran first.
+		if err := os.RemoveAll(filepath.Join(cfgHome, "consigliere", "extensions")); err != nil {
+			t.Fatal(err)
+		}
+		away := repo + "-away"
+		if err := os.Rename(repo, away); err != nil {
+			t.Fatal(err)
+		}
 		skills := filepath.Join(ws, ".claude", "skills")
 		if err := os.RemoveAll(skills); err != nil {
 			t.Fatal(err)
@@ -400,6 +415,9 @@ func TestInitRestoresSkills(t *testing.T) {
 			t.Error("fetched before the check")
 		}
 		if err := os.Remove(skills); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(away, repo); err != nil {
 			t.Fatal(err)
 		}
 		if out, err := runInitForce(t, cfgHome, ws); err != nil {
@@ -522,4 +540,72 @@ func TestInitStopAfterFetchRetries(t *testing.T) {
 		mustExist(t, filepath.Join(ws, ".claude", "skills", "one", "SKILL.md"))
 		mustExist(t, filepath.Join(ws, ".claude", "skills", "two", "SKILL.md"))
 	})
+}
+
+func readRepoFile(t *testing.T, repo, rel string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(rel))) //nolint:gosec // test fixture
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// A skill moving between extensions for one target (alpha had it for
+// claude, beta for agents; targets become [claude]) is caught as a move.
+func TestSkillMovePerTarget(t *testing.T) {
+	requireGit(t)
+	cfgHome, ws := t.TempDir(), newWorkspace(t)
+	setTargets(t, ws, "claude")
+	alpha := installRepo(t, cfgHome, ws, skillsManifest("alpha", "1.0.0", "digest"))
+	setTargets(t, ws, "agents")
+	installRepo(t, cfgHome, ws, skillsManifest("beta", "1.0.0", "digest"))
+	releaseExtRepo(t, alpha, skillsManifest("alpha", "1.1.0"))
+	setTargets(t, ws, "claude")
+	before := snapshotDir(t, ws)
+	out, err := runExtCfg(t, cfgHome, ws, "update")
+	wantConflict(t, err, out, `skill "digest" moves from extension "alpha" to extension "beta"`)
+	assertUnchanged(t, ws, before)
+}
+
+// S38: only the extensions in the cycle are named as ways out; one that
+// only waits on the cycle is named apart.
+func TestSkillMoveCycleMembers(t *testing.T) {
+	requireGit(t)
+	cfgHome, ws := t.TempDir(), newWorkspace(t)
+	a := installRepo(t, cfgHome, ws, skillsManifest("aa", "1", "s1", "s3"))
+	b := installRepo(t, cfgHome, ws, skillsManifest("bb", "1", "s2"))
+	c := installRepo(t, cfgHome, ws, skillsManifest("cc", "1"))
+	releaseExtRepo(t, a, skillsManifest("aa", "2", "s2"))
+	releaseExtRepo(t, b, skillsManifest("bb", "2", "s1"))
+	releaseExtRepo(t, c, skillsManifest("cc", "2", "s3"))
+	out, err := runExtCfg(t, cfgHome, ws, "update")
+	wantConflict(t, err, out, "in a cycle: aa, bb)", "Extensions cc only wait on the cycle")
+}
+
+// S24 with a destination spelled ./…: still inside another extension's skill.
+func TestTemplateInsideSkillDotSlash(t *testing.T) {
+	requireGit(t)
+	cfgHome, ws := t.TempDir(), newWorkspace(t)
+	installRepo(t, cfgHome, ws, skillsManifest("alpha", "1.0.0", "digest"))
+	m := `{"manifest": 2, "name": "beta", "version": "1", "description": "d",
+	  "contributes": {"templates": [{"src": "t.md", "dest": "./.claude/skills/digest/extra.md"}]}}`
+	out, err := runExtCfg(t, cfgHome, ws, "install", makeExtRepo(t, m))
+	wantConflict(t, err, out, ".claude/skills/digest/extra.md", `"alpha"`)
+}
+
+// list --json keeps its shape for an extension without skills.
+func TestListJSONWithoutSkills(t *testing.T) {
+	requireGit(t)
+	cfgHome, ws := t.TempDir(), newWorkspace(t)
+	installRepo(t, cfgHome, ws, testManifest)
+	extListJSON = true
+	t.Cleanup(func() { extListJSON = false })
+	out, err := runExtCfg(t, cfgHome, ws, "list", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, `"skills"`) {
+		t.Errorf("skills key for an extension without skills:\n%s", out)
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -116,6 +117,16 @@ func TestPathStatesUnbornAndNoRepo(t *testing.T) {
 }
 
 func TestBatches(t *testing.T) {
+	for _, fold := range []bool{false, true} {
+		saved := foldsCase
+		foldsCase = fold
+		testBatches(t)
+		foldsCase = saved
+	}
+}
+
+func testBatches(t *testing.T) {
+	t.Helper()
 	long := make([]string, 0, 3000)
 	for i := 0; i < 3000; i++ {
 		long = append(long, "a/very/long/path/to/a/skill/file/number/0000000000.md")
@@ -127,8 +138,9 @@ func TestBatches(t *testing.T) {
 	n := 0
 	for _, b := range bs {
 		size := 0
-		for _, p := range b {
-			size += len(p) + 1
+		args := pathspecArgs(nil, b) // the paths as the command line carries them
+		for _, a := range args[slices.Index(args, "--")+1:] {
+			size += len(a) + 1
 		}
 		if size > argBudget {
 			t.Errorf("batch of %d bytes exceeds the budget", size)

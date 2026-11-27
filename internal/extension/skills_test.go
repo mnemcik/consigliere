@@ -646,15 +646,25 @@ func TestSkillRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeTree(t, clone, map[string]string{"skills/s/a.md": "a2", "skills/s/new/n.md": "n", "skills/s/z/late.md": "z2"})
+	var wroteFirst, deletedFirst bool
 	skillWriteHook = func(dest string) error {
 		if strings.HasSuffix(dest, "z/late.md") {
+			// Earlier steps of the run must have changed the workspace, so
+			// the check below sees a rollback, not an untouched tree.
+			wroteFirst = readText(t, filepath.Join(root, ".claude", "skills", "s", "a.md")) == "a2" &&
+				exists(filepath.Join(root, ".claude", "skills", "s", "new", "n.md"))
+			deletedFirst = !exists(filepath.Join(root, ".claude", "skills", "s", "gone.md"))
 			return errors.New("disk full")
 		}
 		return nil
 	}
 	t.Cleanup(func() { skillWriteHook = nil })
-	if _, _, err := runSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l}); err == nil {
-		t.Fatal("expected the injected failure")
+	_, _, err := runSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l})
+	if err == nil || !strings.Contains(err.Error(), "disk full") {
+		t.Fatalf("expected the injected failure, got %v", err)
+	}
+	if !wroteFirst || !deletedFirst {
+		t.Fatalf("the failure came before the run changed anything (wrote %v, deleted %v)", wroteFirst, deletedFirst)
 	}
 	after := snapshotTree(t, root)
 	if !maps.Equal(before, after) {
@@ -916,5 +926,99 @@ func TestSkillLinkedTargetsPruneDropped(t *testing.T) {
 	}
 	if !exists(filepath.Join(root, ".agents", "skills", "s", "SKILL.md")) {
 		t.Error("SKILL.md deleted")
+	}
+}
+
+// A managed directory the new version makes a file, and a managed file it
+// makes a directory: the old paths go first, so the new ones can be written;
+// a rollback puts the old layout back.
+func TestSkillPathTypeChanges(t *testing.T) {
+	for name, c := range map[string]struct{ before, after map[string]string }{
+		"directory to file": {map[string]string{"assets/config.json": "c"}, map[string]string{"assets": "now a file"}},
+		"file to directory": {map[string]string{"assets": "a file"}, map[string]string{"assets/config.json": "c"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			clone := skillClone(t, "s", c.before)
+			root := t.TempDir()
+			l, _ := mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{})
+			before := snapshotTree(t, root)
+			if err := os.RemoveAll(filepath.Join(clone, "skills", "s", "assets")); err != nil {
+				t.Fatal(err)
+			}
+			writeTree(t, clone, map[string]string{"skills/s/" + firstKey(c.after): c.after[firstKey(c.after)], "skills/s/zz.md": "z"})
+			// A failure after the new layout is written rolls it back.
+			skillWriteHook = func(dest string) error {
+				if strings.HasSuffix(dest, "zz.md") {
+					return errors.New("disk full")
+				}
+				return nil
+			}
+			_, _, err := runSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l})
+			skillWriteHook = nil
+			if err == nil {
+				t.Fatal("expected the injected failure")
+			}
+			if after := snapshotTree(t, root); !maps.Equal(before, after) {
+				t.Errorf("not rolled back:\nbefore %v\nafter  %v", before, after)
+			}
+			mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l})
+			got := filepath.Join(root, ".claude", "skills", "s", filepath.FromSlash(firstKey(c.after)))
+			if readText(t, got) != c.after[firstKey(c.after)] {
+				t.Errorf("%s not written", firstKey(c.after))
+			}
+		})
+	}
+}
+
+func firstKey(m map[string]string) string {
+	for k := range m {
+		return k
+	}
+	return ""
+}
+
+// A directory in the way holding a file the extension doesn't manage, or a
+// file in the way that isn't a managed one, refuses before anything changes.
+func TestSkillPathBlocked(t *testing.T) {
+	clone := skillClone(t, "s", map[string]string{"assets/config.json": "c"})
+	root := t.TempDir()
+	l, _ := mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{})
+	writeTree(t, root, map[string]string{".claude/skills/s/assets/mine.md": "mine"})
+	if err := os.RemoveAll(filepath.Join(clone, "skills", "s", "assets")); err != nil {
+		t.Fatal(err)
+	}
+	writeTree(t, clone, map[string]string{"skills/s/assets": "file"})
+	_, _, err := runSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l})
+	wantErr(t, err, ".claude/skills/s/assets/mine.md")
+	if !exists(filepath.Join(root, ".claude", "skills", "s", "assets", "config.json")) {
+		t.Error("the refused run deleted a file")
+	}
+
+	clone2 := skillClone(t, "s", map[string]string{"x/y.md": "y"})
+	root2 := t.TempDir()
+	writeTree(t, root2, map[string]string{".claude/skills/s/x": "someone's file"})
+	_, _, err = runSkills(t, root2, clone2, oneSkill("s"), skillRunOpts{})
+	wantErr(t, err, ".claude/skills/s/x")
+}
+
+// withinDir decides by location: an alias of dir (through a link) counts,
+// a different directory spelled alike doesn't.
+func TestWithinDirByLocation(t *testing.T) {
+	base := t.TempDir()
+	repo := filepath.Join(base, "Repo")
+	if err := os.MkdirAll(filepath.Join(repo, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(repo, filepath.Join(base, "alias")); err == nil {
+		if !withinDir(repo, filepath.Join(base, "alias", "sub")) {
+			t.Error("an alias of dir isn't inside it")
+		}
+	}
+	other := filepath.Join(base, "repo")
+	if err := os.Mkdir(other, 0o755); err != nil {
+		t.Skip("case-insensitive file system: Repo and repo are one directory")
+	}
+	if withinDir(repo, filepath.Join(other, "f")) {
+		t.Error("a different directory differing only in case counts as inside")
 	}
 }
