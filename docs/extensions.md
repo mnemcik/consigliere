@@ -215,7 +215,8 @@ When the running cg is older than `requires.cg`:
   [commands](#dispatch) stop with the same reason and hint instead of running,
   `cg start` skips its launcher with a warning, and `cg extension list` shows a
   `needs cg <version> or newer` line (`requirementUnmet` in `--json`). Its git
-  hooks keep running.
+  hooks keep running, and its skills stay installed and keep counting for the
+  skill-name check.
 
 A development build (`dev`, or a version without `MAJOR.MINOR.PATCH`) skips
 the check. A release candidate or a `git describe` build counts as its
