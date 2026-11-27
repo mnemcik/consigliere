@@ -335,11 +335,29 @@ func checkSkillMoves(c *skillCheck, old map[string]extSkills) error {
 		}
 		sort.Strings(cycle)
 		sort.Strings(waiting)
+		// Separate cycles: members that reach each other.
+		var cycles []string
+		grouped := map[string]bool{}
+		for _, n := range cycle {
+			if grouped[n] {
+				continue
+			}
+			group := []string{n}
+			grouped[n] = true
+			for _, m := range cycle {
+				if !grouped[m] && reaches(n, m) && reaches(m, n) {
+					group = append(group, m)
+					grouped[m] = true
+				}
+			}
+			cycles = append(cycles, "  "+strings.Join(group, ", "))
+		}
 		msg := fmt.Sprintf("extension skills move between extensions in a cycle, so no extension was applied:\n%s\n"+
-			"No order of updates can apply it (in a cycle: %s). Wait for a release of one of them that doesn't take part in the cycle, "+
-			"or remove one extension from each cycle with `cg extension remove` (which also drops its notes, templates and pending state "+
-			"from cg's records) and install it again after the others are updated.",
-			strings.Join(desc, "\n"), strings.Join(cycle, ", "))
+			"No order of updates can apply it. Every cycle must be broken, one extension each:\n%s\n"+
+			"For each cycle, wait for a release of one of its extensions that doesn't take part in it, or remove one of them with "+
+			"`cg extension remove` (which also drops its notes, templates and pending state from cg's records) and install it again "+
+			"after the others are updated.",
+			strings.Join(desc, "\n"), strings.Join(cycles, "\n"))
 		if len(waiting) > 0 {
 			msg += fmt.Sprintf(" Extensions %s only wait on the cycle; removing them doesn't help.", strings.Join(waiting, ", "))
 		}

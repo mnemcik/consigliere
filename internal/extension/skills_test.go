@@ -936,6 +936,7 @@ func TestSkillPathTypeChanges(t *testing.T) {
 	for name, c := range map[string]struct{ before, after map[string]string }{
 		"directory to file": {map[string]string{"assets/config.json": "c"}, map[string]string{"assets": "now a file"}},
 		"file to directory": {map[string]string{"assets": "a file"}, map[string]string{"assets/config.json": "c"}},
+		"file to nested":    {map[string]string{"assets": "a file"}, map[string]string{"assets/nested/config.json": "c"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			clone := skillClone(t, "s", c.before)
@@ -1038,5 +1039,21 @@ func TestSkillRestoreLeftFileBlocks(t *testing.T) {
 	wantErr(t, err, "blocked", ".claude/skills/s/x/f.md")
 	if readText(t, filepath.Join(root, ".claude", "skills", "s", "x", "f.md")) != "edited" {
 		t.Error("the edit was lost")
+	}
+}
+
+// The exact-spelling fast path compares byte for byte on every platform: a
+// path whose spelling differs only in case, with nothing on disk to show it
+// is the same directory, isn't inside.
+func TestWithinDirExactSpelling(t *testing.T) {
+	base := filepath.Join(t.TempDir(), "none")
+	if withinDir(filepath.Join(base, "Repo"), filepath.Join(base, "repo", "f")) {
+		t.Error("a differently cased spelling counted as inside")
+	}
+	if !withinDir(filepath.Join(base, "Repo"), filepath.Join(base, "Repo", "f")) || !withinDir(filepath.Join(base, "Repo"), filepath.Join(base, "Repo")) {
+		t.Error("the exact spelling isn't inside")
+	}
+	if withinDir(filepath.Join(base, "Repo"), filepath.Join(base, "Repository")) {
+		t.Error("a sibling with the same prefix counted as inside")
 	}
 }

@@ -1010,11 +1010,18 @@ func withinDir(dir, p string) bool {
 // relWithin returns p relative to dir (slash-separated, "" for dir itself)
 // when p is dir or inside it, decided as withinDir says.
 func relWithin(dir, p string) (string, bool) {
-	if rel, err := filepath.Rel(dir, p); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel) {
-		if rel == "." {
-			return "", true
-		}
-		return filepath.ToSlash(rel), true
+	// The exact spelling first, compared byte for byte (filepath.Rel would
+	// ignore case on Windows, where a directory can be case-sensitive).
+	dir, p = filepath.Clean(dir), filepath.Clean(p)
+	if p == dir {
+		return "", true
+	}
+	prefix := dir
+	if !strings.HasSuffix(prefix, string(filepath.Separator)) {
+		prefix += string(filepath.Separator)
+	}
+	if rest, ok := strings.CutPrefix(p, prefix); ok {
+		return filepath.ToSlash(rest), true
 	}
 	di, err := os.Stat(dir)
 	if err != nil {

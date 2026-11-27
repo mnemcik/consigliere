@@ -629,8 +629,19 @@ func (s *snapshot) restore() {
 		f := s.files[i]
 		if f.existed {
 			if info, err := os.Lstat(f.path); err == nil && info.IsDir() {
-				// The run made the file's path a directory; its own files
-				// were restored (removed) above, so it is empty.
+				// The run made the file's path a directory; its files were
+				// restored (removed) above. Remove the directories it created
+				// under it, deepest first, then the directory itself.
+				var under []string
+				for _, d := range s.dirs {
+					if d == f.path || strings.HasPrefix(d, f.path+string(filepath.Separator)) {
+						under = append(under, d)
+					}
+				}
+				sort.Slice(under, func(i, j int) bool { return len(under[i]) > len(under[j]) })
+				for _, d := range under {
+					_ = os.Remove(d)
+				}
 				_ = os.Remove(f.path)
 			}
 			_ = os.MkdirAll(filepath.Dir(f.path), 0o755)

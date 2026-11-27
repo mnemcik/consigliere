@@ -580,7 +580,7 @@ func TestSkillMoveCycleMembers(t *testing.T) {
 	releaseExtRepo(t, b, skillsManifest("bb", "2", "s1"))
 	releaseExtRepo(t, c, skillsManifest("cc", "2", "s3"))
 	out, err := runExtCfg(t, cfgHome, ws, "update")
-	wantConflict(t, err, out, "in a cycle: aa, bb)", "Extensions cc only wait on the cycle")
+	wantConflict(t, err, out, "one extension each:\n  aa, bb\n", "Extensions cc only wait on the cycle")
 }
 
 // S24 with a destination spelled ./…: still inside another extension's skill.
@@ -608,4 +608,19 @@ func TestListJSONWithoutSkills(t *testing.T) {
 	if strings.Contains(out, `"skills"`) {
 		t.Errorf("skills key for an extension without skills:\n%s", out)
 	}
+}
+
+// S38 with two separate cycles: each is named, and every one must be broken.
+func TestSkillMoveTwoCycles(t *testing.T) {
+	requireGit(t)
+	cfgHome, ws := t.TempDir(), newWorkspace(t)
+	repos := map[string]string{}
+	for n, skill := range map[string]string{"aa": "s1", "bb": "s2", "cc": "s3", "dd": "s4"} {
+		repos[n] = installRepo(t, cfgHome, ws, skillsManifest(n, "1", skill))
+	}
+	for n, skill := range map[string]string{"aa": "s2", "bb": "s1", "cc": "s4", "dd": "s3"} {
+		releaseExtRepo(t, repos[n], skillsManifest(n, "2", skill))
+	}
+	out, err := runExtCfg(t, cfgHome, ws, "update")
+	wantConflict(t, err, out, "Every cycle must be broken", "\n  aa, bb\n  cc, dd\n", "For each cycle")
 }
