@@ -431,6 +431,9 @@ type skillPathPlan struct {
 	next    string // content id of data
 	op      skillOp
 	missing bool // the file was absent on disk
+	// renameFrom is the old path of a rename that only changes case, on a
+	// file system that ignores case: the file is renamed to dest first.
+	renameFrom string
 }
 
 // skillPlan is every decision for an extension's skills, made before anything
@@ -617,7 +620,7 @@ func planSkills(root, manifestDir string, m *Manifest, opts *ApplyOptions, repor
 		if err != nil {
 			return nil, err
 		}
-		p := skillPathPlan{dest: dest, data: w.data, mode: w.mode, next: ContentID(w.data), missing: disk == ""}
+		p := skillPathPlan{dest: dest, data: w.data, mode: w.mode, next: ContentID(w.data), missing: disk == "", renameFrom: renamed[dest]}
 		b, tracked := base(dest)
 		switch {
 		case disk == p.next:
@@ -735,11 +738,12 @@ func validLedgerSkills(l *Ledger) error {
 	}
 	for _, s := range l.Skills {
 		if !ValidSkillName(s.Name) {
-			return fmt.Errorf("the ledger of extension %q records a skill named %q, which isn't a valid skill name; run `cg init --force` or restore the ledger from git", l.Name, s.Name)
+			return fmt.Errorf("%s records a skill named %q, which isn't a valid skill name; %s", ledgerRel(l), s.Name, ledgerFix(l))
 		}
 		for _, t := range s.Targets {
 			if _, ok := SkillTargetDir(t); !ok {
-				return fmt.Errorf("the ledger of extension %q records skill %q for target %q, which cg doesn't know", l.Name, s.Name, t)
+				return fmt.Errorf("%s records skill %q for target %q, which this cg doesn't know (known targets: %s); if a newer cg wrote it, upgrade cg, otherwise %s",
+					ledgerRel(l), s.Name, t, strings.Join(SkillTargetNames(), ", "), ledgerFix(l))
 			}
 		}
 		for _, f := range s.Files {
@@ -749,11 +753,19 @@ func validLedgerSkills(l *Ledger) error {
 				ok = slices.ContainsFunc(s.Targets, func(t string) bool { return strings.HasPrefix(f, SkillDir(t, s.Name)+"/") })
 			}
 			if !ok {
-				return fmt.Errorf("the ledger of extension %q records %q for skill %q, which isn't a path inside that skill's directory", l.Name, f, s.Name)
+				return fmt.Errorf("%s records %q for skill %q, which isn't a path inside that skill's directory; %s", ledgerRel(l), f, s.Name, ledgerFix(l))
 			}
 		}
 	}
 	return nil
+}
+
+// ledgerRel is l's path relative to the workspace, for messages.
+func ledgerRel(l *Ledger) string { return ledgerSubdir + "/" + l.Name + ".json" }
+
+// ledgerFix says how to get past a ledger entry cg refuses.
+func ledgerFix(l *Ledger) string {
+	return "restore " + ledgerRel(l) + " from git, or correct or delete that skill entry in it, then run the command again"
 }
 
 // skillDirOf returns the <target dir>/<name> part of managed path p.
@@ -942,6 +954,12 @@ func applySkills(root string, plan *skillPlan, l *Ledger, snap *snapshot, report
 // applySkillPath carries out one managed path's decision.
 func applySkillPath(root string, p *skillPathPlan, l *Ledger, snap *snapshot, report *SkillReport) error {
 	abs := filepath.Join(root, filepath.FromSlash(p.dest))
+	if p.renameFrom != "" {
+		// The same file on disk under another case: give it the new name.
+		if err := os.Rename(filepath.Join(root, filepath.FromSlash(p.renameFrom)), abs); err != nil {
+			return fmt.Errorf("renaming %s to %s: %w", p.renameFrom, p.dest, err)
+		}
+	}
 	write := func() error {
 		if err := snap.captureDirs(root, abs); err != nil {
 			return err
@@ -1005,6 +1023,11 @@ func captureSkills(root string, plan *skillPlan, snap *snapshot) error {
 		return nil
 	}
 	for _, p := range plan.paths {
+		if p.renameFrom != "" {
+			if err := snap.capture(filepath.Join(root, filepath.FromSlash(p.renameFrom))); err != nil {
+				return err
+			}
+		}
 		if err := snap.capture(filepath.Join(root, filepath.FromSlash(p.dest))); err != nil {
 			return err
 		}

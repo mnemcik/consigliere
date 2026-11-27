@@ -723,8 +723,12 @@ func TestSkillLedgerPathsRefused(t *testing.T) {
 			for _, f := range bad.Files {
 				old.Files[f] = ContentID([]byte("x"))
 			}
-			if _, _, err := runSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: old}); err == nil {
-				t.Error("update accepted the ledger")
+			_, _, err := runSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: old})
+			if err == nil {
+				t.Fatal("update accepted the ledger")
+			}
+			if !strings.Contains(err.Error(), ".cg/ext/demo.json") || !strings.Contains(err.Error(), "restore") || strings.Contains(err.Error(), "cg init") {
+				t.Errorf("the message doesn't name the ledger and a working way out: %v", err)
 			}
 			if err := RemoveSkills(root, old, &ApplyOptions{}, &SkillReport{}); err == nil {
 				t.Error("remove accepted the ledger")
@@ -784,6 +788,13 @@ func TestSkillCaseOnlyRename(t *testing.T) {
 	l, _ = mustRunSkills(t, root, clone, oneSkill("s"), skillRunOpts{old: l})
 	if readText(t, filepath.Join(root, ".claude", "skills", "s", "foo.md")) != "foo" {
 		t.Fatal("the renamed file was deleted")
+	}
+	entries, err := os.ReadDir(filepath.Join(root, ".claude", "skills", "s"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(entries, func(e os.DirEntry) bool { return e.Name() == "foo.md" }) {
+		t.Errorf("the file keeps its old spelling: %v", entries)
 	}
 	// And with new content: updated, not refused as unowned.
 	writeTree(t, clone, map[string]string{"skills/s/foo.md": "foo2"})
