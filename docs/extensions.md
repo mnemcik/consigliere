@@ -206,8 +206,8 @@ When the running cg is older than `requires.cg`:
   extension of the run: `extension "<name>" needs cg <version> or newer; this is
   cg <running>. Update cg (cg update upgrade, or brew upgrade --cask cg), then
   run this again.` `--force` doesn't skip the check. `update` checks every
-  extension it updates, also one already at its latest version (an update
-  re-applies it), and `cg init` only those it re-installs.
+  extension it updates, including one already at its latest version, because
+  an update re-applies it. `cg init` checks only those it re-installs.
 - An extension already installed (from a pulled `.cg.json`, or by a newer cg on
   a shared store) keeps its commands for the [ownership
   check](#ownership-checked-before-anything-is-applied), but its
